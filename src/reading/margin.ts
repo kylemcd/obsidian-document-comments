@@ -130,14 +130,17 @@ class ReadingMargin {
 				existing.update(c);
 			}
 		}
-		this.container.toggleClass("dc-hide-resolved", !this.deps.showResolved());
+		this.readingView.toggleClass("dc-hide-resolved", !this.deps.showResolved());
 	}
 
 	private position(): void {
-		this.container.toggleClass("dc-has", this.comments.length > 0 || !!this.draft);
+		// State classes live on the reading-view container (Obsidian-owned, safe to
+		// write directly), so the stylesheet caps the text column with plain
+		// descendant selectors instead of :has().
+		this.readingView.toggleClass("dc-has", this.comments.length > 0 || !!this.draft);
 		// Highlights follow the master toggle alone, so they persist while the
 		// sidebar panel hosts the cards (dc-has is off, dc-highlights stays on).
-		this.container.toggleClass("dc-highlights", this.deps.showComments());
+		this.readingView.toggleClass("dc-highlights", this.deps.showComments());
 		const topRef = this.readingView.getBoundingClientRect().top;
 		const placements: Array<{ el: HTMLElement; top: number }> = [];
 		for (const c of this.comments) {
@@ -326,6 +329,9 @@ class ReadingMargin {
 		this.readingView.removeEventListener("mouseover", this.onMouseOver);
 		this.readingView.removeEventListener("mouseout", this.onMouseOut);
 		this.readingView.removeEventListener("mousedown", this.onMouseDown);
+		// The container we own goes away; the state classes sit on Obsidian's
+		// reading-view element, so clear them explicitly to avoid leaving it capped.
+		this.readingView.removeClasses(["dc-has", "dc-highlights", "dc-hide-resolved"]);
 		this.container.remove();
 		this.cards.clear();
 	}

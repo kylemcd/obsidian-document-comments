@@ -11,32 +11,38 @@ body {
 	--dc-highlight-border: hsla(45, 90%, 45%, 0.7);
 }
 
-/* Layout is keyed on the `dc-has` class of OUR OWN container div (which Obsidian
-   never touches), via :has(). A class on .cm-editor gets stripped when Obsidian
-   rebuilds the editor on a mode switch; a class on our own element does not — so
-   the body cap and column position can't silently drop. No JS-measured width
-   gate either; the min()/calc clamps keep body and column adjacent at any width. */
-.cm-editor:has(> .doc-comment-margin.dc-has) {
+/* Layout is keyed on a `dc-has` class set on the editor / reading-view container.
+   In the editor that class rides on `.cm-editor` via CodeMirror's editorAttributes
+   facet (CM owns that element's className and would strip a raw classList.add); in
+   reading view it's written straight onto `.markdown-reading-view`. Keeping the
+   state on the container — rather than our own child element — lets the body cap
+   and column position use plain descendant selectors, with no parent-from-child
+   matching. The min()/calc clamps keep body and column adjacent (no JS width gate). */
+.cm-editor.dc-has {
 	position: relative;
 }
 
-/* Cap the body at its readable width, and center the [text + column] block as a
+/* Cap the body at its readable width and center the [text + column] block as a
    unit: an equal computed margin on the far left and to the right of the column.
-   !important so it doesn't fight the theme's focus re-centering. */
-.cm-editor:has(> .doc-comment-margin.dc-has) .cm-sizer {
-	max-width: min(var(--file-line-width, 50rem), calc(100% - var(--dc-margin-width))) !important;
-	margin-left: max(0px, calc((100% - var(--file-line-width, 50rem) - var(--dc-margin-width)) / 2)) !important;
-	margin-right: auto !important;
+   Scoped under `.markdown-source-view.mod-cm6` so it out-specifies Obsidian's own
+   readable-line-width rule (.markdown-source-view.mod-cm6.is-readable-line-width
+   .cm-sizer, four classes) — five classes here win on specificity alone. */
+.markdown-source-view.mod-cm6 .cm-editor.dc-has .cm-sizer {
+	max-width: min(var(--file-line-width, 50rem), calc(100% - var(--dc-margin-width)));
+	margin-left: max(0px, calc((100% - var(--file-line-width, 50rem) - var(--dc-margin-width)) / 2));
+	margin-right: auto;
 }
 
-/* Same treatment for the reading view (separate render path, same math). */
-.markdown-reading-view:has(> .doc-comment-margin.dc-has) {
+/* Same treatment for the reading view (separate render path, same math). The extra
+   `.markdown-preview-view` step out-specifies core's three-class readable-line rule
+   (.markdown-preview-view.is-readable-line-width .markdown-preview-sizer). */
+.markdown-reading-view.dc-has {
 	position: relative;
 }
-.markdown-reading-view:has(> .doc-comment-margin.dc-has) .markdown-preview-sizer {
-	max-width: min(var(--file-line-width, 50rem), calc(100% - var(--dc-margin-width))) !important;
-	margin-left: max(0px, calc((100% - var(--file-line-width, 50rem) - var(--dc-margin-width)) / 2)) !important;
-	margin-right: auto !important;
+.markdown-reading-view.dc-has .markdown-preview-view .markdown-preview-sizer {
+	max-width: min(var(--file-line-width, 50rem), calc(100% - var(--dc-margin-width)));
+	margin-left: max(0px, calc((100% - var(--file-line-width, 50rem) - var(--dc-margin-width)) / 2));
+	margin-right: auto;
 }
 
 /* The highlighted span in the text. */
@@ -51,15 +57,15 @@ body {
    clean. Keyed on `dc-highlights` (which follows the master toggle), NOT on
    `dc-has` (the inline column) — so highlights persist when the sidebar panel
    hosts the cards and the inline column has stepped aside. */
-.cm-editor:not(:has(> .doc-comment-margin.dc-highlights)) .doc-comment-span,
-.markdown-reading-view:not(:has(> .doc-comment-margin.dc-highlights)) .doc-comment-span {
+.cm-editor:not(.dc-highlights) .doc-comment-span,
+.markdown-reading-view:not(.dc-highlights) .doc-comment-span {
 	background-color: transparent;
 	border-bottom-color: transparent;
 	cursor: text;
 }
 /* Likewise drop resolved highlights when resolved comments are hidden. */
-.cm-editor:has(> .doc-comment-margin.dc-hide-resolved) .doc-comment-span.is-resolved,
-.markdown-reading-view:has(> .doc-comment-margin.dc-hide-resolved) .doc-comment-span.is-resolved {
+.cm-editor.dc-hide-resolved .doc-comment-span.is-resolved,
+.markdown-reading-view.dc-hide-resolved .doc-comment-span.is-resolved {
 	background-color: transparent;
 	border-bottom-color: transparent;
 	cursor: text;
@@ -91,8 +97,10 @@ body {
 	z-index: 5;
 }
 /* Pin the column right after the readable-width text (CSS-only, so it never
-   jumps on focus). Clamped so it can't push off the right edge on narrow panes. */
-.doc-comment-margin.dc-has {
+   jumps on focus). Clamped so it can't push off the right edge on narrow panes.
+   Keyed on the container's dc-has (set on .cm-editor / .markdown-reading-view). */
+.cm-editor.dc-has .doc-comment-margin,
+.markdown-reading-view.dc-has .doc-comment-margin {
 	/* Mirror of the sizer's centering math: column begins right where the
 	   centered text ends. Clamped so it never runs off the right edge. */
 	left: min(
@@ -133,7 +141,8 @@ body {
 .doc-comment-card.is-resolved {
 	opacity: 0.65;
 }
-.doc-comment-margin.dc-hide-resolved .doc-comment-card.is-resolved,
+.cm-editor.dc-hide-resolved .doc-comment-card.is-resolved,
+.markdown-reading-view.dc-hide-resolved .doc-comment-card.is-resolved,
 .doc-comment-card.dc-offscreen {
 	display: none;
 }

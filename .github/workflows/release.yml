@@ -1,0 +1,65 @@
+name: Release
+
+# Cut a release by pushing a tag that matches manifest.json's version, e.g.:
+#   git tag 0.1.1 && git push origin 0.1.1
+# The tag must NOT have a leading "v" — Obsidian matches the tag to the manifest
+# version exactly (this workflow fails fast if they differ).
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: write # create the release + upload assets
+  id-token: write # mint the OIDC token attestation signing needs
+  attestations: write # record the build-provenance attestation
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build plugin
+        run: npm run build
+
+      - name: Check tag matches manifest version
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          manifest_version="$(node -p "require('./manifest.json').version")"
+          if [ "$tag" != "$manifest_version" ]; then
+            echo "::error::Tag '$tag' does not match manifest.json version '$manifest_version'."
+            echo "Obsidian requires the release tag to equal the manifest version exactly (no 'v' prefix)."
+            exit 1
+          fi
+
+      # Provenance attestations let anyone cryptographically verify these assets
+      # were built from this repo by this workflow:
+      #   gh attestation verify main.js --repo <owner>/<repo>
+      - name: Generate artifact attestations
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+            styles.css
+
+      - name: Create GitHub release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          gh release create "$tag" \
+            --title "$tag" \
+            --notes "Release $tag" \
+            main.js manifest.json styles.css

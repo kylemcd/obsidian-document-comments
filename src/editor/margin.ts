@@ -142,20 +142,12 @@ class MarginView implements PluginValue {
 	}
 
 	private reposition(): void {
-		const cfg = this.view.state.facet(commentConfig);
-		this.container.toggleClass("dc-hide-resolved", !cfg.showResolved());
-		// Highlight visibility follows the master toggle alone — independent of
-		// whether the inline column is reserved (dc-has). That keeps the in-text
-		// highlights when the sidebar panel hosts the cards instead of the column.
-		this.container.toggleClass("dc-highlights", cfg.showComments());
-
+		// dc-has / dc-highlights / dc-hide-resolved now live on the .cm-editor element
+		// (editorLayoutField → editorAttributes), so the stylesheet caps the text
+		// column with plain descendant selectors — no :has(), nothing to toggle on our
+		// own container here.
 		const draft = this.view.state.field(draftField, false) ?? null;
 		this.syncDraftEl(draft);
-
-		// Mark our own container (which Obsidian never touches) when the note has
-		// comments or a draft; CSS :has() ties the body cap + column position to it,
-		// so nothing drops when Obsidian rebuilds .cm-editor on a mode switch.
-		this.container.toggleClass("dc-has", this.comments().length > 0 || !!draft);
 
 		const editorTop = this.view.dom.getBoundingClientRect().top;
 		const placements: Array<{ el: HTMLElement; top: number }> = [];

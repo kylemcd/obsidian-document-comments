@@ -3,6 +3,7 @@ import { EditorView } from "@codemirror/view";
 import { commentField } from "./editor/state";
 import { marginPlugin } from "./editor/margin";
 import { commentConfig } from "./editor/config";
+import { editorLayoutField } from "./editor/layout";
 import { draftField, setDraft } from "./editor/draft";
 import { findSectionRange, highlightPostProcessor } from "./reading/highlight";
 import { ReadingDeps, ReadingMarginManager } from "./reading/margin";
@@ -29,6 +30,9 @@ export default class DocCommentsPlugin extends Plugin {
 				showResolved: () => this.settings.showResolved,
 				sidebarOpen: () => this.sidebarOpen,
 			}),
+			// Reflects dc-has / dc-highlights / dc-hide-resolved onto .cm-editor so the
+			// stylesheet caps the text column without a :has() selector.
+			editorLayoutField,
 			marginPlugin,
 		]);
 
