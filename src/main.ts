@@ -1,4 +1,4 @@
-import { Editor, MarkdownView, Notice, Platform, Plugin, WorkspaceLeaf, debounce } from "obsidian";
+import { Editor, MarkdownView, Notice, Platform, Plugin, TFile, WorkspaceLeaf, debounce } from "obsidian";
 import { EditorView } from "@codemirror/view";
 import { commentField } from "./editor/state";
 import { marginPlugin } from "./editor/margin";
@@ -203,14 +203,24 @@ export default class DocCommentsPlugin extends Plugin {
 				return;
 			}
 			new CommentModal(this.app, selected, (text) => {
-				void insertCommentInFile(this.app, file, from, to, text, this.authorName()).then(() =>
-					this.scheduleReadingRefresh(),
-				);
+				void this.insertReadingComment(file, from, to, text);
 			}).open();
 			return;
 		}
 		// Same inline draft composer as the editor (no modal).
 		this.readingManager?.startDraft(view, from, to, selection.getRangeAt(0));
+	}
+
+	/** Mobile reading-view create: write to the file (no editor surface) and refresh.
+	 *  Wrapped like every other vault.process call site so a failed write surfaces. */
+	private async insertReadingComment(file: TFile, from: number, to: number, text: string): Promise<void> {
+		try {
+			await insertCommentInFile(this.app, file, from, to, text, this.authorName());
+			this.scheduleReadingRefresh();
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "unknown error";
+			new Notice(`Couldn't add the comment: ${message}`);
+		}
 	}
 
 	private async toggleComments(): Promise<void> {
