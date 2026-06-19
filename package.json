@@ -23,7 +23,7 @@
 	"devDependencies": {
 		"@codemirror/state": "^6.6.0",
 		"@codemirror/view": "^6.43.1",
-		"@types/node": "^20.12.7",
+		"@types/node": "^25.9.3",
 		"esbuild": "^0.28.1",
 		"eslint": "^10.5.0",
 		"eslint-plugin-obsidianmd": "^0.3.0",
