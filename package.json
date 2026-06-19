@@ -24,7 +24,7 @@
 		"@codemirror/state": "^6.6.0",
 		"@codemirror/view": "^6.38.6",
 		"@types/node": "^20.12.7",
-		"esbuild": "^0.20.2",
+		"esbuild": "^0.28.1",
 		"eslint": "^10.5.0",
 		"eslint-plugin-obsidianmd": "^0.3.0",
 		"happy-dom": "^20.10.5",
