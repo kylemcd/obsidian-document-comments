@@ -9,8 +9,8 @@
 		"typecheck": "tsc -noEmit -skipLibCheck",
 		"format": "oxfmt src test",
 		"format:check": "oxfmt --check src test",
-		"lint": "oxlint src && eslint src",
-		"lint:fix": "oxlint src --fix && eslint src --fix",
+		"lint": "oxlint src && eslint src package.json",
+		"lint:fix": "oxlint src --fix && eslint src package.json --fix",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"check": "npm run format:check && npm run lint && npm run typecheck && npm test"

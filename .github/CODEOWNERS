@@ -1,0 +1,6 @@
+# Code owners for this repository.
+# Syntax: <path pattern>  <owner(s)>   — see https://docs.github.com/articles/about-code-owners
+# Owners are auto-requested for review on PRs that touch matching paths.
+
+# Everything is owned by @kylemcd unless a more specific rule is added above this line.
+* @kylemcd
