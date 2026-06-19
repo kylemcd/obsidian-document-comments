@@ -47,7 +47,7 @@ jobs:
       # were built from this repo by this workflow:
       #   gh attestation verify main.js --repo <owner>/<repo>
       - name: Generate artifact attestations
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             main.js
