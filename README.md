@@ -4,7 +4,7 @@ Notion / Linear-style **margin comments** for Obsidian — except the comments l
 
 ![Document Comments — threaded comment cards in the right margin of an Obsidian note](screenshot.png)
 
-> **Desktop-only.** Available in Obsidian's **Community plugins** store — see [Install](#install).
+> Available in Obsidian's **Community plugins** store, on **desktop and mobile** — see [Install](#install).
 
 ## Features
 
@@ -13,9 +13,10 @@ Notion / Linear-style **margin comments** for Obsidian — except the comments l
 - **Threads, resolve / reopen, emoji reactions, edit & delete** — every action is a plain edit to the markdown, so it round-trips cleanly.
 - **Markdown in comment text** — code spans, bold, links, lists, etc. render in the cards (margin and sidebar).
 - **Long comments collapse** to a *Show more* preview; a thread taller than the screen opens in the sidebar instead.
-- **Inline composer.** Select text → command or right-click → a draft card opens in the margin (no modal).
+- **Inline composer.** Select text → command or right-click → a draft card opens in the margin (no modal). On mobile, a small dialog takes its place.
 - **"All discussions" sidebar** — a panel listing the active note's comments with **Open / Resolved / All** filter tabs; while it's open the inline cards step aside (the in-text highlights stay).
 - **Toggle comments** on/off (also hides the text highlights), and **hide resolved** comments by default.
+- **Mobile.** On phones and tablets the floating margin is turned off (there's no room for it): the in-text **highlights** still mark commented text, and you read, reply, and resolve through the **sidebar** panel — new comments are composed in a quick dialog. It's the same inline storage, so a note's comments are identical on desktop and mobile.
 
 ## How comments are stored
 
@@ -31,7 +32,7 @@ sam (2026-06-17T10:05:00.000Z): Thursday is better for QA.
 
 ## Install
 
-Requires **Obsidian 1.7.2 or newer**, desktop.
+Requires **Obsidian 1.7.2 or newer** (desktop or mobile).
 
 ### Community plugins (recommended)
 
@@ -80,7 +81,7 @@ No network use, no telemetry, no accounts. Everything stays in your vault.
 
 ## Known limitations
 
-- **Desktop-only** for now — the margin column needs the horizontal space. A mobile / narrow-screen layout is planned.
+- On **mobile**, the floating margin column is turned off (there's no room for it). Comments are read and managed through the **sidebar** instead — highlights still mark the text, and new comments are composed in a dialog. Same inline storage, so it round-trips with desktop.
 - Comments whose highlighted text **overlaps** another comment's are stored fine but are a rough edge; avoid stacking comments on the same words for now.
 - In **Live Preview**, the highlight doesn't show on text inside a **table** (Obsidian renders tables as a self-contained widget the highlight can't reach). The comment and its card still work, and the highlight shows in **Reading view** and **Source mode**.
 

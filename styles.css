@@ -543,3 +543,22 @@ body {
 	display: none;
 }
 
+/* ── Mobile "Add comment" modal ────────────────────────────────────────────
+   Used where there's no floating margin composer (mobile). */
+.dc-modal-quote {
+	margin-bottom: 10px;
+	padding: 6px 10px;
+	border-left: 2px solid var(--dc-highlight-border);
+	border-radius: 4px;
+	background-color: var(--background-secondary);
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	max-height: 6em;
+	overflow-y: auto;
+}
+.dc-modal-input {
+	width: 100%;
+	min-height: 5em;
+	resize: vertical;
+}
+

@@ -27,6 +27,8 @@ export type ReadingDeps = {
 	sidebarOpen: () => boolean;
 	/** Reveal a thread in the sidebar — used by a margin card too tall to fit. */
 	openInSidebar?: (id: string) => void;
+	/** True on Obsidian mobile — no floating column; just drive highlight visibility. */
+	isMobile?: () => boolean;
 };
 
 /** A margin column for one reading-view container, aligned to highlight spans. */
@@ -390,6 +392,7 @@ export class ReadingMarginManager {
 	constructor(private deps: ReadingDeps) {}
 
 	refresh(): void {
+		const mobile = this.deps.isMobile?.() ?? false;
 		const active = new Set<HTMLElement>();
 		for (const leaf of this.deps.app.workspace.getLeavesOfType("markdown")) {
 			const view = leaf.view;
@@ -397,6 +400,15 @@ export class ReadingMarginManager {
 			const rv = view.containerEl.querySelector(".markdown-reading-view");
 			if (!(rv instanceof HTMLElement)) continue;
 			active.add(rv);
+			if (mobile) {
+				// Mobile: no floating cards or reserved column. Just keep the in-text
+				// highlights' visibility in sync with the toggles (no `dc-has`, so the
+				// text keeps full width). Comments are read/created via the sidebar.
+				rv.toggleClass("dc-highlights", this.deps.showComments());
+				rv.toggleClass("dc-hide-resolved", !this.deps.showResolved());
+				rv.removeClass("dc-has");
+				continue;
+			}
 			let margin = this.margins.get(rv);
 			if (!margin) {
 				margin = new ReadingMargin(rv, view, this.deps);

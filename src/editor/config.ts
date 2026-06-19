@@ -16,6 +16,10 @@ export type CommentConfig = {
 	sidebarOpen: () => boolean;
 	/** Reveal a thread in the sidebar — used by a margin card too tall to fit. */
 	openInSidebar?: (id: string) => void;
+	/** True on Obsidian mobile. The floating margin column needs horizontal room
+	 *  mobile doesn't have, so there it's suppressed (text stays full-width) and
+	 *  comments live in the sidebar panel instead; the in-text highlights remain. */
+	isMobile?: () => boolean;
 };
 
 const DEFAULT: CommentConfig = {

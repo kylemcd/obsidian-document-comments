@@ -13,9 +13,11 @@ const editorLayoutClasses = (state: EditorState): string => {
 	const fv = state.field(commentField, false);
 	const draft = state.field(draftField, false) ?? null;
 	// `dc-has` mirrors the inline column: present only when cards actually render
-	// (comments shown, sidebar not hosting them) or a draft composer is open.
+	// (comments shown, sidebar not hosting them) or a draft composer is open. On
+	// mobile there's no floating column at all, so never reserve its width.
 	const showInline = cfg.showComments() && !cfg.sidebarOpen();
-	const hasColumn = (showInline && !!fv && fv.comments.some((c) => c.body)) || !!draft;
+	const hasColumn =
+		!(cfg.isMobile?.() ?? false) && ((showInline && !!fv && fv.comments.some((c) => c.body)) || !!draft);
 
 	const classes: string[] = [];
 	if (hasColumn) classes.push("dc-has");

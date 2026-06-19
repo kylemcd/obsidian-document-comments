@@ -1,7 +1,9 @@
+import type { App, TFile } from "obsidian";
 import { EditorView } from "@codemirror/view";
 import { existingIds } from "../format/parse";
 import { generateId } from "../format/ids";
 import {
+	applyChanges,
 	computeAddComment,
 	computeAppendReply,
 	computeDeleteComment,
@@ -19,6 +21,28 @@ export const addComment = (view: EditorView, from: number, to: number, text: str
 	if (!changes) return null;
 	view.dispatch({ changes, scrollIntoView: false });
 	return id;
+};
+
+/** Write a brand-new comment straight to a file on disk — for surfaces with no
+ *  live CodeMirror view (reading view, and mobile where the margin composer is
+ *  off). Returns the new id, or null if the range produced no change. */
+export const insertCommentInFile = async (
+	app: App,
+	file: TFile,
+	from: number,
+	to: number,
+	text: string,
+	author: string,
+): Promise<string | null> => {
+	let newId: string | null = null;
+	await app.vault.process(file, (data) => {
+		const id = generateId(existingIds(data));
+		const changes = computeAddComment(data, from, to, { id, createdAt: now(), author, text });
+		if (!changes) return data;
+		newId = id;
+		return applyChanges(data, changes);
+	});
+	return newId;
 };
 
 export const appendReply = (view: EditorView, id: string, text: string, author: string): boolean => {
