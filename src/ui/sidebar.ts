@@ -1,4 +1,5 @@
 import { App, Debouncer, ItemView, MarkdownView, Notice, TFile, WorkspaceLeaf, debounce } from "obsidian";
+import { Result } from "better-result";
 import { EditorView } from "@codemirror/view";
 import { ParsedComment } from "../format/types";
 import { anchorRange, parseComments } from "../format/parse";
@@ -255,26 +256,38 @@ export class CommentsSidebarView extends ItemView {
 	/** Apply a computed change set to the active note. Prefer the open editor
 	 *  (keeps edits in its undo history and in sync with unsaved changes);
 	 *  fall back to a direct file write for notes only shown in reading view. */
-	private async edit(compute: (doc: string) => Change[] | null): Promise<void> {
+	private async edit(compute: (doc: string) => Result<Change[], string>): Promise<void> {
 		const file = this.file;
 		if (!file) return;
 		const cm = this.editorViewForFile(file);
 		if (cm) {
-			const changes = compute(cm.state.doc.toString());
-			if (changes) cm.dispatch({ changes });
-			await this.refresh();
+			compute(cm.state.doc.toString()).match({
+				ok: (changes) => {
+					cm.dispatch({ changes });
+					void this.refresh();
+				},
+				err: (message) => new Notice(`Couldn't save the comment: ${message}`),
+			});
 			return;
 		}
-		try {
-			const newData = await this.app.vault.process(file, (data) => {
-				const changes = compute(data);
-				return changes ? applyChanges(data, changes) : data;
-			});
-			await this.refresh(newData);
-		} catch (error) {
-			const message = error instanceof Error ? error.message : "unknown error";
-			new Notice(`Couldn't save the comment: ${message}`);
-		}
+		let computeError: string | undefined;
+		const io = await Result.tryPromise({
+			try: () =>
+				this.app.vault.process(file, (data) => {
+					const result = compute(data);
+					if (result.isErr()) {
+						computeError = result.error;
+						return data;
+					}
+					return applyChanges(data, result.value);
+				}),
+			catch: (e) => (e instanceof Error ? e.message : "unknown error"),
+		});
+		const outcome: Result<string, string> = computeError ? Result.err(computeError) : io;
+		outcome.match({
+			ok: (newData) => void this.refresh(newData),
+			err: (message) => new Notice(`Couldn't save the comment: ${message}`),
+		});
 	}
 
 	// ── Document interplay ─────────────────────────────────────────────────

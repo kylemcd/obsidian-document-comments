@@ -1,4 +1,5 @@
 import { Editor, MarkdownView, Notice, Platform, Plugin, TFile, WorkspaceLeaf, debounce } from "obsidian";
+import { Result } from "better-result";
 import { EditorView } from "@codemirror/view";
 import { commentField } from "./editor/state";
 import { marginPlugin } from "./editor/margin";
@@ -165,7 +166,8 @@ export default class DocCommentsPlugin extends Plugin {
 			// then write through the same editor path so it's a single undo step.
 			const quote = view.state.doc.sliceString(from, to);
 			new CommentModal(this.app, quote, (text) => {
-				addComment(view, from, to, text, this.authorName());
+				const result = addComment(view, from, to, text, this.authorName());
+				if (result.isErr()) new Notice(`Couldn't add the comment: ${result.error}`);
 			}).open();
 			return;
 		}
@@ -212,15 +214,12 @@ export default class DocCommentsPlugin extends Plugin {
 	}
 
 	/** Mobile reading-view create: write to the file (no editor surface) and refresh.
-	 *  Wrapped like every other vault.process call site so a failed write surfaces. */
+	 *  insertCommentInFile already folds I/O + compute failures into the Result. */
 	private async insertReadingComment(file: TFile, from: number, to: number, text: string): Promise<void> {
-		try {
-			await insertCommentInFile(this.app, file, from, to, text, this.authorName());
-			this.scheduleReadingRefresh();
-		} catch (error) {
-			const message = error instanceof Error ? error.message : "unknown error";
-			new Notice(`Couldn't add the comment: ${message}`);
-		}
+		(await insertCommentInFile(this.app, file, from, to, text, this.authorName())).match({
+			ok: () => this.scheduleReadingRefresh(),
+			err: (message) => new Notice(`Couldn't add the comment: ${message}`),
+		});
 	}
 
 	private async toggleComments(): Promise<void> {
@@ -259,19 +258,20 @@ export default class DocCommentsPlugin extends Plugin {
 	/** Reveal the comments sidebar panel, creating it in the right split if needed. */
 	private async activateSidebar(): Promise<void> {
 		const { workspace } = this.app;
-		try {
-			let leaf: WorkspaceLeaf | null = workspace.getLeavesOfType(COMMENTS_VIEW_TYPE)[0] ?? null;
-			if (!leaf) {
-				leaf = workspace.getRightLeaf(false);
-				if (!leaf) return;
-				await leaf.setViewState({ type: COMMENTS_VIEW_TYPE, active: true });
-			}
-			await workspace.revealLeaf(leaf);
-			this.syncSidebarOpen();
-		} catch (error) {
-			const message = error instanceof Error ? error.message : "unknown error";
-			new Notice(`Couldn't open the comments sidebar: ${message}`);
-		}
+		const opened = await Result.tryPromise({
+			try: async () => {
+				let leaf: WorkspaceLeaf | null = workspace.getLeavesOfType(COMMENTS_VIEW_TYPE)[0] ?? null;
+				if (!leaf) {
+					leaf = workspace.getRightLeaf(false);
+					if (!leaf) return;
+					await leaf.setViewState({ type: COMMENTS_VIEW_TYPE, active: true });
+				}
+				await workspace.revealLeaf(leaf);
+				this.syncSidebarOpen();
+			},
+			catch: (e) => (e instanceof Error ? e.message : "unknown error"),
+		});
+		if (opened.isErr()) new Notice(`Couldn't open the comments sidebar: ${opened.error}`);
 	}
 
 	/** Open the sidebar and scroll it to a thread — the escape from a margin card too

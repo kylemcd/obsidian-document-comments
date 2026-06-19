@@ -1,4 +1,5 @@
 import { App, MarkdownView, Notice, setIcon } from "obsidian";
+import { Result } from "better-result";
 import { ParsedComment } from "../format/types";
 import { existingIds, parseComments } from "../format/parse";
 import { generateId } from "../format/ids";
@@ -104,19 +105,27 @@ class ReadingMargin {
 		this.position();
 	}
 
-	private async edit(compute: (doc: string) => Change[] | null): Promise<void> {
+	private async edit(compute: (doc: string) => Result<Change[], string>): Promise<void> {
 		const file = this.view.file;
 		if (!file) return;
-		try {
-			const newData = await this.deps.app.vault.process(file, (data) => {
-				const changes = compute(data);
-				return changes ? applyChanges(data, changes) : data;
-			});
-			await this.refresh(newData);
-		} catch (error) {
-			const message = error instanceof Error ? error.message : "unknown error";
-			new Notice(`Couldn't save the comment: ${message}`);
-		}
+		let computeError: string | undefined;
+		const io = await Result.tryPromise({
+			try: () =>
+				this.deps.app.vault.process(file, (data) => {
+					const result = compute(data);
+					if (result.isErr()) {
+						computeError = result.error;
+						return data;
+					}
+					return applyChanges(data, result.value);
+				}),
+			catch: (e) => (e instanceof Error ? e.message : "unknown error"),
+		});
+		const outcome: Result<string, string> = computeError ? Result.err(computeError) : io;
+		outcome.match({
+			ok: (newData) => void this.refresh(newData),
+			err: (message) => new Notice(`Couldn't save the comment: ${message}`),
+		});
 	}
 
 	private reconcileCards(): void {
@@ -252,22 +261,30 @@ class ReadingMargin {
 	private async insertComment(from: number, to: number, text: string): Promise<void> {
 		const file = this.view.file;
 		if (!file) return;
-		try {
-			const newData = await this.deps.app.vault.process(file, (data) => {
-				const id = generateId(existingIds(data));
-				const changes = computeAddComment(data, from, to, {
-					id,
-					createdAt: new Date().toISOString(),
-					author: this.deps.getAuthor(),
-					text,
-				});
-				return changes ? applyChanges(data, changes) : data;
-			});
-			await this.refresh(newData);
-		} catch (error) {
-			const message = error instanceof Error ? error.message : "unknown error";
-			new Notice(`Couldn't add the comment: ${message}`);
-		}
+		let computeError: string | undefined;
+		const io = await Result.tryPromise({
+			try: () =>
+				this.deps.app.vault.process(file, (data) => {
+					const id = generateId(existingIds(data));
+					const result = computeAddComment(data, from, to, {
+						id,
+						createdAt: new Date().toISOString(),
+						author: this.deps.getAuthor(),
+						text,
+					});
+					if (result.isErr()) {
+						computeError = result.error;
+						return data;
+					}
+					return applyChanges(data, result.value);
+				}),
+			catch: (e) => (e instanceof Error ? e.message : "unknown error"),
+		});
+		const outcome: Result<string, string> = computeError ? Result.err(computeError) : io;
+		outcome.match({
+			ok: (newData) => void this.refresh(newData),
+			err: (message) => new Notice(`Couldn't add the comment: ${message}`),
+		});
 	}
 
 	private clearDraft(): void {

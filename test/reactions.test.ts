@@ -41,7 +41,7 @@ describe("entry + reaction edits", () => {
 	const base = wrap("r1", serializeBody("r1", { ...DATA, reactions: [] }));
 
 	it("edits an entry's text without touching others", () => {
-		const out = applyChanges(base, computeEditEntry(base, "r1", 1, "second edited")!);
+		const out = applyChanges(base, computeEditEntry(base, "r1", 1, "second edited").unwrap());
 		const c = parseComments(out)[0];
 		expect(c.thread).toHaveLength(2);
 		expect(c.thread[0].text).toBe("first");
@@ -49,21 +49,21 @@ describe("entry + reaction edits", () => {
 	});
 
 	it("deletes a reply by index", () => {
-		const c = parseComments(applyChanges(base, computeDeleteEntry(base, "r1", 1)!))[0];
+		const c = parseComments(applyChanges(base, computeDeleteEntry(base, "r1", 1).unwrap()))[0];
 		expect(c.thread).toHaveLength(1);
 		expect(c.thread[0].text).toBe("first");
 	});
 
 	it("toggles a reaction on and off", () => {
-		const on = applyChanges(base, computeToggleReaction(base, "r1", "👍", "kyle")!);
+		const on = applyChanges(base, computeToggleReaction(base, "r1", "👍", "kyle").unwrap());
 		expect(parseComments(on)[0].reactions).toEqual([{ emoji: "👍", authors: ["kyle"] }]);
-		const off = applyChanges(on, computeToggleReaction(on, "r1", "👍", "kyle")!);
+		const off = applyChanges(on, computeToggleReaction(on, "r1", "👍", "kyle").unwrap());
 		expect(parseComments(off)[0].reactions).toEqual([]);
 	});
 
 	it("adds a second author to an existing reaction", () => {
-		const a = applyChanges(base, computeToggleReaction(base, "r1", "❤️", "kyle")!);
-		const b = applyChanges(a, computeToggleReaction(a, "r1", "❤️", "sam")!);
+		const a = applyChanges(base, computeToggleReaction(base, "r1", "❤️", "kyle").unwrap());
+		const b = applyChanges(a, computeToggleReaction(a, "r1", "❤️", "sam").unwrap());
 		expect(parseComments(b)[0].reactions).toEqual([{ emoji: "❤️", authors: ["kyle", "sam"] }]);
 	});
 });

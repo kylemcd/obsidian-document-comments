@@ -1,4 +1,5 @@
-import { setIcon } from "obsidian";
+import { Notice, setIcon } from "obsidian";
+import { Result } from "better-result";
 import { EditorView, PluginValue, ViewPlugin } from "@codemirror/view";
 import { ParsedComment } from "../format/types";
 import { anchorRange, isAnchored } from "../format/parse";
@@ -18,6 +19,12 @@ import {
 import { cssEscape } from "../util/css";
 
 const CARD_GAP = 8;
+
+/** Editor-margin writes go through a live CodeMirror view (no I/O), so the only
+ *  failure is a compute error — surface it as a notice rather than swallowing it. */
+const notifyErr = (result: Result<unknown, string>): void => {
+	if (result.isErr()) new Notice(`Couldn't save the comment: ${result.error}`);
+};
 const ORPHAN_TOP = 8;
 
 /**
@@ -65,12 +72,12 @@ class MarginView implements PluginValue {
 			onResize: () => this.reposition(),
 			animateLayout: () => this.animateLayout(),
 			revealComposer: (id) => this.revealComposer(id),
-			reply: (id, text) => void appendReply(view, id, text, this.cb.getAuthor()),
-			setResolved: (id, resolved) => void setResolved(view, id, resolved),
-			remove: (id) => void deleteComment(view, id),
-			editEntry: (id, index, text) => void editEntry(view, id, index, text),
-			deleteEntry: (id, index) => void deleteEntry(view, id, index),
-			toggleReaction: (id, emoji) => void toggleReaction(view, id, emoji, this.cb.getAuthor()),
+			reply: (id, text) => notifyErr(appendReply(view, id, text, this.cb.getAuthor())),
+			setResolved: (id, resolved) => notifyErr(setResolved(view, id, resolved)),
+			remove: (id) => notifyErr(deleteComment(view, id)),
+			editEntry: (id, index, text) => notifyErr(editEntry(view, id, index, text)),
+			deleteEntry: (id, index) => notifyErr(deleteEntry(view, id, index)),
+			toggleReaction: (id, emoji) => notifyErr(toggleReaction(view, id, emoji, this.cb.getAuthor())),
 			openInSidebar: (id) => view.state.facet(commentConfig).openInSidebar?.(id),
 		};
 
@@ -269,7 +276,7 @@ class MarginView implements PluginValue {
 		const submit = () => {
 			const text = textarea.value.trim();
 			const draft = this.view.state.field(draftField, false);
-			if (text && draft) addComment(this.view, draft.from, draft.to, text, this.cb.getAuthor());
+			if (text && draft) notifyErr(addComment(this.view, draft.from, draft.to, text, this.cb.getAuthor()));
 			this.view.dispatch({ effects: clearDraft.of(null) });
 		};
 

@@ -1,3 +1,4 @@
+import { Result } from "better-result";
 import { CommentData, ParsedComment, Reaction } from "../format/types";
 import { parseComments } from "../format/parse";
 import { closeMarker, openMarker, serializeBody } from "../format/serialize";
@@ -16,10 +17,16 @@ export type NewCommentInput = {
 	text: string;
 };
 
-/** Wrap [from,to] with anchor markers and append a body block after the block. */
-export const computeAddComment = (doc: string, from: number, to: number, input: NewCommentInput): Change[] | null => {
+/** Wrap [from,to] with anchor markers and append a body block after the block.
+ *  Errs (rather than returning null) so the caller sees why nothing was written. */
+export const computeAddComment = (
+	doc: string,
+	from: number,
+	to: number,
+	input: NewCommentInput,
+): Result<Change[], string> => {
 	if (to < from) [from, to] = [to, from];
-	if (to === from) return null;
+	if (to === from) return Result.err("Select some text to comment on.");
 
 	const quote = doc.slice(from, to);
 	const data: CommentData = {
@@ -31,30 +38,30 @@ export const computeAddComment = (doc: string, from: number, to: number, input: 
 		reactions: [],
 	};
 	const paraEnd = blockEnd(doc, to);
-	return [
+	return Result.ok([
 		{ from, to: from, insert: openMarker(input.id) },
 		{ from: to, to, insert: closeMarker(input.id) },
 		{ from: paraEnd, to: paraEnd, insert: "\n" + serializeBody(input.id, data) },
-	];
+	]);
 };
 
 export const computeAppendReply = (
 	doc: string,
 	id: string,
 	entry: { createdAt: string; author: string; text: string },
-): Change[] | null => {
+): Result<Change[], string> => {
 	return replaceBody(doc, id, (c) => ({
 		...toData(c),
 		thread: [...c.thread, { author: entry.author, timestamp: entry.createdAt, text: entry.text }],
 	}));
 };
 
-export const computeSetResolved = (doc: string, id: string, resolved: boolean): Change[] | null => {
+export const computeSetResolved = (doc: string, id: string, resolved: boolean): Result<Change[], string> => {
 	return replaceBody(doc, id, (c) => ({ ...toData(c), status: resolved ? "resolved" : "open" }));
 };
 
 /** Replace the text of the i-th message in a thread. */
-export const computeEditEntry = (doc: string, id: string, index: number, text: string): Change[] | null => {
+export const computeEditEntry = (doc: string, id: string, index: number, text: string): Result<Change[], string> => {
 	return replaceBody(doc, id, (c) => ({
 		...toData(c),
 		thread: c.thread.map((e, i) => (i === index ? { ...e, text } : e)),
@@ -62,7 +69,7 @@ export const computeEditEntry = (doc: string, id: string, index: number, text: s
 };
 
 /** Remove the i-th message from a thread (used for replies). */
-export const computeDeleteEntry = (doc: string, id: string, index: number): Change[] | null => {
+export const computeDeleteEntry = (doc: string, id: string, index: number): Result<Change[], string> => {
 	return replaceBody(doc, id, (c) => ({
 		...toData(c),
 		thread: c.thread.filter((_, i) => i !== index),
@@ -70,14 +77,20 @@ export const computeDeleteEntry = (doc: string, id: string, index: number): Chan
 };
 
 /** Add/remove the author from an emoji reaction. */
-export const computeToggleReaction = (doc: string, id: string, emoji: string, author: string): Change[] | null => {
+export const computeToggleReaction = (
+	doc: string,
+	id: string,
+	emoji: string,
+	author: string,
+): Result<Change[], string> => {
 	return replaceBody(doc, id, (c) => ({ ...toData(c), reactions: toggleReactions(c.reactions, emoji, author) }));
 };
 
-const replaceBody = (doc: string, id: string, mutate: (c: ParsedComment) => CommentData): Change[] | null => {
+const replaceBody = (doc: string, id: string, mutate: (c: ParsedComment) => CommentData): Result<Change[], string> => {
 	const c = parseComments(doc).find((x) => x.id === id);
-	if (!c || !c.body) return null;
-	return [{ from: c.body.from, to: c.body.to, insert: serializeBody(id, mutate(c)) }];
+	if (!c) return Result.err("Comment not found.");
+	if (!c.body) return Result.err("Comment has no body to update.");
+	return Result.ok([{ from: c.body.from, to: c.body.to, insert: serializeBody(id, mutate(c)) }]);
 };
 
 const toData = (c: ParsedComment): CommentData => {
@@ -104,9 +117,9 @@ const toggleReactions = (reactions: Reaction[], emoji: string, author: string): 
 	return out.filter((r) => r.authors.length > 0);
 };
 
-export const computeDeleteComment = (doc: string, id: string): Change[] | null => {
+export const computeDeleteComment = (doc: string, id: string): Result<Change[], string> => {
 	const c = parseComments(doc).find((x) => x.id === id);
-	if (!c) return null;
+	if (!c) return Result.err("Comment not found.");
 	const ranges: Change[] = [];
 	if (c.open) ranges.push({ from: c.open.from, to: c.open.to, insert: "" });
 	if (c.close) ranges.push({ from: c.close.from, to: c.close.to, insert: "" });
@@ -115,9 +128,9 @@ export const computeDeleteComment = (doc: string, id: string): Change[] | null =
 		if (from > 0 && doc.charCodeAt(from - 1) === 10) from -= 1;
 		ranges.push({ from, to: c.body.to, insert: "" });
 	}
-	if (ranges.length === 0) return null;
+	if (ranges.length === 0) return Result.err("Nothing to delete.");
 	ranges.sort((a, b) => a.from - b.from);
-	return ranges;
+	return Result.ok(ranges);
 };
 
 /** Apply changes (original coordinates, CM semantics) — used by tests. */

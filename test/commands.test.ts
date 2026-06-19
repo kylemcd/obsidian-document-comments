@@ -27,9 +27,10 @@ describe("insertCommentInFile", () => {
 			(s) => (doc = s),
 		);
 
-		const id = await insertCommentInFile(app, {} as TFile, from, to, "Thursday?", "kyle");
+		const result = await insertCommentInFile(app, {} as TFile, from, to, "Thursday?", "kyle");
 
-		expect(id).toBeTruthy();
+		expect(result.isOk()).toBe(true);
+		const id = result.unwrap();
 		const comments = parseComments(doc);
 		expect(comments).toHaveLength(1);
 		expect(comments[0]!.id).toBe(id);
@@ -38,16 +39,16 @@ describe("insertCommentInFile", () => {
 		expect(comments[0]!.thread[0]!.author).toBe("kyle");
 	});
 
-	it("returns null and writes nothing for an empty range", async () => {
+	it("errs and writes nothing for an empty range", async () => {
 		let doc = "unchanged text";
 		const app = fakeApp(
 			() => doc,
 			(s) => (doc = s),
 		);
 
-		const id = await insertCommentInFile(app, {} as TFile, 3, 3, "ignored", "kyle");
+		const result = await insertCommentInFile(app, {} as TFile, 3, 3, "ignored", "kyle");
 
-		expect(id).toBeNull();
+		expect(result.isErr()).toBe(true);
 		expect(doc).toBe("unchanged text");
 	});
 });

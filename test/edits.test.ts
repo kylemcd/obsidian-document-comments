@@ -20,7 +20,7 @@ function add(): string {
 		createdAt: "2026-06-17T10:00:00.000Z",
 		author: "kyle",
 		text: "I thought we agreed Thursday?",
-	})!;
+	}).unwrap();
 	return applyChanges(DOC, changes);
 }
 
@@ -45,8 +45,9 @@ describe("computeAddComment", () => {
 		expect(stripComments(out)).toContain("We should ship on Friday regardless of the QA timeline.");
 	});
 
-	it("returns null for an empty selection", () => {
-		expect(computeAddComment(DOC, FROM, FROM, { id: "x", createdAt: "t", author: "a", text: "b" })).toBeNull();
+	it("errs for an empty selection", () => {
+		const result = computeAddComment(DOC, FROM, FROM, { id: "x", createdAt: "t", author: "a", text: "b" });
+		expect(result.isErr()).toBe(true);
 	});
 });
 
@@ -58,7 +59,7 @@ describe("reply / resolve", () => {
 				createdAt: "2026-06-17T11:00:00.000Z",
 				author: "sam",
 				text: "Thursday is better",
-			})!,
+			}).unwrap(),
 		);
 		const c = parseComments(out)[0];
 		expect(c.thread).toHaveLength(2);
@@ -66,17 +67,21 @@ describe("reply / resolve", () => {
 	});
 
 	it("toggles resolved status", () => {
-		const resolved = applyChanges(add(), computeSetResolved(add(), "k3f9", true)!);
+		const resolved = applyChanges(add(), computeSetResolved(add(), "k3f9", true).unwrap());
 		expect(parseComments(resolved)[0].status).toBe("resolved");
-		const reopened = applyChanges(resolved, computeSetResolved(resolved, "k3f9", false)!);
+		const reopened = applyChanges(resolved, computeSetResolved(resolved, "k3f9", false).unwrap());
 		expect(parseComments(reopened)[0].status).toBe("open");
+	});
+
+	it("errs when the comment id is unknown", () => {
+		expect(computeSetResolved(add(), "nope", true).isErr()).toBe(true);
 	});
 });
 
 describe("computeDeleteComment", () => {
 	it("round-trips back to the original document", () => {
 		const out = add();
-		const restored = applyChanges(out, computeDeleteComment(out, "k3f9")!);
+		const restored = applyChanges(out, computeDeleteComment(out, "k3f9").unwrap());
 		expect(restored).toBe(DOC);
 	});
 });
