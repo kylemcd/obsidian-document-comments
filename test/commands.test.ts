@@ -51,4 +51,25 @@ describe("insertCommentInFile", () => {
 		expect(result.isErr()).toBe(true);
 		expect(doc).toBe("unchanged text");
 	});
+
+	it("errs with the I/O reason even after the mutator ran (I/O error wins over the provisional ok)", async () => {
+		const doc = "We should ship on Friday.\n";
+		const from = doc.indexOf("ship on Friday");
+		const to = from + "ship on Friday".length;
+		const app = {
+			vault: {
+				// Run the mutator (so the compute sets a provisional ok(id)) and THEN fail
+				// the write — the folded Result must surface the I/O error, not the stale ok.
+				process: async (_file: TFile, fn: (data: string) => string) => {
+					fn(doc);
+					throw new Error("disk full");
+				},
+			},
+		} as unknown as App;
+
+		const result = await insertCommentInFile(app, {} as TFile, from, to, "hi", "kyle");
+
+		expect(result.isErr()).toBe(true);
+		if (result.isErr()) expect(result.error).toBe("disk full");
+	});
 });
