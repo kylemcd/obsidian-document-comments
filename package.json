@@ -29,7 +29,7 @@
 		"eslint-plugin-obsidianmd": "^0.3.0",
 		"happy-dom": "^20.10.6",
 		"obsidian": "^1.5.7",
-		"oxfmt": "^0.55.0",
+		"oxfmt": "^0.56.0",
 		"oxlint": "^1.71.0",
 		"typescript": "^6.0.3",
 		"typescript-eslint": "^8.61.1",
