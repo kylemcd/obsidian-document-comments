@@ -36,7 +36,12 @@ body {
 /* Same treatment for the reading view (separate render path, same math). The extra
    `.markdown-preview-view` step out-specifies core's three-class readable-line rule
    (.markdown-preview-view.is-readable-line-width .markdown-preview-sizer). */
-.markdown-reading-view.dc-has {
+/* `dc-margin` (present whenever the floating column renders, including a lone draft
+   composer) establishes the containing block for the absolutely positioned margin.
+   Kept separate from `dc-has` (the sizer cap) so opening a draft doesn't reflow the
+   text — see issue #15. The editor doesn't need this: CodeMirror already forces
+   `.cm-editor` to position: relative. */
+.markdown-reading-view.dc-margin {
 	position: relative;
 }
 .markdown-reading-view.dc-has .markdown-preview-view .markdown-preview-sizer {

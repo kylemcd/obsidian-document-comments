@@ -3,6 +3,9 @@
 All notable changes to **Document Comments**. The release workflow uses the section
 matching the pushed tag as that GitHub release's notes, so add an entry here before tagging.
 
+## 0.1.5
+- Fixed the document reflowing (shifting left, then re-centering) every time you started or finished a comment. The new-comment composer is a floating overlay and no longer reserves the margin column, so the text stays put — most noticeable when the comments sidebar is open and the inline column isn't shown ([#15](https://github.com/kylemcd/obsidian-document-comments/issues/15)).
+
 ## 0.1.4
 - **Mobile support** — Document Comments now works on Obsidian mobile. There's no floating margin on phones and tablets; instead the in-text highlights mark commented text and you read, reply, and resolve through the **"All discussions" sidebar**, with new comments composed in a quick dialog. It's the same inline storage, so a note's comments are identical across desktop and mobile.
 - Saving a comment now reports a clear reason if it ever fails, instead of occasionally failing silently.
