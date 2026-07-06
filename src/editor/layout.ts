@@ -1,7 +1,6 @@
 import { EditorState, StateField } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { commentField } from "./state";
-import { draftField } from "./draft";
 import { commentConfig } from "./config";
 
 // Defined ABOVE editorLayoutField: StateField.define evaluates `provide` EAGERLY
@@ -11,13 +10,15 @@ import { commentConfig } from "./config";
 const editorLayoutClasses = (state: EditorState): string => {
 	const cfg = state.facet(commentConfig);
 	const fv = state.field(commentField, false);
-	const draft = state.field(draftField, false) ?? null;
-	// `dc-has` mirrors the inline column: present only when cards actually render
-	// (comments shown, sidebar not hosting them) or a draft composer is open. On
-	// mobile there's no floating column at all, so never reserve its width.
-	const showInline = cfg.showComments() && !cfg.sidebarOpen();
-	const hasColumn =
-		!(cfg.isMobile?.() ?? false) && ((showInline && !!fv && fv.comments.some((c) => c.body)) || !!draft);
+	// `dc-has` mirrors the inline column: present only when persistent cards
+	// actually render (comments shown, sidebar not hosting them, not mobile). It is
+	// deliberately NOT tied to the transient draft composer — reserving the column
+	// for a draft toggled the sizer's width cap on when a composer opened and off
+	// when it closed, reflowing (and re-centering) the whole document on every new
+	// comment (issue #15). The composer is a floating overlay, so with no cap it just
+	// sits over the right-hand whitespace; the text only shifts once a card persists.
+	const showInline = cfg.showComments() && !cfg.sidebarOpen() && !(cfg.isMobile?.() ?? false);
+	const hasColumn = showInline && !!fv && fv.comments.some((c) => c.body);
 
 	const classes: string[] = [];
 	if (hasColumn) classes.push("dc-has");

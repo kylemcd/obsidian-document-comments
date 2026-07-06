@@ -10,7 +10,7 @@ import { describe, expect, test } from "vitest";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { commentField } from "../src/editor/state";
-import { draftField } from "../src/editor/draft";
+import { draftField, setDraft } from "../src/editor/draft";
 import { commentConfig } from "../src/editor/config";
 import { editorLayoutField } from "../src/editor/layout";
 
@@ -89,5 +89,27 @@ describe("editor extensions open every note without crashing", () => {
 		);
 		expect(withComment).toContain("dc-has"); // a comment reserves the column
 		expect(withComment).toContain("dc-highlights");
+	});
+
+	// Regression for issue #15: opening the transient "new comment" composer must
+	// NOT reserve the column. It used to toggle `dc-has`, which caps the sizer
+	// width and reflows/re-centers the whole document every time you start (and
+	// finish) a comment. The floating composer overlays the gutter instead.
+	test("an open draft does not reserve the column (no reflow)", () => {
+		const parent = document.createElement("div");
+		document.body.appendChild(parent);
+		const view = new EditorView({
+			state: EditorState.create({
+				doc: "Just plain text.\nNo comments here.\n",
+				extensions: [commentField, draftField, config, editorLayoutField],
+			}),
+			parent,
+		});
+		view.dispatch({ effects: setDraft.of({ from: 0, to: 4 }) });
+		view.requestMeasure();
+		const className = view.dom.className;
+		view.destroy();
+		expect(className).not.toContain("dc-has"); // draft is a floating overlay, no column reserved
+		expect(className).toContain("dc-highlights"); // highlights still follow the master toggle
 	});
 });
