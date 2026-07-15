@@ -165,7 +165,11 @@ class ReadingMargin {
 		// positioned composer has a containing block (unlike the editor, CodeMirror
 		// doesn't force position on the reading-view element). The composer then floats
 		// over the right gutter without shifting the text.
-		const hasCards = this.comments.length > 0;
+		// Only a comment whose card actually renders reserves the column. A resolved
+		// comment's card is `display:none` while resolved are hidden (dc-hide-resolved),
+		// so counting it kept the empty column around once every comment was resolved
+		// (issue #30) — mirror that visibility, exactly as the editor layout does.
+		const hasCards = this.comments.some((c) => this.deps.showResolved() || c.status !== "resolved");
 		this.readingView.toggleClass("dc-has", hasCards);
 		this.readingView.toggleClass("dc-margin", hasCards || !!this.draft);
 		// Highlights follow the master toggle alone, so they persist while the

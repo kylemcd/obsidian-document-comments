@@ -22,8 +22,9 @@ const editorLayoutClasses = (state: EditorState): string => {
 	// comment's card is `display:none` while resolved are hidden (dc-hide-resolved),
 	// so counting it kept the column — and its reserved width — around with nothing
 	// in it once every comment was resolved (issue #30). Mirror that visibility here.
-	const cardVisible = (status: string): boolean => cfg.showResolved() || status !== "resolved";
-	const hasColumn = showInline && !!fv && fv.comments.some((c) => c.body && cardVisible(c.status));
+	// The reading-view margin applies the same guard (src/reading/margin.ts).
+	const hasColumn =
+		showInline && !!fv && fv.comments.some((c) => c.body && (cfg.showResolved() || c.status !== "resolved"));
 
 	const classes: string[] = [];
 	if (hasColumn) classes.push("dc-has");
