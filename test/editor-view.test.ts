@@ -91,6 +91,40 @@ describe("editor extensions open every note without crashing", () => {
 		expect(withComment).toContain("dc-highlights");
 	});
 
+	// Regression for issue #30: once every comment is resolved and resolved
+	// comments are hidden, no card renders — so the column must not stay reserved.
+	test("all comments resolved + resolved hidden does not reserve the column", () => {
+		const hideResolved = commentConfig.of({
+			author: () => "me",
+			showComments: () => true,
+			showResolved: () => false,
+			sidebarOpen: () => false,
+		});
+		const openWith = (doc: string, cfg: typeof hideResolved): string => {
+			const parent = document.createElement("div");
+			document.body.appendChild(parent);
+			const view = new EditorView({
+				state: EditorState.create({ doc, extensions: [commentField, draftField, cfg, editorLayoutField] }),
+				parent,
+			});
+			view.requestMeasure();
+			const className = view.dom.className;
+			view.destroy();
+			return className;
+		};
+		const resolvedDoc = [
+			"Ship on <!--c:aaa-->Friday<!--/c:aaa--> regardless.",
+			'<!--co:aaa by:me at:2026-06-17T00:00:00.000Z status:resolved quote:"Friday"',
+			"me: done",
+			"-->",
+			"",
+		].join("\n");
+		// Sanity: with resolved shown, the (visible) resolved card still reserves the column.
+		expect(openWith(resolvedDoc, config)).toContain("dc-has");
+		// With resolved hidden, the card is display:none, so no column is reserved.
+		expect(openWith(resolvedDoc, hideResolved)).not.toContain("dc-has");
+	});
+
 	// Regression for issue #15: opening the transient "new comment" composer must
 	// NOT reserve the column. It used to toggle `dc-has`, which caps the sizer
 	// width and reflows/re-centers the whole document every time you start (and
