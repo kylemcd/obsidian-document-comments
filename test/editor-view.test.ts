@@ -123,6 +123,21 @@ describe("editor extensions open every note without crashing", () => {
 		expect(openWith(resolvedDoc, config)).toContain("dc-has");
 		// With resolved hidden, the card is display:none, so no column is reserved.
 		expect(openWith(resolvedDoc, hideResolved)).not.toContain("dc-has");
+
+		// Mixed: one open + one resolved comment, resolved hidden. The open card
+		// still renders, so the column MUST stay reserved — guards the predicate
+		// against being written as `.every(...)` instead of `.some(...)`.
+		const mixedDoc = [
+			"Ship on <!--c:aaa-->Friday<!--/c:aaa--> and <!--c:bbb-->Monday<!--/c:bbb--> too.",
+			'<!--co:aaa by:me at:2026-06-17T00:00:00.000Z status:resolved quote:"Friday"',
+			"me: done",
+			"-->",
+			'<!--co:bbb by:me at:2026-06-17T00:00:01.000Z status:open quote:"Monday"',
+			"me: still open",
+			"-->",
+			"",
+		].join("\n");
+		expect(openWith(mixedDoc, hideResolved)).toContain("dc-has");
 	});
 
 	// Regression for issue #15: opening the transient "new comment" composer must
