@@ -106,7 +106,7 @@ body {
 	width: var(--dc-margin-width);
 	overflow: hidden;
 	pointer-events: none;
-	z-index: 5;
+	z-index: var(--layer-popover, 30);
 }
 /* Pin the column right after the readable-width text (CSS-only, so it never
    jumps on focus). Clamped so it can't push off the right edge on narrow panes.
@@ -448,6 +448,7 @@ body {
 .doc-comment-card.is-draft {
 	border-color: var(--interactive-accent);
 	box-shadow: var(--shadow-l);
+	z-index: 3;
 }
 .doc-comment-card.is-draft .dc-field {
 	margin-top: 0;
@@ -566,4 +567,3 @@ body {
 	min-height: 5em;
 	resize: vertical;
 }
-
