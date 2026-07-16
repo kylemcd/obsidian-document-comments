@@ -1,7 +1,7 @@
 {
 	"id": "document-comments",
 	"name": "Document Comments",
-	"version": "0.1.5",
+	"version": "0.1.6",
 	"minAppVersion": "1.7.2",
 	"description": "Notion-style margin comments stored inline in your markdown, so agents and other tools can read them too.",
 	"author": "Kyle McDonald",
