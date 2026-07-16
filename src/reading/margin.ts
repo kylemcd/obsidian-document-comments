@@ -16,6 +16,7 @@ import {
 	computeToggleReaction,
 } from "../editor/edits";
 import { cssEscape } from "../util/css";
+import { visibleHighlightId } from "../ui/highlight-target";
 
 const CARD_GAP = 8;
 
@@ -406,12 +407,8 @@ class ReadingMargin {
 	};
 
 	private onClick = (e: MouseEvent): void => {
-		const span = (e.target as HTMLElement).closest(".doc-comment-span");
-		if (!(span instanceof HTMLElement)) return;
-		const id = span?.getAttribute("data-cid");
+		const id = visibleHighlightId(e.target, this.deps.showComments(), this.deps.showResolved());
 		if (!id) return;
-		if (!this.deps.showComments()) return;
-		if (span.classList.contains("is-resolved") && !this.deps.showResolved()) return;
 		e.preventDefault();
 		this.deps.openInSidebar?.(id);
 	};

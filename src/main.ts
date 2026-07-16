@@ -12,6 +12,7 @@ import { ReadingDeps, ReadingMarginManager } from "./reading/margin";
 import { COMMENTS_VIEW_TYPE, CommentsSidebarView, SidebarDeps } from "./ui/sidebar";
 import { CommentModal } from "./ui/comment-modal";
 import { DEFAULT_SETTINGS, DocCommentsSettings, DocCommentsSettingTab } from "./settings";
+import { visibleHighlightId } from "./ui/highlight-target";
 
 export default class DocCommentsPlugin extends Plugin {
 	settings: DocCommentsSettings = { ...DEFAULT_SETTINGS };
@@ -66,6 +67,7 @@ export default class DocCommentsPlugin extends Plugin {
 			getAuthor: () => this.authorName(),
 		};
 		this.registerView(COMMENTS_VIEW_TYPE, (leaf) => new CommentsSidebarView(leaf, sidebarDeps));
+		if (Platform.isMobile) this.registerDomEvent(activeDocument, "click", this.onMobileHighlightClick, true);
 
 		this.registerMarkdownPostProcessor((el, ctx) => {
 			highlightPostProcessor(el, ctx);
@@ -280,6 +282,13 @@ export default class DocCommentsPlugin extends Plugin {
 		await this.activateSidebar();
 		await this.sidebarView()?.revealComment(id);
 	}
+
+	private onMobileHighlightClick = (event: MouseEvent): void => {
+		const id = visibleHighlightId(event.target, this.settings.showComments, this.settings.showResolved);
+		if (!id) return;
+		event.preventDefault();
+		void this.revealComment(id);
+	};
 
 	/** The live sidebar view instance, if the panel is open. */
 	private sidebarView(): CommentsSidebarView | null {
