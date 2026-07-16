@@ -25,7 +25,9 @@ describe("reading-view highlight post-processor", () => {
 		const el = document.createElement("p");
 		el.textContent = "We ship on Friday regardless.";
 		highlightPostProcessor(el, ctxFor(doc, 0, 0));
-		expect(el.querySelector(".doc-comment-span[data-cid='p1']")?.textContent).toBe("Friday");
+		const span = el.querySelector(".doc-comment-span[data-cid='p1']");
+		expect(span?.textContent).toBe("Friday");
+		expect(span?.getAttribute("title")).toBe("me: ok");
 	});
 
 	test("wraps a comment anchor that lands inside a table cell", () => {
