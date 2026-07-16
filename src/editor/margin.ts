@@ -7,6 +7,7 @@ import { commentField } from "./state";
 import { commentConfig } from "./config";
 import { clearDraft, draftField } from "./draft";
 import { Card, CardCallbacks, CardView, cardSignature } from "../ui/card";
+import { visibleHighlightId } from "../ui/highlight-target";
 import {
 	addComment,
 	appendReply,
@@ -370,13 +371,9 @@ class MarginView implements PluginValue {
 	};
 
 	private onContentClick = (e: MouseEvent): void => {
-		const span = (e.target as HTMLElement).closest(".doc-comment-span");
-		if (!(span instanceof HTMLElement)) return;
-		const id = span?.getAttribute("data-cid");
-		if (!id) return;
 		const cfg = this.view.state.facet(commentConfig);
-		if (!cfg.showComments()) return;
-		if (span.classList.contains("is-resolved") && !cfg.showResolved()) return;
+		const id = visibleHighlightId(e.target, cfg.showComments(), cfg.showResolved());
+		if (!id) return;
 		e.preventDefault();
 		cfg.openInSidebar?.(id);
 	};

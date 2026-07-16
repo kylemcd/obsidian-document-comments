@@ -67,6 +67,7 @@ body {
 	background-color: transparent;
 	border-bottom-color: transparent;
 	cursor: text;
+	pointer-events: none;
 }
 /* Likewise drop resolved highlights when resolved comments are hidden. */
 .cm-editor.dc-hide-resolved .doc-comment-span.is-resolved,
@@ -74,6 +75,7 @@ body {
 	background-color: transparent;
 	border-bottom-color: transparent;
 	cursor: text;
+	pointer-events: none;
 }
 .doc-comment-span.is-active {
 	background-color: var(--dc-highlight-bg-active);
