@@ -9,6 +9,25 @@ import { describe, expect, test } from "vitest";
 import type { MarkdownPostProcessorContext } from "obsidian";
 import { highlightPostProcessor } from "../src/reading/highlight";
 
+Node.prototype.createSpan ??= function (o?: string | { cls?: string; text?: string; attr?: Record<string, string> }) {
+	const el = document.createElement("span");
+	if (typeof o === "string") {
+		el.className = o;
+	} else if (o) {
+		if (o.cls) el.className = o.cls;
+		if (o.text) el.textContent = o.text;
+		for (const [key, value] of Object.entries(o.attr ?? {})) {
+			el.setAttribute(key, value);
+		}
+	}
+	this.appendChild(el);
+	return el;
+};
+
+Node.prototype.detach ??= function () {
+	this.parentNode?.removeChild(this);
+};
+
 // Minimal context: report the block's source + line span, like Obsidian does.
 const ctxFor = (text: string, lineStart: number, lineEnd: number): MarkdownPostProcessorContext =>
 	({ getSectionInfo: () => ({ text, lineStart, lineEnd }) }) as unknown as MarkdownPostProcessorContext;
