@@ -85,6 +85,7 @@ class ReadingMargin {
 		this.readingView.addEventListener("mouseover", this.onMouseOver);
 		this.readingView.addEventListener("mouseout", this.onMouseOut);
 		this.readingView.addEventListener("mousedown", this.onMouseDown);
+		this.readingView.addEventListener("click", this.onClick);
 	}
 
 	async refresh(text?: string): Promise<void> {
@@ -404,6 +405,17 @@ class ReadingMargin {
 		if (id) this.setActive(id);
 	};
 
+	private onClick = (e: MouseEvent): void => {
+		const span = (e.target as HTMLElement).closest(".doc-comment-span");
+		if (!(span instanceof HTMLElement)) return;
+		const id = span?.getAttribute("data-cid");
+		if (!id) return;
+		if (!this.deps.showComments()) return;
+		if (span.classList.contains("is-resolved") && !this.deps.showResolved()) return;
+		e.preventDefault();
+		this.deps.openInSidebar?.(id);
+	};
+
 	destroy(): void {
 		this.clearDraft();
 		this.scroller.removeEventListener("scroll", this.scrollHandler);
@@ -411,6 +423,7 @@ class ReadingMargin {
 		this.readingView.removeEventListener("mouseover", this.onMouseOver);
 		this.readingView.removeEventListener("mouseout", this.onMouseOut);
 		this.readingView.removeEventListener("mousedown", this.onMouseDown);
+		this.readingView.removeEventListener("click", this.onClick);
 		// The container we own goes away; the state classes sit on Obsidian's
 		// reading-view element, so clear them explicitly to avoid leaving it capped.
 		this.readingView.removeClasses(["dc-has", "dc-margin", "dc-highlights", "dc-hide-resolved"]);

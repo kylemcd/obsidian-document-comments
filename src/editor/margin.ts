@@ -85,6 +85,7 @@ class MarginView implements PluginValue {
 		this.resizeObserver = new ResizeObserver(() => this.requestReposition());
 		this.resizeObserver.observe(view.scrollDOM);
 		view.contentDOM.addEventListener("mousedown", this.onContentMouseDown);
+		view.contentDOM.addEventListener("click", this.onContentClick);
 		view.contentDOM.addEventListener("mouseover", this.onContentMouseOver);
 		view.contentDOM.addEventListener("mouseout", this.onContentMouseOut);
 
@@ -127,6 +128,7 @@ class MarginView implements PluginValue {
 		this.view.scrollDOM.removeEventListener("scroll", this.scrollHandler);
 		this.resizeObserver.disconnect();
 		this.view.contentDOM.removeEventListener("mousedown", this.onContentMouseDown);
+		this.view.contentDOM.removeEventListener("click", this.onContentClick);
 		this.view.contentDOM.removeEventListener("mouseover", this.onContentMouseOver);
 		this.view.contentDOM.removeEventListener("mouseout", this.onContentMouseOut);
 		this.removeDraftOutside();
@@ -365,6 +367,18 @@ class MarginView implements PluginValue {
 		const span = (e.target as HTMLElement).closest(".doc-comment-span");
 		const id = span?.getAttribute("data-cid");
 		if (id) this.setActive(id);
+	};
+
+	private onContentClick = (e: MouseEvent): void => {
+		const span = (e.target as HTMLElement).closest(".doc-comment-span");
+		if (!(span instanceof HTMLElement)) return;
+		const id = span?.getAttribute("data-cid");
+		if (!id) return;
+		const cfg = this.view.state.facet(commentConfig);
+		if (!cfg.showComments()) return;
+		if (span.classList.contains("is-resolved") && !cfg.showResolved()) return;
+		e.preventDefault();
+		cfg.openInSidebar?.(id);
 	};
 
 	private onContentMouseOver = (e: MouseEvent): void => {

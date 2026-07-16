@@ -2,6 +2,7 @@ import { EditorState, Range, RangeSet, StateField } from "@codemirror/state";
 import { Decoration, DecorationSet, EditorView } from "@codemirror/view";
 import { ParsedComment } from "../format/types";
 import { anchorRange, parseComments } from "../format/parse";
+import { commentPreview } from "../format/preview";
 
 export type CommentFieldValue = {
 	comments: ParsedComment[];
@@ -64,7 +65,10 @@ const compute = (state: EditorState): CommentFieldValue => {
 			// a Live-Preview table (.cm-table-widget, a self-contained nested editor):
 			// the underlying text is hidden, so the highlight can't render there.
 			const cls = c.status === "resolved" ? "doc-comment-span is-resolved" : "doc-comment-span";
-			decoRanges.push(Decoration.mark({ class: cls, attributes: { "data-cid": c.id } }).range(r.from, r.to));
+			const attributes: Record<string, string> = { "data-cid": c.id };
+			const preview = commentPreview(c);
+			if (preview) attributes.title = preview;
+			decoRanges.push(Decoration.mark({ class: cls, attributes }).range(r.from, r.to));
 		}
 	}
 
