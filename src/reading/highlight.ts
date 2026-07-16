@@ -77,8 +77,10 @@ const wrapFirstMatch = (root: HTMLElement, needle: string, id: string, resolved:
 			const range = doc.createRange();
 			range.setStart(node, idx);
 			range.setEnd(node, idx + needle.length);
-			const span = doc.createElement("span");
-			span.className = resolved ? "doc-comment-span is-resolved" : "doc-comment-span";
+			const span = root.createSpan({
+				cls: resolved ? "doc-comment-span is-resolved" : "doc-comment-span",
+			});
+			span.detach();
 			span.setAttribute("data-cid", id);
 			try {
 				range.surroundContents(span);

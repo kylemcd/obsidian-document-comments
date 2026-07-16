@@ -206,8 +206,8 @@ class ReadingMargin {
 	/** Show an inline draft composer for a new comment (Reading-view "Add"). */
 	showDraft(from: number, to: number, range: Range): void {
 		this.clearDraft();
-		const span = this.scroller.ownerDocument.createElement("span");
-		span.className = "doc-comment-span dc-draft";
+		const span = this.scroller.createSpan({ cls: "doc-comment-span dc-draft" });
+		span.detach();
 		try {
 			range.surroundContents(span);
 		} catch {
