@@ -49,6 +49,43 @@ describe("computeAddComment", () => {
 		const result = computeAddComment(DOC, FROM, FROM, { id: "x", createdAt: "t", author: "a", text: "b" });
 		expect(result.isErr()).toBe(true);
 	});
+
+	it("places markers outside inline-code backticks", () => {
+		const doc = "| What |\n| --- |\n| `Spinner` |";
+		const from = doc.indexOf("Spinner");
+		const out = applyChanges(
+			doc,
+			computeAddComment(doc, from, from + "Spinner".length, {
+				id: "code1",
+				createdAt: "t",
+				author: "a",
+				text: "b",
+			}).unwrap(),
+		);
+
+		expect(out).toContain("<!--c:code1-->`Spinner`<!--/c:code1-->");
+		expect(out).not.toContain("`<!--c:code1-->");
+		const comment = parseComments(out).find((entry) => entry.id === "code1");
+		expect(comment?.quote).toBe("`Spinner`");
+		expect(out.slice(anchorRange(comment!)!.from, anchorRange(comment!)!.to)).toBe("`Spinner`");
+	});
+
+	it("supports inline code delimited by multiple backticks", () => {
+		const doc = "Use ``Spinner ` icon`` here.";
+		const from = doc.indexOf("Spinner");
+		const to = from + "Spinner ` icon".length;
+		const out = applyChanges(
+			doc,
+			computeAddComment(doc, from, to, {
+				id: "code2",
+				createdAt: "t",
+				author: "a",
+				text: "b",
+			}).unwrap(),
+		);
+
+		expect(out).toContain("<!--c:code2-->``Spinner ` icon``<!--/c:code2-->");
+	});
 });
 
 describe("reply / resolve", () => {

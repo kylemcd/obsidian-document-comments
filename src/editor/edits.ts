@@ -27,6 +27,7 @@ export const computeAddComment = (
 ): Result<Change[], string> => {
 	if (to < from) [from, to] = [to, from];
 	if (to === from) return Result.err("Select some text to comment on.");
+	({ from, to } = expandInlineCodeSelection(doc, from, to));
 
 	const quote = doc.slice(from, to);
 	const data: CommentData = {
@@ -43,6 +44,49 @@ export const computeAddComment = (
 		{ from: to, to, insert: closeMarker(input.id) },
 		{ from: paraEnd, to: paraEnd, insert: "\n" + serializeBody(input.id, data) },
 	]);
+};
+
+/** HTML comments inside a Markdown code span render as literal code. When a
+ * selection is within one inline-code token, anchor the whole token so the
+ * comment markers remain invisible outside its backtick delimiters. */
+export const expandInlineCodeSelection = (doc: string, from: number, to: number): { from: number; to: number } => {
+	const lineFrom = doc.lastIndexOf("\n", from - 1) + 1;
+	const nextLine = doc.indexOf("\n", to);
+	const lineTo = nextLine < 0 ? doc.length : nextLine;
+
+	for (let open = lineFrom; open < lineTo; open++) {
+		if (doc.charAt(open) !== "`" || isEscaped(doc, open)) continue;
+		const ticks = backtickRun(doc, open, lineTo);
+		const contentFrom = open + ticks;
+		let cursor = contentFrom;
+		while (cursor < lineTo) {
+			const candidate = doc.indexOf("`", cursor);
+			if (candidate < 0 || candidate >= lineTo) break;
+			const closeTicks = backtickRun(doc, candidate, lineTo);
+			if (closeTicks === ticks && !isEscaped(doc, candidate)) {
+				if (from >= contentFrom && to <= candidate) {
+					return { from: open, to: candidate + closeTicks };
+				}
+				open = candidate + closeTicks - 1;
+				break;
+			}
+			cursor = candidate + closeTicks;
+		}
+	}
+
+	return { from, to };
+};
+
+const backtickRun = (doc: string, from: number, limit: number): number => {
+	let to = from;
+	while (to < limit && doc.charAt(to) === "`") to++;
+	return to - from;
+};
+
+const isEscaped = (doc: string, position: number): boolean => {
+	let slashes = 0;
+	for (let cursor = position - 1; cursor >= 0 && doc.charAt(cursor) === "\\"; cursor--) slashes++;
+	return slashes % 2 === 1;
 };
 
 export const computeAppendReply = (
