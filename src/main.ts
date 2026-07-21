@@ -13,7 +13,6 @@ import { COMMENTS_VIEW_TYPE, CommentsSidebarView, SidebarDeps } from "./ui/sideb
 import { CommentModal } from "./ui/comment-modal";
 import { DEFAULT_SETTINGS, DocCommentsSettings, DocCommentsSettingTab } from "./settings";
 import { visibleHighlightId } from "./ui/highlight-target";
-import { editorSelectionRange, EditorSelectionRange } from "./editor/selection";
 import { tableHighlightPlugin } from "./editor/table-highlights";
 
 export default class DocCommentsPlugin extends Plugin {
@@ -100,15 +99,7 @@ export default class DocCommentsPlugin extends Plugin {
 		this.addCommand({
 			id: "add-comment",
 			name: "Add comment",
-			checkCallback: (checking) => {
-				const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (!view) return false;
-				if (!checking) {
-					if (view.getMode() === "preview") this.startAddCommentReading(view);
-					else this.startAddComment(view.editor);
-				}
-				return true;
-			},
+			editorCallback: (editor) => this.startAddComment(editor),
 		});
 
 		this.addCommand({
@@ -121,6 +112,17 @@ export default class DocCommentsPlugin extends Plugin {
 			id: "toggle-resolved",
 			name: "Toggle resolved comments",
 			callback: () => void this.toggleResolved(),
+		});
+
+		this.addCommand({
+			id: "add-comment-reading",
+			name: "Add comment in reading view",
+			checkCallback: (checking) => {
+				const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+				if (!view || view.getMode() !== "preview") return false;
+				if (!checking) this.startAddCommentReading(view);
+				return true;
+			},
 		});
 
 		this.addCommand({
@@ -137,34 +139,20 @@ export default class DocCommentsPlugin extends Plugin {
 		this.updateRibbon();
 		this.addRibbonIcon("messages-square", "Open comments sidebar", () => void this.activateSidebar());
 
-		this.registerEvent(
-			this.app.workspace.on("editor-menu", (menu, editor) => {
-				const selection = editorSelectionRange(editor);
-				if (!selection) return;
-				menu.addItem((item) =>
-					item
-						.setTitle("Add comment")
-						.setIcon("message-square")
-						.onClick(() => this.startAddComment(editor, selection)),
-				);
-			}),
-		);
-
 		this.addSettingTab(new DocCommentsSettingTab(this.app, this));
 	}
 
-	private startAddComment(editor: Editor, capturedSelection?: EditorSelectionRange): void {
+	private startAddComment(editor: Editor): void {
 		const view = editorView(editor);
 		if (!view) {
 			new Notice("Couldn't access the editor.");
 			return;
 		}
-		const selection = capturedSelection ?? editorSelectionRange(editor);
-		if (!selection) {
+		const { from, to, empty } = view.state.selection.main;
+		if (empty) {
 			new Notice("Select some text to comment on.");
 			return;
 		}
-		const { from, to } = selection;
 		if (Platform.isMobile) {
 			// No floating margin composer on mobile — collect the text in a modal,
 			// then write through the same editor path so it's a single undo step.

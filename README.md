@@ -68,7 +68,7 @@ Then copy (or symlink) `main.js`, `manifest.json`, and `styles.css` into
 
 ## Usage
 
-- **Add a comment:** select text, then run **Add comment** (command palette) or right-click → **Add comment**. Type in the margin card and press Enter (Shift+Enter for a newline).
+- **Add a comment:** select text, then run **Add comment** from the command palette. Type in the margin card and press Enter (Shift+Enter for a newline).
 - **Reply / resolve / react / edit / delete:** hover a card to reveal its action bar, or use the ⋯ menu.
 - **Open the sidebar:** the *Open comments sidebar* ribbon icon or command.
 - **Show/hide comments and resolved:** the ribbon, or the *Toggle comments* / *Toggle resolved comments* commands.
