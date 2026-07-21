@@ -90,12 +90,10 @@ body {
 ::highlight(document-comments-table) {
 	background-color: hsla(45, 90%, 50%, 0.18);
 	text-decoration: underline;
-	text-decoration-color: hsla(45, 90%, 45%, 0.7);
 }
 ::highlight(document-comments-table-resolved) {
-	background-color: transparent;
+	background-color: hsla(0, 0%, 50%, 0.12);
 	text-decoration: underline;
-	text-decoration-color: var(--text-faint);
 }
 /* A selected no-space marker needs distinct caret endpoints, but the raw HTML
    comment must never become visible or take layout width (especially in tables). */

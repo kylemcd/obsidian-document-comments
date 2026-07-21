@@ -3,6 +3,9 @@
 All notable changes to **Document Comments**. The release workflow uses the section
 matching the pushed tag as that GitHub release's notes, so add an entry here before tagging.
 
+## 0.1.10
+- Removed the `text-decoration-color` declarations that Obsidian's community-plugin review groups under the partially supported `text-decoration` browser feature. Open and resolved table comments remain visually distinct through their highlight backgrounds.
+
 ## 0.1.9
 - Fixed an Obsidian community-plugin review compatibility warning by replacing the extended `text-decoration` shorthand in Live Preview table highlights with supported underline and color declarations. Table comment highlights remain visible in both open and resolved states.
 
