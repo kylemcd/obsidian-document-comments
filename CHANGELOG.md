@@ -3,6 +3,11 @@
 All notable changes to **Document Comments**. The release workflow uses the section
 matching the pushed tag as that GitHub release's notes, so add an entry here before tagging.
 
+## 0.1.8
+- Fixed Live Preview table comments remaining unhighlighted until their cell was focused. Highlights now match Markdown-formatted anchors such as inline code and map mounted table widgets by source position, so they remain correct when CodeMirror virtualizes earlier tables.
+- Kept hidden comment markers from appearing or wrapping text in focused table cells while preserving reliable cursor movement across marker boundaries.
+- Fixed comments on inline code selections such as `` `Spinner` `` by placing the invisible anchor markers outside the backticks instead of rendering them as literal code.
+
 ## 0.1.7
 - Added comment highlights inside Live Preview tables and hover previews for highlighted text. Highlights remain passive when clicked; selecting a comment in the sidebar now scrolls to its text reliably in either direction ([#29](https://github.com/kylemcd/obsidian-document-comments/issues/29)).
 - Unified comment creation around the reliable **Add comment** selection command across regular text and tables, while retaining a separate Reading view command.
