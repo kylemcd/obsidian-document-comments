@@ -3,6 +3,14 @@
 All notable changes to **Document Comments**. The release workflow uses the section
 matching the pushed tag as that GitHub release's notes, so add an entry here before tagging.
 
+## 0.1.7
+- Added comment highlights inside Live Preview tables and hover previews for highlighted text. Highlights remain passive when clicked; selecting a comment in the sidebar now scrolls to its text reliably in either direction ([#29](https://github.com/kylemcd/obsidian-document-comments/issues/29)).
+- Unified comment creation around the reliable **Add comment** selection command across regular text and tables, while retaining a separate Reading view command.
+- Fixed the comment composer appearing behind table rows and other stacking problems in tables ([#28](https://github.com/kylemcd/obsidian-document-comments/issues/28)).
+- Fixed cursor pauses and caret-height jumps around inline comment markers, including adjacent punctuation, line boundaries, nested markers, and deletion cases ([#41](https://github.com/kylemcd/obsidian-document-comments/issues/41)).
+- Addressed Obsidian community-plugin review warnings by using supported DOM helpers and settings indexing patterns.
+- Updated the release toolchain and development dependencies, including TypeScript 7, Vitest 4, typescript-eslint, eslint-plugin-obsidianmd, `@types/node`, and `actions/setup-node`; refreshed transitive dependencies with zero known audit vulnerabilities.
+
 ## 0.1.6
 - Fixed the inline comment column continuing to reserve its ~320px of margin over empty space once every comment on a note was resolved (with "Show resolved" off). The column is now reserved only when a comment's card actually renders, in both Live Preview and Reading view ([#30](https://github.com/kylemcd/obsidian-document-comments/issues/30)).
 - Updated development dependencies (oxlint, eslint, typescript-eslint, @types/node, @codemirror/view).
