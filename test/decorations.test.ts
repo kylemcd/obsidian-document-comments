@@ -57,7 +57,7 @@ describe("commentField decorations", () => {
 		expect(ranges).toContainEqual([comment.close!.from, comment.close!.to + 1]);
 	});
 
-	test("renders a visible atomic widget when the selection reaches a no-space marker", () => {
+	test("renders an atomic geometry shim when the selection reaches a no-space marker", () => {
 		const doc = "some<!--c:x-->text<!--/c:x-->after";
 		const comment = parseComments(doc)[0];
 		const start = EditorState.create({ doc, selection: { anchor: 1 }, extensions: [commentField] });

@@ -95,6 +95,19 @@ body {
 	background-color: transparent;
 	text-decoration: underline 1px dashed var(--text-faint);
 }
+/* A selected no-space marker needs distinct caret endpoints, but the raw HTML
+   comment must never become visible or take layout width (especially in tables). */
+.dc-comment-marker {
+	display: inline-block;
+	inline-size: 1px;
+	block-size: 1em;
+	margin-inline-end: -1px;
+	overflow: hidden;
+	opacity: 0;
+	pointer-events: none;
+	user-select: none;
+	vertical-align: text-bottom;
+}
 .doc-comment-span.dc-flash {
 	animation: dc-flash 900ms ease;
 }

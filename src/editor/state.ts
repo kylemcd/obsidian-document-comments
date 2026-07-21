@@ -40,18 +40,15 @@ class SpaceWidget extends WidgetType {
 const HIDE_AS_SPACE = Decoration.replace({ widget: new SpaceWidget() });
 
 class MarkerWidget extends WidgetType {
-	constructor(private readonly marker: string) {
-		super();
-	}
-
-	eq(other: MarkerWidget): boolean {
-		return other.marker === this.marker;
+	eq(): boolean {
+		return true;
 	}
 
 	toDOM(view: EditorView): HTMLElement {
 		const span = view.dom.createSpan({
 			cls: "dc-comment-marker",
-			text: this.marker,
+			text: "\u200b",
+			attr: { "aria-hidden": "true" },
 		});
 		span.remove();
 		return span;
@@ -181,15 +178,10 @@ const compute = (state: EditorState): CommentFieldValue => {
 				HIDE_AS_SPACE,
 			);
 		} else if (selectionTouches(state, marker.from, marker.to)) {
-			// With no adjacent outside space, a zero-width replacement necessarily
-			// puts both endpoints at one screen coordinate. Render the raw syntax in
-			// an explicit widget as the caret reaches it. Obsidian core also hides HTML
-			// comments, so merely omitting our replacement would not reveal the marker.
-			addHide(
-				marker.from,
-				marker.to,
-				Decoration.replace({ widget: new MarkerWidget(text.slice(marker.from, marker.to)) }),
-			);
+			// With no adjacent outside space, give the replacement a tiny invisible
+			// geometry shim so CodeMirror can distinguish its two caret endpoints.
+			// Never reveal the raw marker: it can be long enough to wrap a table cell.
+			addHide(marker.from, marker.to, Decoration.replace({ widget: new MarkerWidget() }));
 		} else {
 			addHide(marker.from, marker.to);
 		}

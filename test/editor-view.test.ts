@@ -131,6 +131,27 @@ describe("editor extensions open every note without crashing", () => {
 		view.destroy();
 	});
 
+	test("a selected no-space marker never exposes its raw syntax", () => {
+		const doc = "before<!--c:x-->text<!--/c:x-->after";
+		const markerFrom = doc.indexOf("<!--c:x-->");
+		const parent = document.createElement("div");
+		document.body.appendChild(parent);
+		const view = new EditorView({
+			state: EditorState.create({
+				doc,
+				selection: { anchor: markerFrom },
+				extensions: [commentField],
+			}),
+			parent,
+		});
+
+		const marker = view.dom.querySelector(".dc-comment-marker");
+		expect(marker?.textContent).toBe("\u200b");
+		expect(marker?.getAttribute("aria-hidden")).toBe("true");
+		expect(marker?.textContent).not.toContain("<!--c:");
+		view.destroy();
+	});
+
 	// The layout no longer uses :has(); the stylesheet reaches the text column via
 	// these classes on .cm-editor, so verify editorLayoutField actually applies them.
 	test("editorLayoutField puts layout classes on .cm-editor", () => {

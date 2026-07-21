@@ -4,6 +4,9 @@ import type { App } from "obsidian";
 export type CommentConfig = {
 	/** App handle, so the inline margin can render comment text as Markdown. */
 	app?: App;
+	/** Render an anchor's Markdown to detached DOM so Live Preview table
+	 *  highlights can match the text Obsidian actually displays. */
+	renderMarkdown?: (markdown: string, el: HTMLElement) => Promise<void>;
 	/** Current author handle, read live so settings changes take effect. */
 	author: () => string;
 	/** Whether the margin column is shown at all (Notion-style toggle). */

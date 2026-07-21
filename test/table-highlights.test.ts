@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { parseComments } from "../src/format/parse";
-import { tableHighlightTargets } from "../src/editor/table-highlights";
+import { mapTableWidgets, tableHighlightTargets } from "../src/editor/table-highlights";
 
 describe("tableHighlightTargets", () => {
 	test("maps header and body comments to rendered table cells", () => {
@@ -43,5 +43,28 @@ describe("tableHighlightTargets", () => {
 			{ table: 0, row: 1, column: 1, quote: "two", resolved: false },
 			{ table: 1, row: 1, column: 0, quote: "three", resolved: false },
 		]);
+	});
+
+	test("maps mounted table widgets by source position when earlier tables are virtualized", () => {
+		const doc = [
+			"| A |",
+			"| --- |",
+			"| one |",
+			"",
+			"| B |",
+			"| --- |",
+			"| two |",
+			"",
+			"| C |",
+			"| --- |",
+			"| three |",
+		].join("\n");
+		const mounted = [{ position: doc.indexOf("| B |") }, { position: doc.indexOf("| C |") }];
+
+		const mapped = mapTableWidgets(doc, mounted, (widget) => widget.position);
+
+		expect(mapped.get(1)).toBe(mounted[0]);
+		expect(mapped.get(2)).toBe(mounted[1]);
+		expect(mapped.has(0)).toBe(false);
 	});
 });

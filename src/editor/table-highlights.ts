@@ -2,7 +2,7 @@ import { ViewPlugin, ViewUpdate } from "@codemirror/view";
 import type { EditorView } from "@codemirror/view";
 import { anchorRange } from "../format/parse";
 import type { ParsedComment } from "../format/types";
-import { commentConfig } from "./config";
+import { commentConfig, type CommentConfig } from "./config";
 import { getComments } from "./state";
 
 export type TableHighlightTarget = {
@@ -15,6 +15,7 @@ export type TableHighlightTarget = {
 
 type TableRanges = { open: Range[]; resolved: Range[] };
 type BrowserWindow = NonNullable<Document["defaultView"]>;
+type SourceTable = { start: number; end: number; from: number; to: number };
 
 const OPEN_HIGHLIGHT = "document-comments-table";
 const RESOLVED_HIGHLIGHT = "document-comments-table-resolved";
@@ -24,14 +25,9 @@ const rangesByDocument = new WeakMap<Document, Map<EditorView, TableRanges>>();
 export const tableHighlightTargets = (doc: string, comments: ParsedComment[]): TableHighlightTarget[] => {
 	const lines = sourceLines(doc);
 	const targets: TableHighlightTarget[] = [];
-	let table = 0;
+	const tables = sourceTables(lines);
 
-	for (let start = 0; start + 1 < lines.length; start++) {
-		if (!isTableRow(lines[start].text) || !isDelimiterRow(lines[start + 1].text)) continue;
-
-		let end = start + 2;
-		while (end < lines.length && isTableRow(lines[end].text)) end++;
-
+	for (const [table, { start, end }] of tables.entries()) {
 		for (const comment of comments) {
 			const range = anchorRange(comment);
 			if (!range) continue;
@@ -51,9 +47,6 @@ export const tableHighlightTargets = (doc: string, comments: ParsedComment[]): T
 				resolved: comment.status === "resolved",
 			});
 		}
-
-		table++;
-		start = end - 1;
 	}
 
 	return targets;
@@ -62,6 +55,8 @@ export const tableHighlightTargets = (doc: string, comments: ParsedComment[]): T
 class TableHighlights {
 	private observer: MutationObserver;
 	private scheduled = false;
+	private generation = 0;
+	private renderedQuotes = new Map<string, Promise<string>>();
 
 	constructor(private view: EditorView) {
 		const Observer = view.dom.ownerDocument.defaultView?.MutationObserver ?? MutationObserver;
@@ -76,6 +71,7 @@ class TableHighlights {
 	}
 
 	destroy(): void {
+		this.generation++;
 		this.observer.disconnect();
 		setViewRanges(this.view, { open: [], resolved: [] }, true);
 	}
@@ -85,27 +81,36 @@ class TableHighlights {
 		this.scheduled = true;
 		queueMicrotask(() => {
 			this.scheduled = false;
-			this.refresh();
+			void this.refresh(++this.generation);
 		});
 	}
 
-	private refresh(): void {
+	private async refresh(generation: number): Promise<void> {
 		const cfg = this.view.state.facet(commentConfig);
+		const renderMarkdown = cfg.renderMarkdown;
 		if (!cfg.showComments()) {
 			setViewRanges(this.view, { open: [], resolved: [] });
 			return;
 		}
 
+		const doc = this.view.state.doc.toString();
 		const comments = getComments(this.view.state).filter(
 			(comment) => cfg.showResolved() || comment.status !== "resolved",
 		);
-		const targets = tableHighlightTargets(this.view.state.doc.toString(), comments);
+		const targets = tableHighlightTargets(doc, comments);
 		const widgets = Array.from(this.view.dom.querySelectorAll<HTMLElement>(".cm-table-widget"));
+		const widgetsByTable = mapTableWidgets(doc, widgets, (widget) => {
+			try {
+				return this.view.posAtDOM(widget);
+			} catch {
+				return null;
+			}
+		});
 		const ranges: TableRanges = { open: [], resolved: [] };
 		const nextMatch = new WeakMap<Element, number>();
 
 		for (const target of targets) {
-			const rows = widgets[target.table]?.querySelectorAll("tr");
+			const rows = widgetsByTable.get(target.table)?.querySelectorAll("tr");
 			const row = rows?.item(target.row);
 			const cells = row?.querySelectorAll<HTMLElement>("th, td");
 			const cell = cells?.item(target.column);
@@ -115,13 +120,36 @@ class TableHighlights {
 				cell.querySelector<HTMLElement>(".cm-content") ??
 				cell.querySelector<HTMLElement>(".table-cell-wrapper") ??
 				cell;
-			const match = textRange(content, target.quote, nextMatch.get(content) ?? 0);
+			const from = nextMatch.get(content) ?? 0;
+			const match = await textRangeForQuote(
+				content,
+				target.quote,
+				from,
+				renderMarkdown ? (quote) => this.renderedQuote(quote, renderMarkdown) : undefined,
+			);
+			if (generation !== this.generation) return;
 			if (!match) continue;
 			nextMatch.set(content, match.next);
 			(target.resolved ? ranges.resolved : ranges.open).push(match.range);
 		}
 
-		setViewRanges(this.view, ranges);
+		if (generation === this.generation) setViewRanges(this.view, ranges);
+	}
+
+	private renderedQuote(
+		quote: string,
+		renderMarkdown: NonNullable<CommentConfig["renderMarkdown"]>,
+	): Promise<string> {
+		let rendered = this.renderedQuotes.get(quote);
+		if (rendered) return rendered;
+		const root = this.view.dom.createDiv();
+		root.remove();
+		rendered = renderMarkdown(quote, root).then(
+			() => textContent(root),
+			() => quote,
+		);
+		this.renderedQuotes.set(quote, rendered);
+		return rendered;
 	}
 }
 
@@ -150,7 +178,7 @@ const setHighlight = (scope: BrowserWindow, name: string, ranges: Range[]): void
 	else scope.CSS.highlights.set(name, new scope.Highlight(...ranges));
 };
 
-const textRange = (root: HTMLElement, needle: string, from: number): { range: Range; next: number } | null => {
+export const textRange = (root: HTMLElement, needle: string, from: number): { range: Range; next: number } | null => {
 	const walker = root.ownerDocument.createTreeWalker(root, 4 /* NodeFilter.SHOW_TEXT */);
 	const nodes: Text[] = [];
 	let text = "";
@@ -182,6 +210,29 @@ const textRange = (root: HTMLElement, needle: string, from: number): { range: Ra
 	return null;
 };
 
+export const textRangeForQuote = async (
+	root: HTMLElement,
+	quote: string,
+	from: number,
+	renderQuote?: (quote: string) => Promise<string>,
+): Promise<{ range: Range; next: number } | null> => {
+	const exact = textRange(root, quote, from);
+	if (exact || !renderQuote) return exact;
+	const rendered = await renderQuote(quote);
+	return rendered && rendered !== quote ? textRange(root, rendered, from) : null;
+};
+
+const textContent = (root: HTMLElement): string => {
+	const walker = root.ownerDocument.createTreeWalker(root, 4 /* NodeFilter.SHOW_TEXT */);
+	let text = "";
+	let node = walker.nextNode() as Text | null;
+	while (node) {
+		text += node.data;
+		node = walker.nextNode() as Text | null;
+	}
+	return text;
+};
+
 const sourceLines = (doc: string): Array<{ text: string; from: number; to: number }> => {
 	const lines: Array<{ text: string; from: number; to: number }> = [];
 	let from = 0;
@@ -190,6 +241,34 @@ const sourceLines = (doc: string): Array<{ text: string; from: number; to: numbe
 		from += text.length + 1;
 	}
 	return lines;
+};
+
+const sourceTables = (lines: Array<{ text: string; from: number; to: number }>): SourceTable[] => {
+	const tables: SourceTable[] = [];
+	for (let start = 0; start + 1 < lines.length; start++) {
+		if (!isTableRow(lines[start].text) || !isDelimiterRow(lines[start + 1].text)) continue;
+		let end = start + 2;
+		while (end < lines.length && isTableRow(lines[end].text)) end++;
+		tables.push({ start, end, from: lines[start].from, to: lines[end - 1].to });
+		start = end - 1;
+	}
+	return tables;
+};
+
+export const mapTableWidgets = <T>(
+	doc: string,
+	widgets: readonly T[],
+	positionOf: (widget: T) => number | null,
+): Map<number, T> => {
+	const tables = sourceTables(sourceLines(doc));
+	const result = new Map<number, T>();
+	for (const widget of widgets) {
+		const position = positionOf(widget);
+		if (position === null) continue;
+		const table = tables.findIndex(({ from, to }) => position >= from && position <= to);
+		if (table >= 0) result.set(table, widget);
+	}
+	return result;
 };
 
 const isTableRow = (line: string): boolean => unescapedPipes(line).length > 0;

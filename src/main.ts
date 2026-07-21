@@ -1,4 +1,15 @@
-import { Editor, MarkdownView, Notice, Platform, Plugin, TFile, WorkspaceLeaf, debounce } from "obsidian";
+import {
+	Component,
+	Editor,
+	MarkdownRenderer,
+	MarkdownView,
+	Notice,
+	Platform,
+	Plugin,
+	TFile,
+	WorkspaceLeaf,
+	debounce,
+} from "obsidian";
 import { Result } from "better-result";
 import { EditorView } from "@codemirror/view";
 import { commentField } from "./editor/state";
@@ -16,6 +27,7 @@ import { tableHighlightPlugin } from "./editor/table-highlights";
 
 export default class DocCommentsPlugin extends Plugin {
 	settings: DocCommentsSettings = { ...DEFAULT_SETTINGS };
+	private markdown = new Component();
 	private ribbonIcon: HTMLElement | null = null;
 	private readingManager: ReadingMarginManager | null = null;
 	private scheduleReadingRefresh: () => void = () => {};
@@ -24,6 +36,7 @@ export default class DocCommentsPlugin extends Plugin {
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
+		this.addChild(this.markdown);
 
 		this.registerEditorExtension([
 			commentField,
@@ -31,6 +44,14 @@ export default class DocCommentsPlugin extends Plugin {
 			draftField,
 			commentConfig.of({
 				app: this.app,
+				renderMarkdown: (markdown, el) =>
+					MarkdownRenderer.render(
+						this.app,
+						markdown,
+						el,
+						this.app.workspace.getActiveFile()?.path ?? "",
+						this.markdown,
+					),
 				author: () => this.authorName(),
 				showComments: () => this.settings.showComments,
 				showResolved: () => this.settings.showResolved,
