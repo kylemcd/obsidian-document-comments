@@ -89,11 +89,13 @@ body {
    into those cells and exposes non-mutating CSS Custom Highlight ranges. */
 ::highlight(document-comments-table) {
 	background-color: hsla(45, 90%, 50%, 0.18);
-	text-decoration: underline 2px hsla(45, 90%, 45%, 0.7);
+	text-decoration: underline;
+	text-decoration-color: hsla(45, 90%, 45%, 0.7);
 }
 ::highlight(document-comments-table-resolved) {
 	background-color: transparent;
-	text-decoration: underline 1px dashed var(--text-faint);
+	text-decoration: underline;
+	text-decoration-color: var(--text-faint);
 }
 /* A selected no-space marker needs distinct caret endpoints, but the raw HTML
    comment must never become visible or take layout width (especially in tables). */
