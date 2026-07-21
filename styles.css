@@ -84,6 +84,17 @@ body {
 	background-color: transparent;
 	border-bottom: 1px dashed var(--text-faint);
 }
+/* Obsidian renders Live Preview tables as nested editor widgets, outside the
+   parent CodeMirror decoration tree. The table view plugin maps comment anchors
+   into those cells and exposes non-mutating CSS Custom Highlight ranges. */
+::highlight(document-comments-table) {
+	background-color: hsla(45, 90%, 50%, 0.18);
+	text-decoration: underline 2px hsla(45, 90%, 45%, 0.7);
+}
+::highlight(document-comments-table-resolved) {
+	background-color: transparent;
+	text-decoration: underline 1px dashed var(--text-faint);
+}
 .doc-comment-span.dc-flash {
 	animation: dc-flash 900ms ease;
 }
