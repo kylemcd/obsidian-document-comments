@@ -3,6 +3,9 @@
 All notable changes to **Document Comments**. The release workflow uses the section
 matching the pushed tag as that GitHub release's notes, so add an entry here before tagging.
 
+## 0.1.9
+- Fixed an Obsidian community-plugin review compatibility warning by replacing the extended `text-decoration` shorthand in Live Preview table highlights with supported underline and color declarations. Table comment highlights remain visible in both open and resolved states.
+
 ## 0.1.8
 - Fixed Live Preview table comments remaining unhighlighted until their cell was focused. Highlights now match Markdown-formatted anchors such as inline code and map mounted table widgets by source position, so they remain correct when CodeMirror virtualizes earlier tables.
 - Kept hidden comment markers from appearing or wrapping text in focused table cells while preserving reliable cursor movement across marker boundaries.
