@@ -14,6 +14,18 @@ import { draftField, setDraft } from "../src/editor/draft";
 import { commentConfig } from "../src/editor/config";
 import { editorLayoutField } from "../src/editor/layout";
 
+const pressArrow = (view: EditorView, key: "ArrowLeft" | "ArrowRight", shiftKey = false) => {
+	view.contentDOM.dispatchEvent(
+		new KeyboardEvent("keydown", {
+			key,
+			code: key,
+			shiftKey,
+			bubbles: true,
+			cancelable: true,
+		}),
+	);
+};
+
 // Mirror the plugin's real editor extension set (minus the ViewPlugin, which needs
 // DOM observers happy-dom doesn't fully provide). editorLayoutField has an eager
 // `provide` too, so including it here is what guards layout.ts against a TDZ.
@@ -69,6 +81,34 @@ describe("editor extensions open every note without crashing", () => {
 			"",
 		].join("\n");
 		expect(() => open(doc)).not.toThrow();
+	});
+
+	test("arrow keys cross an end-of-line marker and keep moving", () => {
+		const doc = "text<!--/c:x-->\nnext";
+		const markerFrom = doc.indexOf("<!--/c:x-->");
+		const markerTo = markerFrom + "<!--/c:x-->".length;
+		const parent = document.createElement("div");
+		document.body.appendChild(parent);
+		const view = new EditorView({
+			state: EditorState.create({
+				doc,
+				selection: { anchor: markerFrom },
+				extensions: [commentField],
+			}),
+			parent,
+		});
+
+		pressArrow(view, "ArrowRight");
+		expect(view.state.selection.main.head).toBe(markerTo);
+		pressArrow(view, "ArrowRight");
+		expect(view.state.selection.main.head).toBe(markerTo + 1);
+
+		view.dispatch({ selection: { anchor: markerTo } });
+		pressArrow(view, "ArrowLeft");
+		expect(view.state.selection.main.head).toBe(markerFrom);
+		pressArrow(view, "ArrowLeft");
+		expect(view.state.selection.main.head).toBe(markerFrom - 1);
+		view.destroy();
 	});
 
 	// The layout no longer uses :has(); the stylesheet reaches the text column via
