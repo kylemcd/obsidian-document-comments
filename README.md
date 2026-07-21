@@ -68,7 +68,7 @@ Then copy (or symlink) `main.js`, `manifest.json`, and `styles.css` into
 
 ## Usage
 
-- **Add a comment:** select text, then run **Add comment on selection** (command palette) or right-click → **Add comment**. Type in the margin card and press Enter (Shift+Enter for a newline).
+- **Add a comment:** select text, then run **Add comment** from the command palette. Type in the margin card and press Enter (Shift+Enter for a newline).
 - **Reply / resolve / react / edit / delete:** hover a card to reveal its action bar, or use the ⋯ menu.
 - **Open the sidebar:** the *Open comments sidebar* ribbon icon or command.
 - **Show/hide comments and resolved:** the ribbon, or the *Toggle comments* / *Toggle resolved comments* commands.
@@ -83,7 +83,7 @@ No network use, no telemetry, no accounts. Everything stays in your vault.
 
 - On **mobile**, the floating margin column is turned off (there's no room for it). Comments are read and managed through the **sidebar** instead — highlights still mark the text, and new comments are composed in a dialog. Same inline storage, so it round-trips with desktop.
 - Comments whose highlighted text **overlaps** another comment's are stored fine but are a rough edge; avoid stacking comments on the same words for now.
-- In **Live Preview**, the highlight doesn't show on text inside a **table** (Obsidian renders tables as a self-contained widget the highlight can't reach). The comment and its card still work, and the highlight shows in **Reading view** and **Source mode**.
+- In **Live Preview**, table highlights use the browser's CSS Custom Highlight support because Obsidian renders tables as self-contained editor widgets.
 
 ## Development
 

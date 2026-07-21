@@ -218,7 +218,7 @@ export class Card {
 	/** A subtle, Notion-style text affordance. A <span> (not an Obsidian <button>) so
 	 *  no theme can give it chip chrome; role+tabindex keep it keyboard-accessible. */
 	private footButton(parent: HTMLElement, text: string, extraClass: string, onClick: () => void): void {
-		const btn = parent.createEl("span", {
+		const btn = parent.createSpan({
 			cls: extraClass ? `dc-foot-btn ${extraClass}` : "dc-foot-btn",
 			text,
 			attr: { role: "button", tabindex: "0" },

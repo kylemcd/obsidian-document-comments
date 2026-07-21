@@ -12,6 +12,7 @@ import { ReadingDeps, ReadingMarginManager } from "./reading/margin";
 import { COMMENTS_VIEW_TYPE, CommentsSidebarView, SidebarDeps } from "./ui/sidebar";
 import { CommentModal } from "./ui/comment-modal";
 import { DEFAULT_SETTINGS, DocCommentsSettings, DocCommentsSettingTab } from "./settings";
+import { tableHighlightPlugin } from "./editor/table-highlights";
 
 export default class DocCommentsPlugin extends Plugin {
 	settings: DocCommentsSettings = { ...DEFAULT_SETTINGS };
@@ -26,6 +27,7 @@ export default class DocCommentsPlugin extends Plugin {
 
 		this.registerEditorExtension([
 			commentField,
+			tableHighlightPlugin,
 			draftField,
 			commentConfig.of({
 				app: this.app,
@@ -94,7 +96,7 @@ export default class DocCommentsPlugin extends Plugin {
 
 		this.addCommand({
 			id: "add-comment",
-			name: "Add comment on selection",
+			name: "Add comment",
 			editorCallback: (editor) => this.startAddComment(editor),
 		});
 
@@ -112,7 +114,7 @@ export default class DocCommentsPlugin extends Plugin {
 
 		this.addCommand({
 			id: "add-comment-reading",
-			name: "Add comment on selection (reading view)",
+			name: "Add comment in reading view",
 			checkCallback: (checking) => {
 				const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 				if (!view || view.getMode() !== "preview") return false;
@@ -134,18 +136,6 @@ export default class DocCommentsPlugin extends Plugin {
 		);
 		this.updateRibbon();
 		this.addRibbonIcon("messages-square", "Open comments sidebar", () => void this.activateSidebar());
-
-		this.registerEvent(
-			this.app.workspace.on("editor-menu", (menu, editor) => {
-				if (!editor.getSelection()) return;
-				menu.addItem((item) =>
-					item
-						.setTitle("Add comment")
-						.setIcon("message-square")
-						.onClick(() => this.startAddComment(editor)),
-				);
-			}),
-		);
 
 		this.addSettingTab(new DocCommentsSettingTab(this.app, this));
 	}

@@ -55,7 +55,7 @@ body {
 	background-color: var(--dc-highlight-bg);
 	border-bottom: 2px solid var(--dc-highlight-border);
 	border-radius: 2px;
-	cursor: pointer;
+	cursor: text;
 	transition: background-color 120ms ease;
 }
 /* When comments are toggled off, drop the highlight entirely so the prose reads
@@ -67,6 +67,7 @@ body {
 	background-color: transparent;
 	border-bottom-color: transparent;
 	cursor: text;
+	pointer-events: none;
 }
 /* Likewise drop resolved highlights when resolved comments are hidden. */
 .cm-editor.dc-hide-resolved .doc-comment-span.is-resolved,
@@ -74,6 +75,7 @@ body {
 	background-color: transparent;
 	border-bottom-color: transparent;
 	cursor: text;
+	pointer-events: none;
 }
 .doc-comment-span.is-active {
 	background-color: var(--dc-highlight-bg-active);
@@ -81,6 +83,17 @@ body {
 .doc-comment-span.is-resolved {
 	background-color: transparent;
 	border-bottom: 1px dashed var(--text-faint);
+}
+/* Obsidian renders Live Preview tables as nested editor widgets, outside the
+   parent CodeMirror decoration tree. The table view plugin maps comment anchors
+   into those cells and exposes non-mutating CSS Custom Highlight ranges. */
+::highlight(document-comments-table) {
+	background-color: hsla(45, 90%, 50%, 0.18);
+	text-decoration: underline 2px hsla(45, 90%, 45%, 0.7);
+}
+::highlight(document-comments-table-resolved) {
+	background-color: transparent;
+	text-decoration: underline 1px dashed var(--text-faint);
 }
 .doc-comment-span.dc-flash {
 	animation: dc-flash 900ms ease;
@@ -106,7 +119,7 @@ body {
 	width: var(--dc-margin-width);
 	overflow: hidden;
 	pointer-events: none;
-	z-index: 5;
+	z-index: var(--layer-popover, 30);
 }
 /* Pin the column right after the readable-width text (CSS-only, so it never
    jumps on focus). Clamped so it can't push off the right edge on narrow panes.
@@ -448,6 +461,7 @@ body {
 .doc-comment-card.is-draft {
 	border-color: var(--interactive-accent);
 	box-shadow: var(--shadow-l);
+	z-index: 3;
 }
 .doc-comment-card.is-draft .dc-field {
 	margin-top: 0;
@@ -566,4 +580,3 @@ body {
 	min-height: 5em;
 	resize: vertical;
 }
-

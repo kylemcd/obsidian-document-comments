@@ -9,6 +9,25 @@ import { describe, expect, test } from "vitest";
 import type { MarkdownPostProcessorContext } from "obsidian";
 import { highlightPostProcessor } from "../src/reading/highlight";
 
+Node.prototype.createSpan ??= function (o?: string | { cls?: string; text?: string; attr?: Record<string, string> }) {
+	const el = document.createElement("span");
+	if (typeof o === "string") {
+		el.className = o;
+	} else if (o) {
+		if (o.cls) el.className = o.cls;
+		if (o.text) el.textContent = o.text;
+		for (const [key, value] of Object.entries(o.attr ?? {})) {
+			el.setAttribute(key, value);
+		}
+	}
+	this.appendChild(el);
+	return el;
+};
+
+Node.prototype.detach ??= function () {
+	this.parentNode?.removeChild(this);
+};
+
 // Minimal context: report the block's source + line span, like Obsidian does.
 const ctxFor = (text: string, lineStart: number, lineEnd: number): MarkdownPostProcessorContext =>
 	({ getSectionInfo: () => ({ text, lineStart, lineEnd }) }) as unknown as MarkdownPostProcessorContext;
@@ -25,7 +44,9 @@ describe("reading-view highlight post-processor", () => {
 		const el = document.createElement("p");
 		el.textContent = "We ship on Friday regardless.";
 		highlightPostProcessor(el, ctxFor(doc, 0, 0));
-		expect(el.querySelector(".doc-comment-span[data-cid='p1']")?.textContent).toBe("Friday");
+		const span = el.querySelector(".doc-comment-span[data-cid='p1']");
+		expect(span?.textContent).toBe("Friday");
+		expect(span?.getAttribute("title")).toBe("me: ok");
 	});
 
 	test("wraps a comment anchor that lands inside a table cell", () => {

@@ -15,6 +15,7 @@ import {
 	computeToggleReaction,
 } from "../editor/edits";
 import { cssEscape } from "../util/css";
+import { centeredScrollTop } from "./scroll";
 
 export const COMMENTS_VIEW_TYPE = "document-comments-sidebar";
 
@@ -49,6 +50,7 @@ export class CommentsSidebarView extends ItemView {
 	private scheduleRefresh: Debouncer<[], void>;
 	private filter: FilterMode = "open";
 	private tabs: Array<{ mode: FilterMode; el: HTMLElement; countEl: HTMLElement }> = [];
+	private revealFrame: number | null = null;
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -59,7 +61,7 @@ export class CommentsSidebarView extends ItemView {
 		this.cb = {
 			getAuthor: () => deps.getAuthor(),
 			onHover: (id, active) => this.markDocHighlight(id, active),
-			onClickAnchor: (id) => this.revealAnchor(id),
+			onClickAnchor: (id) => this.scheduleRevealAnchor(id),
 			onResize: () => {
 				/* the panel uses normal flow — cards reflow on their own */
 			},
@@ -128,6 +130,7 @@ export class CommentsSidebarView extends ItemView {
 	}
 
 	async onClose(): Promise<void> {
+		if (this.revealFrame !== null) window.cancelAnimationFrame(this.revealFrame);
 		for (const card of this.cards.values()) {
 			card.destroy();
 			card.el.remove();
@@ -291,6 +294,17 @@ export class CommentsSidebarView extends ItemView {
 	}
 
 	// ── Document interplay ─────────────────────────────────────────────────
+	/** Let the sidebar card's mousedown/focus handling finish before moving the
+	 *  document. Otherwise Obsidian can restore the old editor scroll position,
+	 *  which was especially visible when navigating upward. */
+	private scheduleRevealAnchor(id: string): void {
+		if (this.revealFrame !== null) window.cancelAnimationFrame(this.revealFrame);
+		this.revealFrame = window.requestAnimationFrame(() => {
+			this.revealFrame = null;
+			this.revealAnchor(id);
+		});
+	}
+
 	private revealAnchor(id: string): void {
 		const file = this.file;
 		if (!file) return;
@@ -311,11 +325,30 @@ export class CommentsSidebarView extends ItemView {
 		const r = anchorRange(c);
 		const pos = r ? r.from : c.body?.from;
 		if (pos == null) return;
-		cm.dispatch({ effects: EditorView.scrollIntoView(pos, { y: "center" }) });
-		window.setTimeout(() => {
+		cm.requestMeasure({
+			key: this,
+			read: () => {
+				const block = cm.lineBlockAt(pos);
+				return centeredScrollTop(block.top, block.height, cm.scrollDOM.clientHeight, cm.scrollDOM.scrollHeight);
+			},
+			write: (top) => {
+				cm.scrollDOM.scrollTo({ top, behavior: "smooth" });
+				this.flashEditorAnchor(cm, id);
+			},
+		});
+	}
+
+	/** CodeMirror only mounts offscreen line DOM after scrolling begins. Poll for
+	 *  a few frames so the destination can flash regardless of scroll direction. */
+	private flashEditorAnchor(cm: EditorView, id: string, attempts = 0): void {
+		window.requestAnimationFrame(() => {
 			const span = cm.contentDOM.querySelector(`.doc-comment-span[data-cid="${cssEscape(id)}"]`);
-			if (span instanceof HTMLElement) this.flash(span);
-		}, 50);
+			if (span instanceof HTMLElement) {
+				this.flash(span);
+			} else if (attempts < 20) {
+				this.flashEditorAnchor(cm, id, attempts + 1);
+			}
+		});
 	}
 
 	private markDocHighlight(id: string, active: boolean): void {

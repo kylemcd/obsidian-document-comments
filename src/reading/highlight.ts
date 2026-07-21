@@ -1,6 +1,7 @@
 import { MarkdownPostProcessorContext } from "obsidian";
 import { ParsedComment } from "../format/types";
 import { anchorRange, parseComments } from "../format/parse";
+import { commentPreview } from "../format/preview";
 
 /** Rendered block element → its source range, so a Reading-view selection can be
  *  mapped back to markdown offsets (best-effort, used by "Add comment"). */
@@ -55,7 +56,7 @@ export const highlightPostProcessor = (el: HTMLElement, ctx: MarkdownPostProcess
 		// Only act on comments whose anchor starts within this rendered section.
 		if (range.from < sectionFrom || range.from >= sectionTo) continue;
 		const quote = text.slice(range.from, range.to);
-		if (quote.trim()) wrapFirstMatch(el, quote, c.id, c.status === "resolved");
+		if (quote.trim()) wrapFirstMatch(el, quote, c.id, c.status === "resolved", commentPreview(c));
 	}
 };
 
@@ -67,7 +68,13 @@ const offsetOfLine = (lines: string[], lineNo: number): number => {
 
 /** Wrap the first single-text-node occurrence of `needle` in a highlight span.
  *  Uses the element's own document so it works in pop-out windows too. */
-const wrapFirstMatch = (root: HTMLElement, needle: string, id: string, resolved: boolean): boolean => {
+const wrapFirstMatch = (
+	root: HTMLElement,
+	needle: string,
+	id: string,
+	resolved: boolean,
+	title: string | null,
+): boolean => {
 	const doc = root.ownerDocument;
 	const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
 	let node = walker.nextNode() as Text | null;
@@ -77,9 +84,12 @@ const wrapFirstMatch = (root: HTMLElement, needle: string, id: string, resolved:
 			const range = doc.createRange();
 			range.setStart(node, idx);
 			range.setEnd(node, idx + needle.length);
-			const span = doc.createElement("span");
-			span.className = resolved ? "doc-comment-span is-resolved" : "doc-comment-span";
+			const span = root.createSpan({
+				cls: resolved ? "doc-comment-span is-resolved" : "doc-comment-span",
+			});
+			span.detach();
 			span.setAttribute("data-cid", id);
+			if (title) span.setAttribute("title", title);
 			try {
 				range.surroundContents(span);
 				return true;
