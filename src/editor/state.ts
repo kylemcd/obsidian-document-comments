@@ -27,10 +27,12 @@ class SpaceWidget extends WidgetType {
 	}
 
 	toDOM(view: EditorView): HTMLElement {
-		const span = view.dom.ownerDocument.createElement("span");
-		span.className = "dc-comment-boundary-space";
-		span.textContent = " ";
-		span.setAttribute("aria-hidden", "true");
+		const span = view.dom.createSpan({
+			cls: "dc-comment-boundary-space",
+			text: " ",
+			attr: { "aria-hidden": "true" },
+		});
+		span.remove();
 		return span;
 	}
 }
@@ -47,9 +49,11 @@ class MarkerWidget extends WidgetType {
 	}
 
 	toDOM(view: EditorView): HTMLElement {
-		const span = view.dom.ownerDocument.createElement("span");
-		span.className = "dc-comment-marker";
-		span.textContent = this.marker;
+		const span = view.dom.createSpan({
+			cls: "dc-comment-marker",
+			text: this.marker,
+		});
+		span.remove();
 		return span;
 	}
 }

@@ -5,8 +5,8 @@
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
-		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-		"typecheck": "tsc -noEmit -skipLibCheck",
+		"build": "node node_modules/typescript-7/bin/tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+		"typecheck": "node node_modules/typescript-7/bin/tsc -noEmit -skipLibCheck",
 		"format": "oxfmt src test",
 		"format:check": "oxfmt --check src test",
 		"lint": "oxlint src && eslint src package.json",
@@ -23,17 +23,18 @@
 	"devDependencies": {
 		"@codemirror/state": "^6.6.0",
 		"@codemirror/view": "^6.43.6",
-		"@types/node": "^26.1.0",
+		"@types/node": "^26.1.1",
 		"esbuild": "^0.28.1",
 		"eslint": "^10.6.0",
-		"eslint-plugin-obsidianmd": "^0.3.0",
+		"eslint-plugin-obsidianmd": "^0.4.1",
 		"happy-dom": "^20.10.6",
 		"obsidian": "^1.5.7",
 		"oxfmt": "^0.56.0",
 		"oxlint": "^1.73.0",
 		"typescript": "^6.0.3",
-		"typescript-eslint": "^8.62.1",
-		"vitest": "^4.1.9"
+		"typescript-7": "npm:typescript@^7.0.2",
+		"typescript-eslint": "^8.63.0",
+		"vitest": "^4.1.10"
 	},
 	"dependencies": {
 		"better-result": "^2.9.2"

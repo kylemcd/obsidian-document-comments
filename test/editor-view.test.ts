@@ -6,13 +6,33 @@
 // bugs (e.g. a `provide` referencing a const declared later, a temporal-dead-zone
 // crash) that pure-state and format tests miss. It fails outright if any editor
 // extension throws while a note is opened.
-import { describe, expect, test } from "vitest";
+import { beforeAll, describe, expect, test } from "vitest";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { commentField } from "../src/editor/state";
 import { draftField, setDraft } from "../src/editor/draft";
 import { commentConfig } from "../src/editor/config";
 import { editorLayoutField } from "../src/editor/layout";
+
+beforeAll(() => {
+	// Obsidian adds DOM creation helpers at runtime; happy-dom does not. Mirror
+	// the helper used by comment marker widgets so this remains a live EditorView
+	// test instead of falling back to a production-only native DOM path.
+	if (typeof HTMLElement.prototype.createSpan === "function") return;
+	HTMLElement.prototype.createSpan = function (options = {}) {
+		const span = this.ownerDocument.createElement("span");
+		if (typeof options === "string") span.textContent = options;
+		else {
+			if (options.cls) span.className = Array.isArray(options.cls) ? options.cls.join(" ") : options.cls;
+			if (options.text !== undefined) span.textContent = options.text;
+			for (const [name, value] of Object.entries(options.attr ?? {})) {
+				if (value !== null) span.setAttribute(name, String(value));
+			}
+		}
+		this.appendChild(span);
+		return span;
+	};
+});
 
 const pressArrow = (view: EditorView, key: "ArrowLeft" | "ArrowRight", shiftKey = false) => {
 	view.contentDOM.dispatchEvent(
