@@ -18,6 +18,43 @@ export const DEFAULT_SETTINGS: DocCommentsSettings = {
 
 type DocCommentsSettingKey = keyof DocCommentsSettings;
 
+type TextControl = { type: "text"; placeholder: string };
+type ToggleControl = { type: "toggle" };
+
+/** Single source of truth for each setting's copy and control. Both the
+ *  declarative `getSettingDefinitions()` API (newer Obsidian) and the imperative
+ *  `display()` fallback (older Obsidian) render from this, so their labels and
+ *  defaults can't drift apart. */
+const SETTING_META: ReadonlyArray<{
+	key: DocCommentsSettingKey;
+	name: string;
+	desc: string;
+	aliases: string[];
+	control: TextControl | ToggleControl;
+}> = [
+	{
+		key: "author",
+		name: "Author",
+		desc: 'Name attached to comments you create. Defaults to "me".',
+		aliases: ["comment author", "display name"],
+		control: { type: "text", placeholder: "Me" },
+	},
+	{
+		key: "showComments",
+		name: "Show comments",
+		desc: "Show the comment column. You can also toggle this from the ribbon or the command palette.",
+		aliases: ["comment column", "margin comments"],
+		control: { type: "toggle" },
+	},
+	{
+		key: "showResolved",
+		name: "Show resolved comments",
+		desc: "Keep resolved comments visible in the margin.",
+		aliases: ["resolved comments"],
+		control: { type: "toggle" },
+	},
+];
+
 export class DocCommentsSettingTab extends PluginSettingTab {
 	constructor(
 		app: App,
@@ -27,97 +64,57 @@ export class DocCommentsSettingTab extends PluginSettingTab {
 	}
 
 	getSettingDefinitions(): SettingDefinitionItem<DocCommentsSettingKey>[] {
-		return [
-			{
-				name: "Author",
-				desc: 'Name attached to comments you create. Defaults to "me".',
-				aliases: ["comment author", "display name"],
-				control: {
-					type: "text",
-					key: "author",
-					defaultValue: DEFAULT_SETTINGS.author,
-					placeholder: "Me",
-				},
-			},
-			{
-				name: "Show comments",
-				desc: "Show the comment column. You can also toggle this from the ribbon or the command palette.",
-				aliases: ["comment column", "margin comments"],
-				control: {
-					type: "toggle",
-					key: "showComments",
-					defaultValue: DEFAULT_SETTINGS.showComments,
-				},
-			},
-			{
-				name: "Show resolved comments",
-				desc: "Keep resolved comments visible in the margin.",
-				aliases: ["resolved comments"],
-				control: {
-					type: "toggle",
-					key: "showResolved",
-					defaultValue: DEFAULT_SETTINGS.showResolved,
-				},
-			},
-		];
+		return SETTING_META.map((meta) => ({
+			name: meta.name,
+			desc: meta.desc,
+			aliases: meta.aliases,
+			control:
+				meta.control.type === "text"
+					? {
+							type: "text",
+							key: meta.key,
+							defaultValue: DEFAULT_SETTINGS[meta.key] as string,
+							placeholder: meta.control.placeholder,
+						}
+					: { type: "toggle", key: meta.key, defaultValue: DEFAULT_SETTINGS[meta.key] as boolean },
+		}));
 	}
 
 	async setControlValue(key: string, value: unknown): Promise<void> {
-		switch (key) {
-			case "author":
-				this.plugin.settings.author = String(value);
-				await this.plugin.saveSettings();
-				break;
-			case "showComments":
-				this.plugin.settings.showComments = Boolean(value);
-				await this.plugin.saveSettings();
-				this.plugin.refreshEditors();
-				break;
-			case "showResolved":
-				this.plugin.settings.showResolved = Boolean(value);
-				await this.plugin.saveSettings();
-				this.plugin.refreshEditors();
-				break;
-		}
+		await this.applySetting(key as DocCommentsSettingKey, value);
 	}
 
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
+		for (const meta of SETTING_META) {
+			const setting = new Setting(containerEl).setName(meta.name).setDesc(meta.desc);
+			if (meta.control.type === "text") {
+				const placeholder = meta.control.placeholder;
+				setting.addText((text) =>
+					text
+						.setPlaceholder(placeholder)
+						.setValue(String(this.plugin.settings[meta.key]))
+						.onChange((value) => void this.applySetting(meta.key, value)),
+				);
+			} else {
+				setting.addToggle((toggle) =>
+					toggle
+						.setValue(Boolean(this.plugin.settings[meta.key]))
+						.onChange((value) => void this.applySetting(meta.key, value)),
+				);
+			}
+		}
+	}
 
-		new Setting(containerEl)
-			.setName("Author")
-			.setDesc("Name attached to comments you create. Defaults to “me”.")
-			.addText((text) =>
-				text
-					.setPlaceholder("Me")
-					.setValue(this.plugin.settings.author)
-					.onChange(async (value) => {
-						this.plugin.settings.author = value;
-						await this.plugin.saveSettings();
-					}),
-			);
-
-		new Setting(containerEl)
-			.setName("Show comments")
-			.setDesc("Show the comment column. You can also toggle this from the ribbon or the command palette.")
-			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.showComments).onChange(async (value) => {
-					this.plugin.settings.showComments = value;
-					await this.plugin.saveSettings();
-					this.plugin.refreshEditors();
-				}),
-			);
-
-		new Setting(containerEl)
-			.setName("Show resolved comments")
-			.setDesc("Keep resolved comments visible in the margin.")
-			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.showResolved).onChange(async (value) => {
-					this.plugin.settings.showResolved = value;
-					await this.plugin.saveSettings();
-					this.plugin.refreshEditors();
-				}),
-			);
+	/** Persist one setting and run its side effects (editor refresh, ribbon sync).
+	 *  Shared by both the declarative and imperative settings paths. */
+	private async applySetting(key: DocCommentsSettingKey, value: unknown): Promise<void> {
+		if (key === "author") this.plugin.settings.author = String(value);
+		else if (key === "showComments") this.plugin.settings.showComments = Boolean(value);
+		else if (key === "showResolved") this.plugin.settings.showResolved = Boolean(value);
+		await this.plugin.saveSettings();
+		if (key !== "author") this.plugin.refreshEditors();
+		if (key === "showComments") this.plugin.updateRibbon();
 	}
 }

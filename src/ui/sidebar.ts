@@ -1,12 +1,11 @@
 import { App, Debouncer, ItemView, MarkdownView, Notice, TFile, WorkspaceLeaf, debounce } from "obsidian";
-import { Result } from "better-result";
 import { EditorView } from "@codemirror/view";
+import { Result } from "better-result";
 import { ParsedComment } from "../format/types";
 import { anchorRange, parseComments } from "../format/parse";
 import { Card, CardCallbacks, cardSignature } from "./card";
 import {
 	Change,
-	applyChanges,
 	computeAppendReply,
 	computeDeleteComment,
 	computeDeleteEntry,
@@ -14,7 +13,9 @@ import {
 	computeSetResolved,
 	computeToggleReaction,
 } from "../editor/edits";
-import { cssEscape } from "../util/css";
+import { applyCommentEdit, editorViewForFile } from "../editor/routing";
+import { spanSelector } from "../util/css";
+import { CARD_FLASH_MS, FLASH_MS } from "../ui/constants";
 import { centeredScrollTop } from "./scroll";
 
 export const COMMENTS_VIEW_TYPE = "document-comments-sidebar";
@@ -152,7 +153,7 @@ export class CommentsSidebarView extends ItemView {
 		if (!card) return;
 		card.el.scrollIntoView({ block: "center", behavior: "smooth" });
 		card.el.addClass("dc-flash");
-		window.setTimeout(() => card.el.removeClass("dc-flash"), 1000);
+		window.setTimeout(() => card.el.removeClass("dc-flash"), CARD_FLASH_MS);
 	}
 
 	/** Scroll the panel to reveal a just-opened reply composer. Centers it (the bottom
@@ -233,18 +234,21 @@ export class CommentsSidebarView extends ItemView {
 			}
 		}
 		const cardView = { app: this.app, sourcePath: () => this.file?.path ?? "" };
+		const desired: HTMLElement[] = [];
 		for (const c of comments) {
 			const existing = this.cards.get(c.id);
 			if (!existing) {
-				this.cards.set(c.id, new Card(c, this.cb, cardView));
-			} else if (existing.signature !== cardSignature(c)) {
-				existing.update(c);
+				const card = new Card(c, this.cb, cardView);
+				this.cards.set(c.id, card);
+				desired.push(card.el);
+			} else {
+				if (existing.signature !== cardSignature(c)) existing.update(c);
+				desired.push(existing.el);
 			}
 		}
 		// Re-order the DOM to match document order — but only touch it when the
 		// order actually differs, so an open composer doesn't lose focus on every
 		// content refresh.
-		const desired = comments.map((c) => this.cards.get(c.id)!.el);
 		const current = Array.from(this.listEl.children);
 		const sameOrder = desired.length === current.length && desired.every((el, i) => el === current[i]);
 		if (!sameOrder) for (const el of desired) this.listEl.appendChild(el);
@@ -262,32 +266,7 @@ export class CommentsSidebarView extends ItemView {
 	private async edit(compute: (doc: string) => Result<Change[], string>): Promise<void> {
 		const file = this.file;
 		if (!file) return;
-		const cm = this.editorViewForFile(file);
-		if (cm) {
-			compute(cm.state.doc.toString()).match({
-				ok: (changes) => {
-					cm.dispatch({ changes });
-					void this.refresh();
-				},
-				err: (message) => new Notice(`Couldn't save the comment: ${message}`),
-			});
-			return;
-		}
-		let computeError: string | undefined;
-		const io = await Result.tryPromise({
-			try: () =>
-				this.app.vault.process(file, (data) => {
-					const result = compute(data);
-					if (result.isErr()) {
-						computeError = result.error;
-						return data;
-					}
-					return applyChanges(data, result.value);
-				}),
-			catch: (e) => (e instanceof Error ? e.message : "unknown error"),
-		});
-		const outcome: Result<string, string> = computeError ? Result.err(computeError) : io;
-		outcome.match({
+		(await applyCommentEdit(this.app, file, compute)).match({
 			ok: (newData) => void this.refresh(newData),
 			err: (message) => new Notice(`Couldn't save the comment: ${message}`),
 		});
@@ -311,14 +290,14 @@ export class CommentsSidebarView extends ItemView {
 		const view = this.markdownViewForFile(file);
 		if (!view) return;
 		if (view.getMode() === "preview") {
-			const span = view.containerEl.querySelector(`.doc-comment-span[data-cid="${cssEscape(id)}"]`);
+			const span = view.containerEl.querySelector(spanSelector(id));
 			if (span instanceof HTMLElement) {
 				span.scrollIntoView({ block: "center", behavior: "smooth" });
 				this.flash(span);
 			}
 			return;
 		}
-		const cm = this.editorViewForFile(file);
+		const cm = editorViewForFile(this.app, file);
 		if (!cm) return;
 		const c = parseComments(cm.state.doc.toString()).find((x) => x.id === id);
 		if (!c) return;
@@ -342,7 +321,7 @@ export class CommentsSidebarView extends ItemView {
 	 *  a few frames so the destination can flash regardless of scroll direction. */
 	private flashEditorAnchor(cm: EditorView, id: string, attempts = 0): void {
 		window.requestAnimationFrame(() => {
-			const span = cm.contentDOM.querySelector(`.doc-comment-span[data-cid="${cssEscape(id)}"]`);
+			const span = cm.contentDOM.querySelector(spanSelector(id));
 			if (span instanceof HTMLElement) {
 				this.flash(span);
 			} else if (attempts < 20) {
@@ -356,14 +335,12 @@ export class CommentsSidebarView extends ItemView {
 		if (!file) return;
 		const view = this.markdownViewForFile(file);
 		if (!view) return;
-		view.containerEl
-			.querySelectorAll(`.doc-comment-span[data-cid="${cssEscape(id)}"]`)
-			.forEach((s) => s.classList.toggle("is-active", active));
+		view.containerEl.querySelectorAll(spanSelector(id)).forEach((s) => s.classList.toggle("is-active", active));
 	}
 
 	private flash(span: HTMLElement): void {
 		span.addClass("dc-flash");
-		window.setTimeout(() => span.removeClass("dc-flash"), 900);
+		window.setTimeout(() => span.removeClass("dc-flash"), FLASH_MS);
 	}
 
 	// ── Resolving the active note + its live text ──────────────────────────
@@ -380,20 +357,9 @@ export class CommentsSidebarView extends ItemView {
 	}
 
 	private async currentText(file: TFile): Promise<string> {
-		const cm = this.editorViewForFile(file);
+		const cm = editorViewForFile(this.app, file);
 		if (cm) return cm.state.doc.toString();
 		return this.app.vault.read(file);
-	}
-
-	private editorViewForFile(file: TFile): EditorView | null {
-		for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
-			const v = leaf.view;
-			if (v instanceof MarkdownView && v.file === file && v.getMode() !== "preview") {
-				const cm = (v.editor as unknown as { cm?: unknown }).cm;
-				if (cm instanceof EditorView) return cm;
-			}
-		}
-		return null;
 	}
 
 	private markdownViewForFile(file: TFile): MarkdownView | null {

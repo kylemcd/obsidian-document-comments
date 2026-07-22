@@ -49,6 +49,9 @@ export class Card {
 	private comment: ParsedComment;
 	private open = false;
 	private editingIndex = -1;
+	/** In-progress text of the entry editor, so an external update mid-edit
+	 *  (a synced reply, a reaction toggled elsewhere) doesn't discard it. */
+	private editDraft = "";
 	private draft = "";
 	/** Measured: the thread exceeds the clamp height / the whole column. */
 	private overflows = false;
@@ -93,15 +96,22 @@ export class Card {
 
 	update(comment: ParsedComment): void {
 		this.comment = comment;
-		this.editingIndex = -1; // any edit has now landed
+		// Keep an open entry editor across external updates; commit/cancel clear
+		// editingIndex first, so a landed edit still collapses the editor. Only drop
+		// it if the edited entry no longer exists (e.g. deleted elsewhere).
+		if (this.editingIndex >= comment.thread.length) {
+			this.editingIndex = -1;
+			this.editDraft = "";
+		}
 		this.render();
 	}
 
-	/** Release the markdown-render component (its link/embed child handlers) when
-	 *  the card is dropped from the margin or sidebar. */
+	/** Release the markdown-render component (its link/embed child handlers) and any
+	 *  document-level listener when the card is dropped from the margin or sidebar. */
 	destroy(): void {
 		this.ro.disconnect();
 		this.md.unload();
+		this.el.ownerDocument.removeEventListener("mousedown", this.onDocMouseDown, true);
 	}
 
 	setActive(active: boolean): void {
@@ -259,7 +269,7 @@ export class Card {
 		if (time) head.createSpan({ cls: "dc-entry__time", text: time });
 
 		if (this.editingIndex === i) {
-			this.renderEditor(row, entry.text, i);
+			this.renderEditor(row, i);
 		} else {
 			this.renderText(row.createDiv("dc-entry__text"), entry.text);
 		}
@@ -293,12 +303,15 @@ export class Card {
 		}
 	}
 
-	private renderEditor(row: HTMLElement, text: string, index: number): void {
+	private renderEditor(row: HTMLElement, index: number): void {
 		const box = row.createDiv("dc-field dc-field--edit");
 		const ta = box.createEl("textarea", { cls: "dc-field__input" });
-		ta.value = text;
+		ta.value = this.editDraft;
 		autogrow(ta);
-		ta.addEventListener("input", () => autogrow(ta));
+		ta.addEventListener("input", () => {
+			this.editDraft = ta.value;
+			autogrow(ta);
+		});
 		ta.addEventListener("keydown", (e) => {
 			if (e.key === "Escape") this.cancelEdit();
 			else if (e.key === "Enter" && !e.shiftKey) {
@@ -357,18 +370,29 @@ export class Card {
 
 	private commitEdit(index: number, value: string): void {
 		const text = value.trim();
-		if (text) this.cb.editEntry(this.id, index, text);
-		else this.cancelEdit();
+		if (!text) {
+			this.cancelEdit();
+			return;
+		}
+		// Collapse the editor before the write lands so the incoming external
+		// update() doesn't reopen it (and doesn't clobber a concurrent edit elsewhere).
+		this.editingIndex = -1;
+		this.editDraft = "";
+		this.render();
+		this.cb.editEntry(this.id, index, text);
+		this.cb.onResize();
 	}
 
 	private cancelEdit(): void {
 		this.editingIndex = -1;
+		this.editDraft = "";
 		this.render();
 		this.cb.onResize();
 	}
 
 	private startEdit(index: number): void {
 		this.editingIndex = index;
+		this.editDraft = this.comment.thread[index]?.text ?? "";
 		this.render();
 		this.cb.onResize();
 	}
@@ -394,24 +418,30 @@ export class Card {
 		const doc = this.el.ownerDocument;
 		doc.querySelectorAll(".dc-pop").forEach((p) => p.remove());
 		const pop = doc.body.createDiv("dc-pop");
-		for (const emoji of QUICK_EMOJI) {
-			const btn = pop.createEl("button", { cls: "dc-pop__emoji", text: emoji });
-			btn.addEventListener("click", (ev) => {
-				ev.stopPropagation();
-				pop.remove();
-				this.cb.toggleReaction(this.id, emoji);
-			});
-		}
-		// Right-align the popover with the button so it grows left, not off-page.
-		const rect = anchor.getBoundingClientRect();
-		const left = Math.max(8, rect.right - pop.offsetWidth);
-		pop.setCssStyles({ top: `${rect.bottom + 4}px`, left: `${left}px` });
+		// Self-removing outside-click handler. Picking an emoji tears it down too, so
+		// the document listener never outlives the popover.
 		const close = (ev: MouseEvent) => {
 			if (!pop.contains(ev.target as Node)) {
 				pop.remove();
 				doc.removeEventListener("mousedown", close, true);
 			}
 		};
+		const pick = (emoji: string) => {
+			pop.remove();
+			doc.removeEventListener("mousedown", close, true);
+			this.cb.toggleReaction(this.id, emoji);
+		};
+		for (const emoji of QUICK_EMOJI) {
+			const btn = pop.createEl("button", { cls: "dc-pop__emoji", text: emoji });
+			btn.addEventListener("click", (ev) => {
+				ev.stopPropagation();
+				pick(emoji);
+			});
+		}
+		// Right-align the popover with the button so it grows left, not off-page.
+		const rect = anchor.getBoundingClientRect();
+		const left = Math.max(8, rect.right - pop.offsetWidth);
+		pop.setCssStyles({ top: `${rect.bottom + 4}px`, left: `${left}px` });
 		window.setTimeout(() => doc.addEventListener("mousedown", close, true), 0);
 	}
 

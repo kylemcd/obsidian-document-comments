@@ -1,13 +1,10 @@
 import { App, MarkdownView, Notice, setIcon } from "obsidian";
 import { Result } from "better-result";
-import { ParsedComment } from "../format/types";
-import { existingIds, hasMarginAnchor, parseComments } from "../format/parse";
-import { generateId } from "../format/ids";
+import { ParsedComment, TextRange } from "../format/types";
+import { hasMarginAnchor, parseComments } from "../format/parse";
 import { Card, CardCallbacks, cardSignature } from "../ui/card";
 import {
 	Change,
-	applyChanges,
-	computeAddComment,
 	computeAppendReply,
 	computeDeleteComment,
 	computeDeleteEntry,
@@ -15,9 +12,10 @@ import {
 	computeSetResolved,
 	computeToggleReaction,
 } from "../editor/edits";
-import { cssEscape } from "../util/css";
-
-const CARD_GAP = 8;
+import { applyCommentEdit, insertComment as routeInsertComment } from "../editor/routing";
+import { closestSpanId, spanSelector } from "../util/css";
+import { stackTops } from "../ui/stack";
+import { CARD_GAP, FLASH_MS } from "../ui/constants";
 
 export type ReadingDeps = {
 	app: App;
@@ -39,7 +37,8 @@ class ReadingMargin {
 	private cards = new Map<string, Card>();
 	private comments: ParsedComment[] = [];
 	private activeId: string | null = null;
-	private draft: { from: number; to: number } | null = null;
+	private draft: TextRange | null = null;
+	private draftText = "";
 	private draftEl: HTMLElement | null = null;
 	private draftAnchor: HTMLElement | null = null;
 	private cb: CardCallbacks;
@@ -47,6 +46,7 @@ class ReadingMargin {
 	private resizeObserver: ResizeObserver;
 	private animFrames = 0;
 	private animatingLoop = false;
+	private destroyed = false;
 
 	constructor(
 		private readingView: HTMLElement,
@@ -108,21 +108,9 @@ class ReadingMargin {
 	private async edit(compute: (doc: string) => Result<Change[], string>): Promise<void> {
 		const file = this.view.file;
 		if (!file) return;
-		let computeError: string | undefined;
-		const io = await Result.tryPromise({
-			try: () =>
-				this.deps.app.vault.process(file, (data) => {
-					const result = compute(data);
-					if (result.isErr()) {
-						computeError = result.error;
-						return data;
-					}
-					return applyChanges(data, result.value);
-				}),
-			catch: (e) => (e instanceof Error ? e.message : "unknown error"),
-		});
-		const outcome: Result<string, string> = computeError ? Result.err(computeError) : io;
-		outcome.match({
+		// Route through the open editor when there is one (undo history + unsaved
+		// buffer) instead of a bare disk write that races the editor's autosave.
+		(await applyCommentEdit(this.deps.app, file, compute)).match({
 			ok: (newData) => void this.refresh(newData),
 			err: (message) => new Notice(`Couldn't save the comment: ${message}`),
 		});
@@ -153,6 +141,7 @@ class ReadingMargin {
 	}
 
 	private position(): void {
+		if (this.destroyed) return;
 		// State classes live on the reading-view container (Obsidian-owned, safe to
 		// write directly), so the stylesheet caps the text column with plain
 		// descendant selectors instead of :has().
@@ -176,35 +165,39 @@ class ReadingMargin {
 		// sidebar panel hosts the cards (dc-has is off, dc-highlights stays on).
 		this.readingView.toggleClass("dc-highlights", this.deps.showComments());
 		const topRef = this.readingView.getBoundingClientRect().top;
-		const placements: Array<{ el: HTMLElement; top: number }> = [];
+		// Gather geometry (reads) first, then write every top in one pass — cards are
+		// absolutely positioned, so a top write can't change any height.
+		const placements: Array<{ el: HTMLElement; top: number; height: number }> = [];
 		for (const c of this.comments) {
 			const card = this.cards.get(c.id);
 			if (!card) continue;
-			const span = this.scroller.querySelector(`.doc-comment-span[data-cid="${cssEscape(c.id)}"]`);
+			const span = this.scroller.querySelector(spanSelector(c.id));
 			if (!span) {
 				card.el.addClass("dc-offscreen");
 				continue;
 			}
 			card.el.removeClass("dc-offscreen");
 			if (card.el.offsetHeight === 0) continue;
-			placements.push({ el: card.el, top: span.getBoundingClientRect().top - topRef });
+			placements.push({
+				el: card.el,
+				top: span.getBoundingClientRect().top - topRef,
+				height: card.el.offsetHeight,
+			});
 		}
 		if (this.draftEl && this.draftAnchor) {
-			placements.push({ el: this.draftEl, top: this.draftAnchor.getBoundingClientRect().top - topRef });
+			placements.push({
+				el: this.draftEl,
+				top: this.draftAnchor.getBoundingClientRect().top - topRef,
+				height: this.draftEl.offsetHeight,
+			});
 		}
-		// First card floor is -Infinity so a card whose anchor has scrolled above the
-		// viewport slides off the top instead of sticking. (No orphan column here.)
-		placements.sort((a, b) => a.top - b.top);
-		let cursor = Number.NEGATIVE_INFINITY;
-		for (const p of placements) {
-			const y = Math.max(p.top, cursor);
-			p.el.setCssStyles({ top: `${y}px` });
-			cursor = y + p.el.offsetHeight + CARD_GAP;
-		}
+		const tops = stackTops(placements, CARD_GAP);
+		placements.forEach((p, i) => p.el.setCssStyles({ top: `${tops[i]}px` }));
 	}
 
-	/** Show an inline draft composer for a new comment (Reading-view "Add"). */
-	showDraft(from: number, to: number, range: Range): void {
+	/** Show an inline draft composer for a new comment (Reading-view "Add").
+	 *  `expected` is the source text at [from,to], verified when the write lands. */
+	showDraft(from: number, to: number, range: Range, expected: string): void {
 		this.clearDraft();
 		const span = this.scroller.createSpan({ cls: "doc-comment-span dc-draft" });
 		span.detach();
@@ -216,6 +209,7 @@ class ReadingMargin {
 		}
 		this.draftAnchor = span;
 		this.draft = { from, to };
+		this.draftText = expected;
 		this.draftEl = this.buildDraftEl();
 		this.container.appendChild(this.draftEl);
 		this.position();
@@ -237,8 +231,9 @@ class ReadingMargin {
 		const submit = () => {
 			const text = textarea.value.trim();
 			const draft = this.draft;
+			const expected = this.draftText;
 			this.clearDraft();
-			if (text && draft) void this.insertComment(draft.from, draft.to, text);
+			if (text && draft) void this.insertComment(draft.from, draft.to, text, expected);
 		};
 
 		const cancelBtn = actions.createEl("button", {
@@ -273,31 +268,11 @@ class ReadingMargin {
 		return el;
 	}
 
-	private async insertComment(from: number, to: number, text: string): Promise<void> {
+	private async insertComment(from: number, to: number, text: string, expected: string): Promise<void> {
 		const file = this.view.file;
 		if (!file) return;
-		let computeError: string | undefined;
-		const io = await Result.tryPromise({
-			try: () =>
-				this.deps.app.vault.process(file, (data) => {
-					const id = generateId(existingIds(data));
-					const result = computeAddComment(data, from, to, {
-						id,
-						createdAt: new Date().toISOString(),
-						author: this.deps.getAuthor(),
-						text,
-					});
-					if (result.isErr()) {
-						computeError = result.error;
-						return data;
-					}
-					return applyChanges(data, result.value);
-				}),
-			catch: (e) => (e instanceof Error ? e.message : "unknown error"),
-		});
-		const outcome: Result<string, string> = computeError ? Result.err(computeError) : io;
-		outcome.match({
-			ok: (newData) => void this.refresh(newData),
+		(await routeInsertComment(this.deps.app, file, from, to, text, this.deps.getAuthor(), expected)).match({
+			ok: () => void this.refresh(),
 			err: (message) => new Notice(`Couldn't add the comment: ${message}`),
 		});
 	}
@@ -316,6 +291,7 @@ class ReadingMargin {
 		this.draftEl?.remove();
 		this.draftEl = null;
 		this.draft = null;
+		this.draftText = "";
 		// Re-run layout so the composer's `dc-margin` (and its reserved slot in the
 		// stack) is dropped immediately on cancel — the editor margin gets this for
 		// free via its dispatch cycle; the reading margin has to ask for it.
@@ -336,18 +312,16 @@ class ReadingMargin {
 	}
 
 	private markHighlight(id: string, active: boolean): void {
-		this.scroller
-			.querySelectorAll(`.doc-comment-span[data-cid="${cssEscape(id)}"]`)
-			.forEach((s) => s.classList.toggle("is-active", active));
+		this.scroller.querySelectorAll(spanSelector(id)).forEach((s) => s.classList.toggle("is-active", active));
 	}
 
 	/** Clicking a margin card flashes its highlighted text — no scroll (it's aligned). */
 	private flashAnchor(id: string): void {
 		this.setActive(id);
-		const span = this.scroller.querySelector(`.doc-comment-span[data-cid="${cssEscape(id)}"]`);
+		const span = this.scroller.querySelector(spanSelector(id));
 		if (!span) return;
 		span.classList.add("dc-flash");
-		window.setTimeout(() => span.classList.remove("dc-flash"), 900);
+		window.setTimeout(() => span.classList.remove("dc-flash"), FLASH_MS);
 	}
 
 	/** Scroll the reading view the minimum needed to reveal a just-opened composer. */
@@ -385,13 +359,12 @@ class ReadingMargin {
 	}
 
 	private onMouseOver = (e: MouseEvent): void => {
-		const span = (e.target as HTMLElement).closest(".doc-comment-span");
-		const id = span?.getAttribute("data-cid");
+		const id = closestSpanId(e.target);
 		if (id) this.setActive(id);
 	};
 
 	private onMouseOut = (e: MouseEvent): void => {
-		const span = (e.target as HTMLElement).closest(".doc-comment-span");
+		const span = e.target instanceof Element ? e.target.closest(".doc-comment-span") : null;
 		if (!span) return;
 		const to = e.relatedTarget;
 		if (to instanceof Node && span.contains(to)) return;
@@ -399,12 +372,12 @@ class ReadingMargin {
 	};
 
 	private onMouseDown = (e: MouseEvent): void => {
-		const span = (e.target as HTMLElement).closest(".doc-comment-span");
-		const id = span?.getAttribute("data-cid");
+		const id = closestSpanId(e.target);
 		if (id) this.setActive(id);
 	};
 
 	destroy(): void {
+		this.destroyed = true;
 		this.clearDraft();
 		this.scroller.removeEventListener("scroll", this.scrollHandler);
 		this.resizeObserver.disconnect();
@@ -461,7 +434,7 @@ export class ReadingMarginManager {
 	}
 
 	/** Show the inline new-comment composer on the active reading view. */
-	startDraft(view: MarkdownView, from: number, to: number, range: Range): void {
+	startDraft(view: MarkdownView, from: number, to: number, range: Range, expected: string): void {
 		const rv = view.containerEl.querySelector(".markdown-reading-view");
 		if (!(rv instanceof HTMLElement)) return;
 		let margin = this.margins.get(rv);
@@ -470,7 +443,7 @@ export class ReadingMarginManager {
 			this.margins.set(rv, margin);
 			void margin.refresh();
 		}
-		margin.showDraft(from, to, range);
+		margin.showDraft(from, to, range, expected);
 	}
 
 	destroy(): void {

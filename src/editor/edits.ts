@@ -15,6 +15,11 @@ export type NewCommentInput = {
 	createdAt: string;
 	author: string;
 	text: string;
+	/** The text the user selected, captured when the composer opened. When the
+	 *  document shifted underneath (sync, another pane) before the write lands,
+	 *  the offsets no longer point at it and creation is refused rather than
+	 *  anchoring the wrong text. */
+	expected?: string;
 };
 
 /** Wrap [from,to] with anchor markers and append a body block after the block.
@@ -27,6 +32,9 @@ export const computeAddComment = (
 ): Result<Change[], string> => {
 	if (to < from) [from, to] = [to, from];
 	if (to === from) return Result.err("Select some text to comment on.");
+	if (input.expected !== undefined && doc.slice(from, to) !== input.expected) {
+		return Result.err("The selection moved — try adding the comment again.");
+	}
 	// Markers inside a fence render as literal text and the parser masks them, so
 	// the comment would be invisible in every surface. Refuse rather than corrupt.
 	if (isInFencedCode(doc, from) || isInFencedCode(doc, to - 1)) {
