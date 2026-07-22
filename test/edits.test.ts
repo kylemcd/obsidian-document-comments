@@ -5,6 +5,8 @@ import {
 	computeAddComment,
 	computeAppendReply,
 	computeDeleteComment,
+	computeDeleteEntry,
+	computeEditEntry,
 	computeSetResolved,
 } from "../src/editor/edits";
 import { anchorRange, parseComments } from "../src/format/parse";
@@ -14,7 +16,7 @@ const DOC = "We should ship on Friday regardless of the QA timeline.\n\nNext par
 const FROM = DOC.indexOf("ship on Friday");
 const TO = FROM + "ship on Friday".length;
 
-function add(): string {
+const add = (): string => {
 	const changes = computeAddComment(DOC, FROM, TO, {
 		id: "k3f9",
 		createdAt: "2026-06-17T10:00:00.000Z",
@@ -22,7 +24,7 @@ function add(): string {
 		text: "I thought we agreed Thursday?",
 	}).unwrap();
 	return applyChanges(DOC, changes);
-}
+};
 
 describe("computeAddComment", () => {
 	it("wraps the selection and appends a body", () => {
@@ -115,11 +117,107 @@ describe("reply / resolve", () => {
 	});
 });
 
+describe("computeAddComment in code blocks", () => {
+	it("creates a code comment (block wrap + line target) for a selection inside a fence", () => {
+		const doc = "text\n```js\nconst spinner = 1;\n```\nmore";
+		const from = doc.indexOf("spinner");
+		const result = computeAddComment(doc, from, from + "spinner".length, {
+			id: "x",
+			createdAt: "t",
+			author: "a",
+			text: "b",
+		});
+		expect(result.isOk()).toBe(true);
+		const out = applyChanges(doc, result.unwrap());
+		expect(out).toContain("<!--c:x-->\n```js");
+		const c = parseComments(out).find((entry) => entry.id === "x")!;
+		expect(c.codeLines).toEqual({ from: 0, to: 0 });
+		expect(c.quote).toBe("const spinner = 1;");
+	});
+
+	it("still anchors a normal prose selection outside any fence", () => {
+		const doc = "text\n```js\nconst spinner = 1;\n```\nmore prose here";
+		const from = doc.indexOf("prose");
+		const result = computeAddComment(doc, from, from + "prose".length, {
+			id: "x",
+			createdAt: "t",
+			author: "a",
+			text: "b",
+		});
+		expect(result.isOk()).toBe(true);
+		expect(parseComments(applyChanges(doc, result.unwrap()))[0]!.codeLines).toBeUndefined();
+	});
+});
+
 describe("computeDeleteComment", () => {
 	it("round-trips back to the original document", () => {
 		const out = add();
 		const restored = applyChanges(out, computeDeleteComment(out, "k3f9").unwrap());
 		expect(restored).toBe(DOC);
+	});
+
+	it("removes duplicated markers left by copy-pasting a commented span", () => {
+		const out = add();
+		// Simulate a paste: duplicate the anchor markers elsewhere in the doc.
+		const anchor = openMarker("k3f9") + "ship on Friday" + closeMarker("k3f9");
+		const withDupe = out.replace("Next paragraph.", "Next paragraph. " + anchor);
+		expect(withDupe.match(/<!--c:k3f9-->/g)!.length).toBe(2);
+		const cleaned = applyChanges(withDupe, computeDeleteComment(withDupe, "k3f9").unwrap());
+		expect(cleaned).not.toContain("k3f9");
+	});
+
+	// Deletes on the raw-file path (sidebar / Reading view) see the file's real line
+	// endings. A code comment's own-line markers must take their whole CRLF terminator
+	// with them, or a `\r\n` is left behind as a stray blank line around the block.
+	it("round-trips a code-block comment on a CRLF file without leaving blank lines", () => {
+		const base = "intro\n\n```js\nconst a = 1;\n```\n\noutro\n";
+		const at = base.indexOf("const a = 1;");
+		const withComment = applyChanges(
+			base,
+			computeAddComment(base, at, at + "const a = 1;".length, {
+				id: "cc1",
+				createdAt: "t",
+				author: "a",
+				text: "b",
+			}).unwrap(),
+		);
+		const toCrlf = (s: string): string => s.replace(/\n/g, "\r\n");
+		const crlf = toCrlf(withComment);
+		const restored = applyChanges(crlf, computeDeleteComment(crlf, "cc1").unwrap());
+		expect(restored).toBe(toCrlf(base));
+	});
+});
+
+describe("malformed / boundary edit inputs", () => {
+	it("errs on a reversed from/to being empty after the swap", () => {
+		expect(computeAddComment(DOC, TO, FROM, { id: "x", createdAt: "t", author: "a", text: "b" }).isOk()).toBe(true);
+		// A reversed zero-width range is still empty.
+		expect(computeAddComment(DOC, FROM, FROM, { id: "x", createdAt: "t", author: "a", text: "b" }).isErr()).toBe(
+			true,
+		);
+	});
+
+	it("errs when the captured selection no longer matches (expected guard)", () => {
+		const result = computeAddComment(DOC, FROM, TO, {
+			id: "x",
+			createdAt: "t",
+			author: "a",
+			text: "b",
+			expected: "something else entirely",
+		});
+		expect(result.isErr()).toBe(true);
+	});
+
+	it("errs on an out-of-range entry edit instead of a silent no-op write", () => {
+		const out = add();
+		expect(computeEditEntry(out, "k3f9", 99, "nope").isErr()).toBe(true);
+		expect(computeDeleteEntry(out, "k3f9", -1).isErr()).toBe(true);
+	});
+
+	it("errs when replying to a comment that has no body", () => {
+		const markerOnly = openMarker("m1") + "x" + closeMarker("m1");
+		expect(computeSetResolved(markerOnly, "m1", true).isErr()).toBe(true);
+		expect(computeAppendReply(markerOnly, "m1", { createdAt: "t", author: "a", text: "b" }).isErr()).toBe(true);
 	});
 });
 
@@ -133,6 +231,6 @@ describe("blockEnd", () => {
 	});
 });
 
-function stripComments(s: string): string {
+const stripComments = (s: string): string => {
 	return s.replace(/<!--\/?co?:[A-Za-z0-9]+[\s\S]*?-->/g, "");
-}
+};

@@ -1,6 +1,7 @@
 import { Result } from "better-result";
 import { CommentData, ParsedComment, Reaction } from "../format/types";
-import { parseComments } from "../format/parse";
+import { isInFencedCode, parseComments } from "../format/parse";
+import { codeSelectionTarget } from "../format/code-anchor";
 import { closeMarker, openMarker, serializeBody } from "../format/serialize";
 
 /** A document edit in original coordinates (matches CodeMirror's ChangeSpec shape). */
@@ -15,6 +16,11 @@ export type NewCommentInput = {
 	createdAt: string;
 	author: string;
 	text: string;
+	/** The text the user selected, captured when the composer opened. When the
+	 *  document shifted underneath (sync, another pane) before the write lands,
+	 *  the offsets no longer point at it and creation is refused rather than
+	 *  anchoring the wrong text. */
+	expected?: string;
 };
 
 /** Wrap [from,to] with anchor markers and append a body block after the block.
@@ -27,6 +33,14 @@ export const computeAddComment = (
 ): Result<Change[], string> => {
 	if (to < from) [from, to] = [to, from];
 	if (to === from) return Result.err("Select some text to comment on.");
+	if (input.expected !== undefined && doc.slice(from, to) !== input.expected) {
+		return Result.err("The selection moved — try adding the comment again.");
+	}
+	// Markers can't live inside a fence (they'd render literally and the parser
+	// masks them), so a code selection anchors the whole block with a line target.
+	if (isInFencedCode(doc, from) || isInFencedCode(doc, to - 1)) {
+		return computeAddCodeComment(doc, from, to, input);
+	}
 	({ from, to } = expandInlineCodeSelection(doc, from, to));
 
 	const quote = doc.slice(from, to);
@@ -43,6 +57,35 @@ export const computeAddComment = (
 		{ from, to: from, insert: openMarker(input.id) },
 		{ from: to, to, insert: closeMarker(input.id) },
 		{ from: paraEnd, to: paraEnd, insert: "\n" + serializeBody(input.id, data) },
+	]);
+};
+
+/** Anchor a code selection: wrap the whole fenced block with own-line markers and
+ *  record the block-relative line range + exact code as the body's `line:`/`quote:`. */
+const computeAddCodeComment = (
+	doc: string,
+	from: number,
+	to: number,
+	input: NewCommentInput,
+): Result<Change[], string> => {
+	const target = codeSelectionTarget(doc, from, to);
+	if (!target) return Result.err("Couldn't map that selection to code lines.");
+	const data: CommentData = {
+		author: input.author,
+		createdAt: input.createdAt,
+		status: "open",
+		quote: target.quote,
+		codeLines: target.codeLines,
+		thread: [{ author: input.author, timestamp: input.createdAt, text: input.text }],
+		reactions: [],
+	};
+	return Result.ok([
+		{ from: target.fenceStart, to: target.fenceStart, insert: openMarker(input.id) + "\n" },
+		{
+			from: target.fenceEnd,
+			to: target.fenceEnd,
+			insert: "\n" + closeMarker(input.id) + "\n" + serializeBody(input.id, data),
+		},
 	]);
 };
 
@@ -106,18 +149,18 @@ export const computeSetResolved = (doc: string, id: string, resolved: boolean): 
 
 /** Replace the text of the i-th message in a thread. */
 export const computeEditEntry = (doc: string, id: string, index: number, text: string): Result<Change[], string> => {
-	return replaceBody(doc, id, (c) => ({
-		...toData(c),
-		thread: c.thread.map((e, i) => (i === index ? { ...e, text } : e)),
-	}));
+	return replaceBody(doc, id, (c) => {
+		if (index < 0 || index >= c.thread.length) return null;
+		return { ...toData(c), thread: c.thread.map((e, i) => (i === index ? { ...e, text } : e)) };
+	});
 };
 
 /** Remove the i-th message from a thread (used for replies). */
 export const computeDeleteEntry = (doc: string, id: string, index: number): Result<Change[], string> => {
-	return replaceBody(doc, id, (c) => ({
-		...toData(c),
-		thread: c.thread.filter((_, i) => i !== index),
-	}));
+	return replaceBody(doc, id, (c) => {
+		if (index < 0 || index >= c.thread.length) return null;
+		return { ...toData(c), thread: c.thread.filter((_, i) => i !== index) };
+	});
 };
 
 /** Add/remove the author from an emoji reaction. */
@@ -130,11 +173,17 @@ export const computeToggleReaction = (
 	return replaceBody(doc, id, (c) => ({ ...toData(c), reactions: toggleReactions(c.reactions, emoji, author) }));
 };
 
-const replaceBody = (doc: string, id: string, mutate: (c: ParsedComment) => CommentData): Result<Change[], string> => {
+const replaceBody = (
+	doc: string,
+	id: string,
+	mutate: (c: ParsedComment) => CommentData | null,
+): Result<Change[], string> => {
 	const c = parseComments(doc).find((x) => x.id === id);
 	if (!c) return Result.err("Comment not found.");
 	if (!c.body) return Result.err("Comment has no body to update.");
-	return Result.ok([{ from: c.body.from, to: c.body.to, insert: serializeBody(id, mutate(c)) }]);
+	const data = mutate(c);
+	if (!data) return Result.err("That reply no longer exists.");
+	return Result.ok([{ from: c.body.from, to: c.body.to, insert: serializeBody(id, data) }]);
 };
 
 const toData = (c: ParsedComment): CommentData => {
@@ -143,6 +192,7 @@ const toData = (c: ParsedComment): CommentData => {
 		createdAt: c.createdAt,
 		status: c.status,
 		quote: c.quote,
+		codeLines: c.codeLines,
 		thread: c.thread,
 		reactions: c.reactions,
 	};
@@ -162,24 +212,53 @@ const toggleReactions = (reactions: Reaction[], emoji: string, author: string): 
 };
 
 export const computeDeleteComment = (doc: string, id: string): Result<Change[], string> => {
-	const c = parseComments(doc).find((x) => x.id === id);
-	if (!c) return Result.err("Comment not found.");
+	if (!parseComments(doc).some((x) => x.id === id)) return Result.err("Comment not found.");
+	// Remove EVERY occurrence of this id's markers/body, not just the first the
+	// parser records. Copy-pasting a commented span duplicates the markers; deleting
+	// only the first pair used to leave invisible, UI-unremovable leftovers behind.
 	const ranges: Change[] = [];
-	if (c.open) ranges.push({ from: c.open.from, to: c.open.to, insert: "" });
-	if (c.close) ranges.push({ from: c.close.from, to: c.close.to, insert: "" });
-	if (c.body) {
-		let from = c.body.from;
-		if (from > 0 && doc.charCodeAt(from - 1) === 10) from -= 1;
-		ranges.push({ from, to: c.body.to, insert: "" });
-	}
+	// Length of the line terminator ending at / starting at a boundary, counting CRLF
+	// as one unit. `charCodeAt` past either end of the string is NaN, so both read 0
+	// there — no bounds guards needed. Handling CRLF matters because deletes on the
+	// raw-file path (sidebar / Reading view) see the file's real endings: an LF-only
+	// check left a marker's `\r\n` behind as a stray blank line around the code block.
+	const leadingTerm = (p: number): number =>
+		doc.charCodeAt(p - 1) === 10 ? (doc.charCodeAt(p - 2) === 13 ? 2 : 1) : 0;
+	const trailingTerm = (p: number): number =>
+		doc.charCodeAt(p) === 13 && doc.charCodeAt(p + 1) === 10 ? 2 : doc.charCodeAt(p) === 10 ? 1 : 0;
+	// A marker alone on its line (code-comment block wrap) takes its line terminator
+	// with it, so deleting the comment doesn't leave a blank line around the code block.
+	const aloneOnLine = (from: number, to: number): boolean =>
+		(from === 0 || leadingTerm(from) > 0) && (to === doc.length || trailingTerm(to) > 0);
+	scanAll(doc, new RegExp(`<!--c:${id}-->`, "g"), (from, to) => {
+		const end = aloneOnLine(from, to) ? to + trailingTerm(to) : to;
+		ranges.push({ from, to: end, insert: "" });
+	});
+	scanAll(doc, new RegExp(`<!--/c:${id}-->`, "g"), (from, to) => {
+		const start = aloneOnLine(from, to) ? from - leadingTerm(from) : from;
+		ranges.push({ from: start, to, insert: "" });
+	});
+	scanAll(doc, new RegExp(`<!--co:${id}(?![A-Za-z0-9])[\\s\\S]*?-->`, "g"), (from, to) => {
+		// Swallow the whole line terminator before the body so its line disappears
+		// cleanly, CR included, leaving no stray blank line.
+		ranges.push({ from: from - leadingTerm(from), to, insert: "" });
+	});
 	if (ranges.length === 0) return Result.err("Nothing to delete.");
 	ranges.sort((a, b) => a.from - b.from);
 	return Result.ok(ranges);
 };
 
+/** Invoke `fn(from, to)` for every match of a global regex. Stateful cursor scan. */
+const scanAll = (doc: string, re: RegExp, fn: (from: number, to: number) => void): void => {
+	let m: RegExpExecArray | null;
+	while ((m = re.exec(doc))) fn(m.index, m.index + m[0].length);
+};
+
 /** Apply changes (original coordinates, CM semantics) — used by tests. */
 export const applyChanges = (doc: string, changes: Change[]): string => {
 	const ordered = changes.map((c, i) => ({ ...c, i })).sort((a, b) => a.from - b.from || a.i - b.i);
+	// Single pass building the output string while advancing a consumed-up-to
+	// watermark — two coupled outputs, so a plain map/reduce wouldn't read cleaner.
 	let out = "";
 	let last = 0;
 	for (const c of ordered) {

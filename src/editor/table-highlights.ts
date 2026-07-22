@@ -19,6 +19,9 @@ type SourceTable = { start: number; end: number; from: number; to: number };
 
 const OPEN_HIGHLIGHT = "document-comments-table";
 const RESOLVED_HIGHLIGHT = "document-comments-table-resolved";
+// `CSS.highlights` is a per-DOCUMENT global registry, so every editor view in a
+// window must merge its ranges before we set it. Keyed by document (pop-out
+// windows have their own) → each view's current ranges.
 const rangesByDocument = new WeakMap<Document, Map<EditorView, TableRanges>>();
 
 /** Map source comment anchors to the rendered table/cell that owns them. */
@@ -35,14 +38,15 @@ export const tableHighlightTargets = (doc: string, comments: ParsedComment[]): T
 				if (index === start + 1 || index < start || index >= end) return false;
 				return range.from >= line.from && range.to <= line.to;
 			});
-			if (lineIndex < 0) continue;
+			const line = lines[lineIndex];
+			if (!line) continue;
 
 			const quote = doc.slice(range.from, range.to);
 			if (!quote.trim()) continue;
 			targets.push({
 				table,
 				row: lineIndex === start ? 0 : lineIndex - start - 1,
-				column: tableColumnAt(lines[lineIndex].text, range.from - lines[lineIndex].from),
+				column: tableColumnAt(line.text, range.from - line.from),
 				quote,
 				resolved: comment.status === "resolved",
 			});
@@ -59,6 +63,8 @@ class TableHighlights {
 	private renderedQuotes = new Map<string, Promise<string>>();
 
 	constructor(private view: EditorView) {
+		// Use the view's own window's MutationObserver so this works in a pop-out
+		// window, whose globals differ from the main window's.
 		const Observer = view.dom.ownerDocument.defaultView?.MutationObserver ?? MutationObserver;
 		this.observer = new Observer(() => this.schedule());
 		this.observer.observe(view.dom, { childList: true, subtree: true, characterData: true });
@@ -140,14 +146,21 @@ class TableHighlights {
 		quote: string,
 		renderMarkdown: NonNullable<CommentConfig["renderMarkdown"]>,
 	): Promise<string> {
-		let rendered = this.renderedQuotes.get(quote);
-		if (rendered) return rendered;
-		const root = this.view.dom.createDiv();
-		root.remove();
-		rendered = renderMarkdown(quote, root).then(
-			() => textContent(root),
-			() => quote,
-		);
+		const cached = this.renderedQuotes.get(quote);
+		if (cached) return cached;
+		// Render once per quote and cache the promise itself (many table cells can
+		// reference the same quote). Fall back to the raw quote if rendering fails.
+		const render = async (): Promise<string> => {
+			const root = this.view.dom.createDiv();
+			root.remove();
+			try {
+				await renderMarkdown(quote, root);
+				return textContent(root);
+			} catch {
+				return quote;
+			}
+		};
+		const rendered = render();
 		this.renderedQuotes.set(quote, rendered);
 		return rendered;
 	}
@@ -244,12 +257,22 @@ const sourceLines = (doc: string): Array<{ text: string; from: number; to: numbe
 };
 
 const sourceTables = (lines: Array<{ text: string; from: number; to: number }>): SourceTable[] => {
+	// Scanner that consumes a variable run of rows per table and advances `start`
+	// past it — a for loop is the natural fit, not an array method.
 	const tables: SourceTable[] = [];
 	for (let start = 0; start + 1 < lines.length; start++) {
-		if (!isTableRow(lines[start].text) || !isDelimiterRow(lines[start + 1].text)) continue;
+		const head = lines[start];
+		const delimiter = lines[start + 1];
+		if (!head || !delimiter || !isTableRow(head.text) || !isDelimiterRow(delimiter.text)) continue;
 		let end = start + 2;
-		while (end < lines.length && isTableRow(lines[end].text)) end++;
-		tables.push({ start, end, from: lines[start].from, to: lines[end - 1].to });
+		let row = lines[end];
+		while (row && isTableRow(row.text)) {
+			end++;
+			row = lines[end];
+		}
+		const lastRow = lines[end - 1];
+		if (!lastRow) continue;
+		tables.push({ start, end, from: head.from, to: lastRow.to });
 		start = end - 1;
 	}
 	return tables;

@@ -10,5 +10,9 @@ main.js
 # test
 coverage/
 
+# skills: transient eval run outputs + packaged artifact (source is skills/document-comments/)
+skills/*-workspace/
+skills/*.skill
+
 # obsidian local test vault symlinks
 /test-vault/.obsidian/plugins/document-comments/main.js

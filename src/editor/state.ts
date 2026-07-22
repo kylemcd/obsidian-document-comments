@@ -10,6 +10,7 @@ import {
 import { Decoration, DecorationSet, EditorView, ViewPlugin, WidgetType } from "@codemirror/view";
 import { ParsedComment } from "../format/types";
 import { anchorRange, parseComments } from "../format/parse";
+import { isCodeComment, resolveCodeAnchor } from "../format/code-anchor";
 import { commentPreview } from "../format/preview";
 
 export type CommentFieldValue = {
@@ -20,6 +21,9 @@ export type CommentFieldValue = {
 };
 
 const HIDE = Decoration.replace({});
+/** Removes a whole line (its line break included) as a block — used for the
+ *  own-line marker/body lines that wrap a fenced code block. */
+const HIDE_BLOCK = Decoration.replace({ block: true });
 
 class SpaceWidget extends WidgetType {
 	eq(): boolean {
@@ -27,6 +31,8 @@ class SpaceWidget extends WidgetType {
 	}
 
 	toDOM(view: EditorView): HTMLElement {
+		// Obsidian's createSpan auto-appends to the receiver; detach it so we hand
+		// CodeMirror a free-standing node to place itself.
 		const span = view.dom.createSpan({
 			cls: "dc-comment-boundary-space",
 			text: " ",
@@ -45,6 +51,7 @@ class MarkerWidget extends WidgetType {
 	}
 
 	toDOM(view: EditorView): HTMLElement {
+		// createSpan auto-appends; detach so CodeMirror receives a free node to place.
 		const span = view.dom.createSpan({
 			cls: "dc-comment-marker",
 			text: "\u200b",
@@ -55,6 +62,12 @@ class MarkerWidget extends WidgetType {
 	}
 }
 
+/**
+ * Arrow-key handling around hidden markers. Atomic ranges already skip the marker
+ * interior; this plugin makes a single Left/Right press land on the far side of a
+ * marker (and its borrowed space) in one step, and extends a shift-selection the
+ * same way, so the caret never appears to stall on an invisible marker.
+ */
 const markerNavigationPlugin = (field: StateField<CommentFieldValue>) => {
 	const move = (view: EditorView, forward: boolean, extend: boolean): boolean => {
 		const value = view.state.field(field, false);
@@ -165,9 +178,22 @@ const compute = (state: EditorState): CommentFieldValue => {
 		decoRanges.push(range);
 		hideRanges.push(range);
 	};
+	// Every marker's end offset, so an opener won't borrow a space a neighboring
+	// closer already claimed. Two comments separated by a single space
+	// (`…<!--/c:a--> <!--c:b-->…`) both want that space — the closer via "after",
+	// the opener via "before" — and the overlapping replace/atomic ranges left no
+	// caret position between the comments and rendered a double-width space.
+	const markerEnds = new Set<number>();
+	for (const c of comments) {
+		if (c.open) markerEnds.add(c.open.to);
+		if (c.close) markerEnds.add(c.close.to);
+	}
+
 	const addMarker = (marker: { from: number; to: number }, outside: "before" | "after") => {
 		const hasOutsideSpace =
-			outside === "before" ? text.charAt(marker.from - 1) === " " : text.charAt(marker.to) === " ";
+			outside === "before"
+				? text.charAt(marker.from - 1) === " " && !markerEnds.has(marker.from - 1)
+				: text.charAt(marker.to) === " ";
 		if (hasOutsideSpace) {
 			// Keep the marker invisible while giving its two legal caret endpoints
 			// the same visual geometry as an ordinary source space. Only borrow the
@@ -187,16 +213,60 @@ const compute = (state: EditorState): CommentFieldValue => {
 		}
 	};
 
+	const isOwnLine = (marker: { from: number; to: number }): boolean => {
+		return (
+			(marker.from === 0 || text.charCodeAt(marker.from - 1) === 10) &&
+			(marker.to === text.length || text.charCodeAt(marker.to) === 10)
+		);
+	};
+	// A code comment's markers and body sit on their own lines wrapping the fenced
+	// block. Hide each as a BLOCK decoration (which a StateField may do) rather than an
+	// inline replace: an inline replace merges the hidden line into its neighbor, and
+	// when that neighbor is a ``` fence, Live Preview stops recognizing the fence and
+	// leaves ghost vertical space.
+	//
+	// Crucially, replace ONLY the line's text and never a newline. Every newline in the
+	// block is load-bearing: the one directly before the opening ``` (or after the
+	// closing ```) is what Live Preview keys the codeblock-begin/-end styling off —
+	// eat it and the fence renders as a full-height blank prose line (a ghost gap). The
+	// ones facing away from the fence are the blank lines that space the block from
+	// its surroundings — eat one and everything past it shifts a row toward the block.
+	// Leaving all newlines intact makes each hidden line a zero-height row and lets the
+	// real blank lines and fence rows render at their natural, theme-driven height, so a
+	// commented block lays out identically to an uncommented one with no pixel math.
+	//
+	// The ATOMIC range still covers the trailing newline though (layout comes from the
+	// decoration, caret motion from the atomic set — they're independent). That way a
+	// single arrow press steps over the whole invisible row at once instead of stalling
+	// on the empty 0px line, exactly as it did when the newline was hidden too.
+	const blockHideLine = (from: number, to: number) => {
+		if (to <= from) return;
+		decoRanges.push(HIDE_BLOCK.range(from, to));
+		const atomicTo = to < text.length && text.charCodeAt(to) === 10 ? to + 1 : to;
+		hideRanges.push(HIDE_BLOCK.range(from, atomicTo));
+	};
+
 	for (const c of comments) {
-		if (c.open) addMarker(c.open, "before");
-		if (c.close) addMarker(c.close, "after");
-		if (c.body) {
+		const code = isCodeComment(c);
+		if (c.open) {
+			if (code && isOwnLine(c.open)) blockHideLine(c.open.from, c.open.to);
+			else addMarker(c.open, "before");
+		}
+		if (c.close) {
+			if (code && isOwnLine(c.close)) blockHideLine(c.close.from, c.close.to);
+			else addMarker(c.close, "after");
+		}
+		if (c.body && code) {
+			blockHideLine(c.body.from, c.body.to);
+		} else if (c.body) {
 			// Swallow the newline before the body so its line disappears cleanly.
 			let from = c.body.from;
 			if (from > 0 && text.charCodeAt(from - 1) === 10 /* \n */) from -= 1;
 			addHide(from, c.body.to);
 		}
-		const r = anchorRange(c);
+		// A code comment highlights the resolved target lines inside the block, not
+		// the whole between-markers range (which would include the fences).
+		const r = code ? resolveCodeAnchor(text, c) : anchorRange(c);
 		if (r && r.to > r.from) {
 			// A mark decoration paints over live source text, so it shows in Source
 			// mode and (via the Reading-view post-processor) in Reading view. It does
@@ -287,6 +357,12 @@ const protectMarkersFromUserEdits = (
 	for (const comment of value.comments) {
 		if (comment.open) protectedRanges.push(comment.open.from, comment.open.to);
 		if (comment.close) protectedRanges.push(comment.close.from, comment.close.to);
+		// The hidden body block is atomic too, so a forward-Delete at the end of the
+		// anchored line expands over it and would silently destroy the whole thread
+		// (the doc looks unchanged, since the body line is invisible). Protect it so
+		// only the swallowed newline is removed and the lines join. Programmatic
+		// comment deletion carries no user event and bypasses this filter entirely.
+		if (comment.body) protectedRanges.push(comment.body.from, comment.body.to);
 	}
 	return protectedRanges.length > 0 ? protectedRanges : true;
 };

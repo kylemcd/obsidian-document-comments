@@ -1,10 +1,9 @@
 import { StateEffect, StateField } from "@codemirror/state";
 import { Decoration, DecorationSet, EditorView } from "@codemirror/view";
+import type { TextRange } from "../format/types";
 
-export type Draft = {
-	from: number;
-	to: number;
-};
+/** A pending "new comment" range — same shape as any other text range. */
+export type Draft = TextRange;
 
 export const setDraft = StateEffect.define<Draft>();
 export const clearDraft = StateEffect.define<null>();

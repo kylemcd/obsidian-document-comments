@@ -4,6 +4,7 @@ import { EditorView } from "@codemirror/view";
 import { existingIds } from "../format/parse";
 import { generateId } from "../format/ids";
 import {
+	Change,
 	applyChanges,
 	computeAddComment,
 	computeAppendReply,
@@ -21,10 +22,11 @@ export const addComment = (
 	to: number,
 	text: string,
 	author: string,
+	expected?: string,
 ): Result<string, string> => {
 	const doc = view.state.doc.toString();
 	const id = generateId(existingIds(doc));
-	return computeAddComment(doc, from, to, { id, createdAt: now(), author, text }).map((changes) => {
+	return computeAddComment(doc, from, to, { id, createdAt: now(), author, text, expected }).map((changes) => {
 		view.dispatch({ changes, scrollIntoView: false });
 		return id;
 	});
@@ -66,6 +68,36 @@ export const toggleReaction = (view: EditorView, id: string, emoji: string, auth
 	});
 };
 
+/** Narrow a caught `unknown` to a message. */
+export const errorMessage = (e: unknown): string => {
+	return e instanceof Error ? e.message : "unknown error";
+};
+
+/** Run a computed edit against a file through `vault.process` and fold the
+ *  compute error, the I/O error, and the success into one Result carrying the
+ *  new document text. The compute runs on FRESH data inside the callback, so it
+ *  never races another writer; an I/O failure wins over a provisional success. */
+export const processFileEdit = async (
+	app: App,
+	file: TFile,
+	compute: (doc: string) => Result<Change[], string>,
+): Promise<Result<string, string>> => {
+	let computeError: string | undefined;
+	const io = await Result.tryPromise({
+		try: () =>
+			app.vault.process(file, (data) => {
+				const result = compute(data);
+				if (result.isErr()) {
+					computeError = result.error;
+					return data;
+				}
+				return applyChanges(data, result.value);
+			}),
+		catch: errorMessage,
+	});
+	return computeError ? Result.err(computeError) : io;
+};
+
 /** Write a brand-new comment straight to a file on disk — for surfaces with no
  *  live CodeMirror view (reading view, and mobile where the margin composer is
  *  off). Ok carries the new id; Err carries a reason (I/O failure or empty range). */
@@ -76,13 +108,14 @@ export const insertCommentInFile = async (
 	to: number,
 	text: string,
 	author: string,
+	expected?: string,
 ): Promise<Result<string, string>> => {
 	let computed: Result<string, string> = Result.err("No change was written.");
 	const io = await Result.tryPromise({
 		try: () =>
 			app.vault.process(file, (data) => {
 				const id = generateId(existingIds(data));
-				const result = computeAddComment(data, from, to, { id, createdAt: now(), author, text });
+				const result = computeAddComment(data, from, to, { id, createdAt: now(), author, text, expected });
 				if (result.isErr()) {
 					computed = Result.err(result.error);
 					return data;
@@ -90,7 +123,7 @@ export const insertCommentInFile = async (
 				computed = Result.ok(id);
 				return applyChanges(data, result.value);
 			}),
-		catch: (e) => (e instanceof Error ? e.message : "unknown error"),
+		catch: errorMessage,
 	});
 	// Surface an I/O failure; otherwise the compute outcome (id, or the reason nothing was written).
 	return io.isErr() ? Result.err(io.error) : computed;

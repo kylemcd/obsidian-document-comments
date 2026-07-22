@@ -1,4 +1,5 @@
 import { CommentData, CommentStatus, ParsedComment, Reaction, TextRange, ThreadEntry } from "./types";
+import { decodeCodeQuote, splitReactionAuthors, unescapeText } from "./escape";
 
 // Anchor + body markers. All are HTML comments so they're invisible everywhere.
 const OPEN_RE = /<!--c:([A-Za-z0-9]+)-->/g;
@@ -27,26 +28,30 @@ export const parseComments = (doc: string): ParsedComment[] => {
 		}
 	};
 
+	// Three global-regex scans, each first-wins into a map while recording first-seen
+	// order — stateful accumulation that doesn't reduce to a single array method.
 	let m: RegExpExecArray | null;
 
 	OPEN_RE.lastIndex = 0;
 	while ((m = OPEN_RE.exec(doc))) {
-		if (masked(m.index)) continue;
-		if (!opens.has(m[1])) opens.set(m[1], { from: m.index, to: m.index + m[0].length });
-		track(m[1]);
+		const [full, id] = m;
+		if (id === undefined || full === undefined || masked(m.index)) continue;
+		if (!opens.has(id)) opens.set(id, { from: m.index, to: m.index + full.length });
+		track(id);
 	}
 
 	CLOSE_RE.lastIndex = 0;
 	while ((m = CLOSE_RE.exec(doc))) {
-		if (masked(m.index)) continue;
-		if (!closes.has(m[1])) closes.set(m[1], { from: m.index, to: m.index + m[0].length });
-		track(m[1]);
+		const [full, id] = m;
+		if (id === undefined || full === undefined || masked(m.index)) continue;
+		if (!closes.has(id)) closes.set(id, { from: m.index, to: m.index + full.length });
+		track(id);
 	}
 
 	BODY_RE.lastIndex = 0;
 	while ((m = BODY_RE.exec(doc))) {
-		if (masked(m.index)) continue;
-		const id = m[1];
+		const [full, id] = m;
+		if (id === undefined || full === undefined || masked(m.index)) continue;
 		if (!bodies.has(id)) {
 			const { thread, reactions } = parseBody(m[3] ?? "");
 			const data: CommentData = {
@@ -54,29 +59,28 @@ export const parseComments = (doc: string): ParsedComment[] => {
 				thread,
 				reactions,
 			};
-			bodies.set(id, { range: { from: m.index, to: m.index + m[0].length }, data });
+			bodies.set(id, { range: { from: m.index, to: m.index + full.length }, data });
 		}
 		track(id);
 	}
 
-	const result: ParsedComment[] = [];
-	for (const id of order) {
+	return order.map((id) => {
 		const body = bodies.get(id);
 		const data: CommentData = body ? body.data : { status: "open", thread: [], reactions: [] };
-		result.push({
+		return {
 			id,
 			author: data.author,
 			createdAt: data.createdAt,
 			status: data.status,
 			quote: data.quote,
+			codeLines: data.codeLines,
 			thread: data.thread,
 			reactions: data.reactions,
 			open: opens.get(id) ?? null,
 			close: closes.get(id) ?? null,
 			body: body ? body.range : null,
-		});
-	}
-	return result;
+		};
+	});
 };
 
 /** The set of ids already present in a document (for id generation). */
@@ -95,7 +99,8 @@ export const hasMarginAnchor = (c: ParsedComment): boolean => {
 
 /** The highlighted text range (between the markers), or null if not anchored. */
 export const anchorRange = (c: ParsedComment): TextRange | null => {
-	return isAnchored(c) ? { from: c.open!.to, to: c.close!.from } : null;
+	if (!c.open || !c.close || c.open.to > c.close.from) return null;
+	return { from: c.open.to, to: c.close.from };
 };
 
 /** Has content (a body) but is not properly anchored — show in the unanchored list. */
@@ -108,38 +113,67 @@ const parseHeader = (header: string): Omit<CommentData, "thread" | "reactions"> 
 	let m: RegExpExecArray | null;
 	HEADER_ATTR_RE.lastIndex = 0;
 	while ((m = HEADER_ATTR_RE.exec(header))) {
-		attrs[m[1]] = m[2] !== undefined ? m[2] : m[3];
+		const key = m[1];
+		const value = m[2] ?? m[3];
+		if (key !== undefined && value !== undefined) attrs[key] = value;
 	}
 	const status: CommentStatus = attrs.status === "resolved" ? "resolved" : "open";
+	const codeLines = parseLineRange(attrs.line);
+	// A code comment's quote is stored encoded (exact); a prose quote is stored
+	// already-collapsed, so it's used verbatim.
+	const quote = attrs.quote === undefined ? undefined : codeLines ? decodeCodeQuote(attrs.quote) : attrs.quote;
 	return {
 		author: attrs.by,
 		createdAt: attrs.at,
 		status,
-		quote: attrs.quote,
+		quote,
+		codeLines,
 	};
 };
 
-/** Ranges that should be ignored when scanning for markers: fenced and inline code. */
-const maskedRanges = (doc: string): Array<[number, number]> => {
-	const ranges: Array<[number, number]> = [];
+/** Parse a `line:F-T` (or `line:F`) header value into an inclusive line range. */
+const parseLineRange = (value: string | undefined): TextRange | undefined => {
+	if (!value) return undefined;
+	const match = /^(\d+)(?:-(\d+))?$/.exec(value);
+	if (!match || match[1] === undefined) return undefined;
+	const from = Number(match[1]);
+	const to = match[2] !== undefined ? Number(match[2]) : from;
+	return to >= from ? { from, to } : undefined;
+};
 
-	// Fenced code blocks (``` or ~~~), masked from the opening fence to the closing fence line.
+/** Fenced code-block ranges (``` or ~~~), from the opening fence to the closing
+ *  fence line. Single-pass line scanner with fence-open/close state — doesn't map
+ *  to an array method. */
+export const fencedRanges = (doc: string): Array<[number, number]> => {
+	const ranges: Array<[number, number]> = [];
 	let offset = 0;
 	let fenceStart = -1;
 	let fenceChar = "";
 	for (const line of doc.split("\n")) {
 		const lineEnd = offset + line.length;
-		const fence = /^[ \t]*(`{3,}|~{3,})/.exec(line);
-		if (fenceStart < 0 && fence) {
+		const marker = /^[ \t]*(`{3,}|~{3,})/.exec(line)?.[1];
+		if (fenceStart < 0 && marker) {
 			fenceStart = offset;
-			fenceChar = fence[1][0];
-		} else if (fenceStart >= 0 && fence && fence[1][0] === fenceChar) {
+			fenceChar = marker[0] ?? "";
+		} else if (fenceStart >= 0 && marker && marker[0] === fenceChar) {
 			ranges.push([fenceStart, lineEnd]);
 			fenceStart = -1;
 		}
 		offset = lineEnd + 1;
 	}
 	if (fenceStart >= 0) ranges.push([fenceStart, doc.length]);
+	return ranges;
+};
+
+/** True when `pos` sits inside a fenced code block — anchoring a comment there
+ *  would write literal marker text into the code, so creation refuses it. */
+export const isInFencedCode = (doc: string, pos: number): boolean => {
+	return isInside(fencedRanges(doc), pos);
+};
+
+/** Ranges that should be ignored when scanning for markers: fenced and inline code. */
+const maskedRanges = (doc: string): Array<[number, number]> => {
+	const ranges = fencedRanges(doc);
 
 	// Inline code spans.
 	const inline = /`+[^`\n]*`+/g;
@@ -150,10 +184,7 @@ const maskedRanges = (doc: string): Array<[number, number]> => {
 };
 
 const isInside = (ranges: Array<[number, number]>, index: number): boolean => {
-	for (const [from, to] of ranges) {
-		if (index >= from && index < to) return true;
-	}
-	return false;
+	return ranges.some(([from, to]) => index >= from && index < to);
 };
 
 const REACTION_LINE_RE = /^\+\s*(\S+)\s+(.+)$/;
@@ -162,27 +193,26 @@ const parseBody = (block: string): { thread: ThreadEntry[]; reactions: Reaction[
 	const thread: ThreadEntry[] = [];
 	const reactions: Reaction[] = [];
 	for (const raw of block.split("\n")) {
-		const line = raw.replace(/\s+$/, "");
+		// Strip only a trailing CR (CRLF files) — trailing spaces inside an entry
+		// are meaningful and survive because newlines are escaped, not folded.
+		const line = raw.replace(/\r$/, "");
 		if (line.trim() === "") continue;
 
 		const rx = REACTION_LINE_RE.exec(line);
-		if (rx) {
-			const authors = rx[2]
-				.split(",")
-				.map((a) => a.trim())
-				.filter(Boolean);
-			reactions.push({ emoji: rx[1], authors });
+		if (rx && rx[1] !== undefined && rx[2] !== undefined) {
+			reactions.push({ emoji: rx[1], authors: splitReactionAuthors(rx[2]) });
 			continue;
 		}
 
 		const m = THREAD_LINE_RE.exec(line);
-		if (m && m[1].trim() !== "") {
-			thread.push({ author: m[1].trim(), timestamp: m[2] || undefined, text: m[3] });
-		} else if (thread.length > 0) {
-			// Unstructured continuation line — fold into the previous entry.
-			thread[thread.length - 1].text += "\n" + line;
+		const last = thread[thread.length - 1];
+		if (m && m[1] !== undefined && m[3] !== undefined && m[1].trim() !== "") {
+			thread.push({ author: m[1].trim(), timestamp: m[2] || undefined, text: unescapeText(m[3]) });
+		} else if (last) {
+			// Unstructured continuation line (legacy, pre-escaping) — fold into the previous entry.
+			last.text += "\n" + unescapeText(line);
 		} else {
-			thread.push({ author: "", text: line });
+			thread.push({ author: "", text: unescapeText(line) });
 		}
 	}
 	return { thread, reactions };

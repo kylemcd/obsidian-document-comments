@@ -1,11 +1,12 @@
 import { describe, it, expect } from "vitest";
 import type { App, TFile } from "obsidian";
-import { insertCommentInFile } from "../src/editor/commands";
+import { Result } from "better-result";
+import { insertCommentInFile, processFileEdit } from "../src/editor/commands";
 import { parseComments } from "../src/format/parse";
 
 // A minimal `app.vault.process` stub: run the mutator over an in-memory string and
 // keep the result. Mirrors how Obsidian applies the transform and returns the text.
-function fakeApp(getDoc: () => string, setDoc: (s: string) => void): App {
+const fakeApp = (getDoc: () => string, setDoc: (s: string) => void): App => {
 	return {
 		vault: {
 			process: async (_file: TFile, fn: (data: string) => string) => {
@@ -15,7 +16,7 @@ function fakeApp(getDoc: () => string, setDoc: (s: string) => void): App {
 			},
 		},
 	} as unknown as App;
-}
+};
 
 describe("insertCommentInFile", () => {
 	it("writes a new comment to the file and returns its id", async () => {
@@ -69,6 +70,45 @@ describe("insertCommentInFile", () => {
 
 		const result = await insertCommentInFile(app, {} as TFile, from, to, "hi", "kyle");
 
+		expect(result.isErr()).toBe(true);
+		if (result.isErr()) expect(result.error).toBe("disk full");
+	});
+});
+
+describe("processFileEdit", () => {
+	it("applies changes and returns the new document text", async () => {
+		let doc = "hello world";
+		const app = fakeApp(
+			() => doc,
+			(s) => (doc = s),
+		);
+		const result = await processFileEdit(app, {} as TFile, () => Result.ok([{ from: 0, to: 5, insert: "HELLO" }]));
+		expect(result.isOk()).toBe(true);
+		expect(result.unwrap()).toBe("HELLO world");
+		expect(doc).toBe("HELLO world");
+	});
+
+	it("surfaces a compute error and leaves the file untouched", async () => {
+		let doc = "unchanged";
+		const app = fakeApp(
+			() => doc,
+			(s) => (doc = s),
+		);
+		const result = await processFileEdit(app, {} as TFile, () => Result.err("nope"));
+		expect(result.isErr()).toBe(true);
+		if (result.isErr()) expect(result.error).toBe("nope");
+		expect(doc).toBe("unchanged");
+	});
+
+	it("surfaces an I/O error thrown by process", async () => {
+		const app = {
+			vault: {
+				process: async () => {
+					throw new Error("disk full");
+				},
+			},
+		} as unknown as App;
+		const result = await processFileEdit(app, {} as TFile, () => Result.ok([{ from: 0, to: 0, insert: "x" }]));
 		expect(result.isErr()).toBe(true);
 		if (result.isErr()) expect(result.error).toBe("disk full");
 	});

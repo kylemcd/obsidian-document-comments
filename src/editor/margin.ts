@@ -1,12 +1,14 @@
-import { Notice, setIcon } from "obsidian";
+import { Notice, editorInfoField } from "obsidian";
 import { Result } from "better-result";
 import { EditorView, PluginValue, ViewPlugin } from "@codemirror/view";
 import { ParsedComment } from "../format/types";
 import { anchorRange, hasMarginAnchor } from "../format/parse";
+import { isCodeComment, resolveCodeAnchor } from "../format/code-anchor";
 import { commentField } from "./state";
 import { commentConfig } from "./config";
-import { clearDraft, draftField } from "./draft";
-import { Card, CardCallbacks, CardView, cardSignature } from "../ui/card";
+import { Draft, clearDraft, draftField } from "./draft";
+import { Card, CardCallbacks, CardView } from "../ui/card";
+import { cardSignature } from "../ui/card-format";
 import {
 	addComment,
 	appendReply,
@@ -16,9 +18,10 @@ import {
 	setResolved,
 	toggleReaction,
 } from "./commands";
-import { cssEscape } from "../util/css";
-
-const CARD_GAP = 8;
+import { closestSpanId, spanSelector } from "../util/css";
+import { stackTops } from "../ui/stack";
+import { CARD_GAP, FLASH_MS } from "../ui/constants";
+import { buildDraftComposer } from "../ui/draft-composer";
 
 /** Editor-margin writes go through a live CodeMirror view (no I/O), so the only
  *  failure is a compute error — surface it as a notice rather than swallowing it. */
@@ -41,6 +44,7 @@ class MarginView implements PluginValue {
 	private resizeObserver: ResizeObserver;
 	private animFrames = 0;
 	private animatingLoop = false;
+	private destroyed = false;
 
 	constructor(private view: EditorView) {
 		this.container = view.dom.createDiv("doc-comment-margin");
@@ -122,6 +126,7 @@ class MarginView implements PluginValue {
 	}
 
 	destroy(): void {
+		this.destroyed = true;
 		this.view.scrollDOM.removeEventListener("scroll", this.scrollHandler);
 		this.resizeObserver.disconnect();
 		this.view.contentDOM.removeEventListener("mousedown", this.onContentMouseDown);
@@ -174,10 +179,17 @@ class MarginView implements PluginValue {
 
 	private cardView(): CardView {
 		const cfg = this.view.state.facet(commentConfig);
-		return { app: cfg.app, sourcePath: () => cfg.app?.workspace.getActiveFile()?.path ?? "", collapsible: true };
+		// Resolve links/embeds in comment text against THIS editor's file, not the
+		// workspace-active one (wrong in a background split pane).
+		return {
+			app: cfg.app,
+			sourcePath: () => this.view.state.field(editorInfoField, false)?.file?.path ?? "",
+			collapsible: true,
+		};
 	}
 
 	private reposition(): void {
+		if (this.destroyed) return;
 		// dc-has / dc-highlights / dc-hide-resolved now live on the .cm-editor element
 		// (editorLayoutField → editorAttributes), so the stylesheet caps the text
 		// column with plain descendant selectors — no :has(), nothing to toggle on our
@@ -186,7 +198,9 @@ class MarginView implements PluginValue {
 		this.syncDraftEl(draft);
 
 		const editorTop = this.view.dom.getBoundingClientRect().top;
-		const placements: Array<{ el: HTMLElement; top: number }> = [];
+		// Gather geometry (reads) first, then write every top in one pass — cards are
+		// absolutely positioned, so a top write can't change any height.
+		const placements: Array<{ el: HTMLElement; top: number; height: number }> = [];
 
 		const place = (el: HTMLElement, pos: number) => {
 			const coords = this.view.coordsAtPos(pos);
@@ -196,33 +210,27 @@ class MarginView implements PluginValue {
 			}
 			el.removeClass("dc-offscreen");
 			if (el.offsetHeight === 0) return; // hidden (e.g. resolved)
-			placements.push({ el, top: coords.top - editorTop });
+			placements.push({ el, top: coords.top - editorTop, height: el.offsetHeight });
 		};
 
+		const doc = this.view.state.doc.toString();
 		for (const c of this.comments()) {
 			const card = this.cards.get(c.id);
 			if (!card) continue;
-			const range = anchorRange(c);
+			// A code comment's card aligns to its target line, not the block top.
+			const range = isCodeComment(c) ? resolveCodeAnchor(doc, c) : anchorRange(c);
 			if (range) place(card.el, range.from);
+			else card.el.addClass("dc-offscreen"); // orphaned (e.g. the commented code changed)
 		}
 
 		if (draft && this.draftEl) place(this.draftEl, draft.from);
 
-		// Stack the cards: honor anchor order, push each down past the previous one so
-		// they never overlap. The first card's floor is -Infinity, so a card whose
-		// anchor has scrolled above the viewport keeps a
-		// negative top and slides off the top edge instead of sticking there in view.
-		placements.sort((a, b) => a.top - b.top);
-		let cursor = Number.NEGATIVE_INFINITY;
-		for (const p of placements) {
-			const y = Math.max(p.top, cursor);
-			p.el.setCssStyles({ top: `${y}px` });
-			cursor = y + p.el.offsetHeight + CARD_GAP;
-		}
+		const tops = stackTops(placements, CARD_GAP);
+		placements.forEach((p, i) => p.el.setCssStyles({ top: `${tops[i]}px` }));
 	}
 
 	/** Create/remove the transient "new comment" composer card. */
-	private syncDraftEl(draft: { from: number; to: number } | null): void {
+	private syncDraftEl(draft: Draft | null): void {
 		if (draft && !this.draftEl) {
 			this.draftEl = this.buildDraftEl();
 			this.container.appendChild(this.draftEl);
@@ -255,50 +263,15 @@ class MarginView implements PluginValue {
 	}
 
 	private buildDraftEl(): HTMLElement {
-		const el = createDiv("doc-comment-card is-draft");
-		const box = el.createDiv("dc-field dc-field--composer");
-		const textarea = box.createEl("textarea", {
-			cls: "dc-field__input",
-			attr: { placeholder: "Write a comment…", rows: "2" },
-		});
-		const actions = box.createDiv("dc-field__actions");
-
-		const cancel = () => this.view.dispatch({ effects: clearDraft.of(null) });
-		const submit = () => {
-			const text = textarea.value.trim();
-			const draft = this.view.state.field(draftField, false);
-			if (text && draft) notifyErr(addComment(this.view, draft.from, draft.to, text, this.cb.getAuthor()));
-			this.view.dispatch({ effects: clearDraft.of(null) });
-		};
-
-		const cancelBtn = actions.createEl("button", {
-			cls: "dc-round dc-round--cancel",
-			attr: { "aria-label": "Cancel" },
-		});
-		setIcon(cancelBtn, "x");
-		cancelBtn.addEventListener("click", (e) => {
-			e.stopPropagation();
-			cancel();
-		});
-
-		const confirmBtn = actions.createEl("button", {
-			cls: "dc-round dc-round--confirm",
-			attr: { "aria-label": "Comment" },
-		});
-		setIcon(confirmBtn, "check");
-		confirmBtn.addEventListener("click", (e) => {
-			e.stopPropagation();
-			submit();
-		});
-
-		textarea.addEventListener("keydown", (e) => {
-			if (e.key === "Escape") {
-				e.preventDefault();
-				cancel();
-			} else if (e.key === "Enter" && !e.shiftKey) {
-				e.preventDefault();
-				submit();
-			}
+		// Editor path: offsets come live from draftField (mapped through every edit),
+		// so no stale-offset verification is needed here.
+		const { el } = buildDraftComposer({
+			onCancel: () => this.view.dispatch({ effects: clearDraft.of(null) }),
+			onSubmit: (text) => {
+				const draft = this.view.state.field(draftField, false);
+				if (text && draft) notifyErr(addComment(this.view, draft.from, draft.to, text, this.cb.getAuthor()));
+				this.view.dispatch({ effects: clearDraft.of(null) });
+			},
 		});
 		return el;
 	}
@@ -317,7 +290,7 @@ class MarginView implements PluginValue {
 	}
 
 	private markHighlight(id: string, active: boolean): void {
-		const spans = this.view.contentDOM.querySelectorAll(`.doc-comment-span[data-cid="${cssEscape(id)}"]`);
+		const spans = this.view.contentDOM.querySelectorAll(spanSelector(id));
 		spans.forEach((s) => s.classList.toggle("is-active", active));
 	}
 
@@ -325,10 +298,10 @@ class MarginView implements PluginValue {
 	 *  card is already aligned to its text, so scrolling the doc was pure disruption. */
 	private flashAnchor(id: string): void {
 		this.setActive(id);
-		const span = this.view.contentDOM.querySelector(`.doc-comment-span[data-cid="${cssEscape(id)}"]`);
+		const span = this.view.contentDOM.querySelector(spanSelector(id));
 		if (!span) return;
 		span.classList.add("dc-flash");
-		window.setTimeout(() => span.classList.remove("dc-flash"), 900);
+		window.setTimeout(() => span.classList.remove("dc-flash"), FLASH_MS);
 	}
 
 	/** Scroll the editor the minimum needed to bring a just-opened reply composer
@@ -353,19 +326,17 @@ class MarginView implements PluginValue {
 	}
 
 	private onContentMouseDown = (e: MouseEvent): void => {
-		const span = (e.target as HTMLElement).closest(".doc-comment-span");
-		const id = span?.getAttribute("data-cid");
+		const id = closestSpanId(e.target);
 		if (id) this.setActive(id);
 	};
 
 	private onContentMouseOver = (e: MouseEvent): void => {
-		const span = (e.target as HTMLElement).closest(".doc-comment-span");
-		const id = span?.getAttribute("data-cid");
+		const id = closestSpanId(e.target);
 		if (id) this.setActive(id);
 	};
 
 	private onContentMouseOut = (e: MouseEvent): void => {
-		const span = (e.target as HTMLElement).closest(".doc-comment-span");
+		const span = e.target instanceof Element ? e.target.closest(".doc-comment-span") : null;
 		if (!span) return;
 		// Ignore moves that stay within the same highlight element (avoids flicker).
 		const to = e.relatedTarget;

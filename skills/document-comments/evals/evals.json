@@ -1,0 +1,26 @@
+{
+  "skill_name": "document-comments",
+  "evals": [
+    {
+      "id": 0,
+      "name": "add-single-comment",
+      "prompt": "In project-plan.md, add an inline comment on the sentence that gives the September 15 launch date. Flag that it overlaps with the marketing communications freeze, so the launch announcement might be blocked. Sign the comment as 'sam'. Keep the document's prose exactly as it is otherwise.",
+      "expected_output": "The file now contains one valid Document Comment anchored on the launch-date sentence, with an alphanumeric ID, matching open/close markers, a co: body with by:sam, status:open, a quote of the anchored text, and the comment text. The original prose is unchanged. validate_comments.py reports it ANCHORED with no problems.",
+      "files": ["inputs/project-plan.md"]
+    },
+    {
+      "id": 1,
+      "name": "batch-review",
+      "prompt": "I'm about to hand onboarding-guide.md to a new hire. Read it and leave inline comments on two or three specific spots that are vague or would trip someone up — things like undefined references or missing specifics. Sign them as 'reviewer'. Don't rewrite the guide, just add the comments.",
+      "expected_output": "The file now contains 2-3 valid Document Comments, each anchored on a distinct phrase, each with a unique alphanumeric ID, matching markers, and a co: body (by:reviewer, status:open, quote). The guide's prose is unchanged. validate_comments.py reports every comment ANCHORED with no invalid IDs, orphans, or duplicates.",
+      "files": ["inputs/onboarding-guide.md"]
+    },
+    {
+      "id": 2,
+      "name": "reply-and-resolve",
+      "prompt": "In design-notes.md, there are two existing comments. Reply to the one about caching to say we benchmarked it and the hit rate holds above 80%, so five minutes is fine. Then resolve the comment about the QueryEngine name since marketing signed off on it. Use the name 'jordan' on the reply.",
+      "expected_output": "The caching comment (h4t1) now has a second thread line from jordan with the benchmark reply, and its markers/ID/first line are unchanged. The naming comment (m9k3) now reads status:resolved. No new comments are created, no IDs change, and validate_comments.py reports both comments well-formed (h4t1 open, m9k3 resolved).",
+      "files": ["inputs/design-notes.md"]
+    }
+  ]
+}

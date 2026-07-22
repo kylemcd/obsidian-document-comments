@@ -5,16 +5,14 @@
 		"module": "ESNext",
 		"target": "ES2018",
 		"allowJs": true,
-		"noImplicitAny": true,
 		"moduleResolution": "bundler",
 		"importHelpers": false,
 		"isolatedModules": true,
 		"strict": true,
-		"strictNullChecks": true,
+		"noUncheckedIndexedAccess": true,
 		"skipLibCheck": true,
 		"lib": [
 			"DOM",
-			"ES2018",
 			"ES2020"
 		]
 	},

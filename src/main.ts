@@ -177,7 +177,9 @@ export default class DocCommentsPlugin extends Plugin {
 			// then write through the same editor path so it's a single undo step.
 			const quote = view.state.doc.sliceString(from, to);
 			new CommentModal(this.app, quote, (text) => {
-				const result = addComment(view, from, to, text, this.authorName());
+				// Pass the captured selection so a doc that shifted while the modal was
+				// open (sync, another pane) is caught instead of mis-anchoring.
+				const result = addComment(view, from, to, text, this.authorName(), quote);
 				if (result.isErr()) new Notice(`Couldn't add the comment: ${result.error}`);
 			}).open();
 			return;
@@ -200,6 +202,13 @@ export default class DocCommentsPlugin extends Plugin {
 			new Notice("Couldn't locate that selection in the note.");
 			return;
 		}
+		// The selection may sit inside an embed or a hover preview — a different
+		// file's rendered block. Its offsets are meaningless in the host file, so
+		// refuse rather than write markers into the host at the wrong place.
+		if (section.sourcePath !== view.file?.path) {
+			new Notice("Can only comment on this note's own text, not embedded content.");
+			return;
+		}
 		const idx = section.source.indexOf(selected);
 		if (idx < 0) {
 			new Notice("Couldn't map the selection to the Markdown — try plain text without formatting.");
@@ -216,18 +225,24 @@ export default class DocCommentsPlugin extends Plugin {
 				return;
 			}
 			new CommentModal(this.app, selected, (text) => {
-				void this.insertReadingComment(file, from, to, text);
+				void this.insertReadingComment(file, from, to, text, selected);
 			}).open();
 			return;
 		}
 		// Same inline draft composer as the editor (no modal).
-		this.readingManager?.startDraft(view, from, to, selection.getRangeAt(0));
+		this.readingManager?.startDraft(view, from, to, selection.getRangeAt(0), selected);
 	}
 
 	/** Mobile reading-view create: write to the file (no editor surface) and refresh.
 	 *  insertCommentInFile already folds I/O + compute failures into the Result. */
-	private async insertReadingComment(file: TFile, from: number, to: number, text: string): Promise<void> {
-		(await insertCommentInFile(this.app, file, from, to, text, this.authorName())).match({
+	private async insertReadingComment(
+		file: TFile,
+		from: number,
+		to: number,
+		text: string,
+		expected: string,
+	): Promise<void> {
+		(await insertCommentInFile(this.app, file, from, to, text, this.authorName(), expected)).match({
 			ok: () => this.scheduleReadingRefresh(),
 			err: (message) => new Notice(`Couldn't add the comment: ${message}`),
 		});
@@ -248,7 +263,7 @@ export default class DocCommentsPlugin extends Plugin {
 		new Notice(this.settings.showResolved ? "Resolved comments shown" : "Resolved comments hidden");
 	}
 
-	private updateRibbon(): void {
+	updateRibbon(): void {
 		if (!this.ribbonIcon) return;
 		this.ribbonIcon.toggleClass("is-active", this.settings.showComments);
 		this.ribbonIcon.setAttribute(
@@ -277,6 +292,10 @@ export default class DocCommentsPlugin extends Plugin {
 					if (!leaf) return;
 					await leaf.setViewState({ type: COMMENTS_VIEW_TYPE, active: true });
 				}
+				// A sidebar leaf restored from the workspace but never revealed is a
+				// DeferredView (Obsidian ≥1.7) — its view isn't a CommentsSidebarView yet,
+				// so revealComment/refresh would silently no-op. Force it to load first.
+				if (leaf.isDeferred) await leaf.loadIfDeferred();
 				await workspace.revealLeaf(leaf);
 				this.syncSidebarOpen();
 			},
