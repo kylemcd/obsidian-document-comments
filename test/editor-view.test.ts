@@ -105,6 +105,139 @@ describe("editor extensions open every note without crashing", () => {
 		expect(() => open(doc)).not.toThrow();
 	});
 
+	// Rendered-row structure of the editor content, one entry per line. `cm` is true
+	// for a real `.cm-line` (rendered text row) and false for a block-replaced marker
+	// (an empty <div> the hide decoration leaves behind).
+	const rowStructure = (doc: string): Array<{ cm: boolean; text: string }> => {
+		const parent = document.createElement("div");
+		document.body.appendChild(parent);
+		const view = new EditorView({
+			state: EditorState.create({ doc, extensions: [commentField] }),
+			parent,
+		});
+		view.requestMeasure();
+		const rows = [...view.contentDOM.children].map((k) => ({
+			cm: k.classList.contains("cm-line"),
+			text: (k.textContent ?? "").trim(),
+		}));
+		view.destroy();
+		return rows;
+	};
+
+	// Regression: hiding a code comment's markers/body must not disturb the rows that
+	// frame the block — the blank lines above and below it, and the two ``` fences.
+	// Absorbing the newline that touches a fence stops Live Preview tagging it (a ghost
+	// gap); absorbing a blank line's newline shifts everything past it a row toward the
+	// block. So every hidden line collapses to a zero-height non-`.cm-line` row and each
+	// real blank line and fence stays its own `.cm-line`, symmetrically top and bottom.
+	test("code-block comment keeps the blank lines and both fences intact", () => {
+		const rows = rowStructure(
+			[
+				"paragraph above",
+				"",
+				"<!--c:cc1-->",
+				"```js",
+				"const a = 1;",
+				"```",
+				"<!--/c:cc1-->",
+				'<!--co:cc1 by:me at:2026-01-01T00:00:00.000Z status:open quote:"const a = 1;" line:0',
+				"me: hi",
+				"-->",
+				"",
+				"paragraph below",
+			].join("\n"),
+		);
+		expect(rows).toEqual([
+			{ cm: true, text: "paragraph above" },
+			{ cm: true, text: "" }, // blank line above survives — no downward gap/shift
+			{ cm: false, text: "" }, // open marker: zero-height row
+			{ cm: true, text: "```js" }, // opening fence keeps its own line (begin-tagging)
+			{ cm: true, text: "const a = 1;" },
+			{ cm: true, text: "```" }, // closing fence keeps its own line (end-tagging)
+			{ cm: false, text: "" }, // close marker: zero-height row
+			{ cm: false, text: "" }, // body block: zero-height row
+			{ cm: true, text: "" }, // blank line below survives — heading/text keeps its gap
+			{ cm: true, text: "paragraph below" },
+		]);
+	});
+
+	// Edge case: the code comment is the very first line, so the open marker has no
+	// blank line above it. It must still collapse to a zero-height row and leave the
+	// fence as its own line.
+	test("code-block comment at document start collapses cleanly", () => {
+		const rows = rowStructure(
+			[
+				"<!--c:cc1-->",
+				"```js",
+				"const a = 1;",
+				"```",
+				"<!--/c:cc1-->",
+				'<!--co:cc1 by:me at:2026-01-01T00:00:00.000Z status:open quote:"const a = 1;" line:0',
+				"me: hi",
+				"-->",
+				"",
+			].join("\n"),
+		);
+		expect(rows.slice(0, 3)).toEqual([
+			{ cm: false, text: "" }, // marker: zero-height row
+			{ cm: true, text: "```js" }, // fence directly above the code
+			{ cm: true, text: "const a = 1;" },
+		]);
+	});
+
+	// The hide decoration replaces only the marker text (so the newline survives for
+	// layout), but the ATOMIC range must still swallow that trailing newline so one
+	// arrow press steps over the whole invisible row instead of stalling on it. Assert
+	// the atomic set extends one past the marker text.
+	test("a hidden code-block marker keeps its trailing newline atomic", () => {
+		const doc = [
+			"a",
+			"",
+			"<!--c:cc1-->",
+			"```js",
+			"const a = 1;",
+			"```",
+			"<!--/c:cc1-->",
+			'<!--co:cc1 by:me at:2026-01-01T00:00:00.000Z status:open quote:"const a = 1;" line:0',
+			"me: hi",
+			"-->",
+			"",
+		].join("\n");
+		const markerFrom = doc.indexOf("<!--c:cc1-->");
+		const markerTo = markerFrom + "<!--c:cc1-->".length;
+		const parent = document.createElement("div");
+		document.body.appendChild(parent);
+		const view = new EditorView({
+			state: EditorState.create({ doc, extensions: [commentField] }),
+			parent,
+		});
+		let atomicEnd = -1;
+		view.state.field(commentField).atomic.between(markerFrom, markerFrom + 1, (from, to) => {
+			if (from === markerFrom) atomicEnd = to;
+		});
+		expect(atomicEnd).toBe(markerTo + 1); // marker text + its "\n"
+		view.destroy();
+	});
+
+	// Edge case: the body's closing `-->` is the last thing in the file (no trailing
+	// newline). Hiding it must not run off the end or crash; the visible rows are just
+	// the fence and code.
+	test("code-block comment whose body ends at EOF renders cleanly", () => {
+		const rows = rowStructure(
+			[
+				"<!--c:cc1-->",
+				"```js",
+				"const a = 1;",
+				"```",
+				"<!--/c:cc1-->",
+				'<!--co:cc1 by:me at:2026-01-01T00:00:00.000Z status:open quote:"const a = 1;" line:0',
+				"me: hi",
+				"-->",
+			].join("\n"),
+		);
+		expect(rows.filter((r) => r.cm && r.text).map((r) => r.text)).toEqual(["```js", "const a = 1;", "```"]);
+	});
+
 	test("note with overlapping / nested comments", () => {
 		const doc = [
 			"Already <!--c:zz1q--><!--c:xoua6-->resolved<!--/c:xoua6--><!--/c:zz1q--> here.",

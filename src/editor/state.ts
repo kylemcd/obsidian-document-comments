@@ -220,17 +220,30 @@ const compute = (state: EditorState): CommentFieldValue => {
 		);
 	};
 	// A code comment's markers and body sit on their own lines wrapping the fenced
-	// block. Remove each whole line as a BLOCK (line break included) rather than an
-	// inline replace: an inline replace merges the hidden line into the adjacent
-	// line, and when that neighbor is a ``` fence, Live Preview stops recognizing
-	// the fence and leaves ghost vertical space. A block replace deletes the line
-	// outright and never touches the fence lines.
+	// block. Hide each as a BLOCK decoration (which a StateField may do) rather than an
+	// inline replace: an inline replace merges the hidden line into its neighbor, and
+	// when that neighbor is a ``` fence, Live Preview stops recognizing the fence and
+	// leaves ghost vertical space.
+	//
+	// Crucially, replace ONLY the line's text and never a newline. Every newline in the
+	// block is load-bearing: the one directly before the opening ``` (or after the
+	// closing ```) is what Live Preview keys the codeblock-begin/-end styling off —
+	// eat it and the fence renders as a full-height blank prose line (a ghost gap). The
+	// ones facing away from the fence are the blank lines that space the block from
+	// its surroundings — eat one and everything past it shifts a row toward the block.
+	// Leaving all newlines intact makes each hidden line a zero-height row and lets the
+	// real blank lines and fence rows render at their natural, theme-driven height, so a
+	// commented block lays out identically to an uncommented one with no pixel math.
+	//
+	// The ATOMIC range still covers the trailing newline though (layout comes from the
+	// decoration, caret motion from the atomic set — they're independent). That way a
+	// single arrow press steps over the whole invisible row at once instead of stalling
+	// on the empty 0px line, exactly as it did when the newline was hidden too.
 	const blockHideLine = (from: number, to: number) => {
-		const end = Math.min(to + 1, text.length);
-		if (end <= from) return;
-		const range = HIDE_BLOCK.range(from, end);
-		decoRanges.push(range);
-		hideRanges.push(range);
+		if (to <= from) return;
+		decoRanges.push(HIDE_BLOCK.range(from, to));
+		const atomicTo = to < text.length && text.charCodeAt(to) === 10 ? to + 1 : to;
+		hideRanges.push(HIDE_BLOCK.range(from, atomicTo));
 	};
 
 	for (const c of comments) {
