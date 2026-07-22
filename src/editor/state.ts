@@ -21,6 +21,9 @@ export type CommentFieldValue = {
 };
 
 const HIDE = Decoration.replace({});
+/** Removes a whole line (its line break included) as a block — used for the
+ *  own-line marker/body lines that wrap a fenced code block. */
+const HIDE_BLOCK = Decoration.replace({ block: true });
 
 class SpaceWidget extends WidgetType {
 	eq(): boolean {
@@ -210,34 +213,39 @@ const compute = (state: EditorState): CommentFieldValue => {
 		}
 	};
 
-	// A marker alone on its line (code-comment block wrap) — hide it AND swallow one
-	// adjacent newline so the fenced block doesn't get a blank line above/below it.
 	const isOwnLine = (marker: { from: number; to: number }): boolean => {
 		return (
 			(marker.from === 0 || text.charCodeAt(marker.from - 1) === 10) &&
 			(marker.to === text.length || text.charCodeAt(marker.to) === 10)
 		);
 	};
-	const hideOwnLine = (marker: { from: number; to: number }, swallowTrailing: boolean) => {
-		if (swallowTrailing && marker.to < text.length && text.charCodeAt(marker.to) === 10) {
-			addHide(marker.from, marker.to + 1);
-		} else if (!swallowTrailing && marker.from > 0 && text.charCodeAt(marker.from - 1) === 10) {
-			addHide(marker.from - 1, marker.to);
-		} else {
-			addHide(marker.from, marker.to);
-		}
+	// A code comment's markers and body sit on their own lines wrapping the fenced
+	// block. Remove each whole line as a BLOCK (line break included) rather than an
+	// inline replace: an inline replace merges the hidden line into the adjacent
+	// line, and when that neighbor is a ``` fence, Live Preview stops recognizing
+	// the fence and leaves ghost vertical space. A block replace deletes the line
+	// outright and never touches the fence lines.
+	const blockHideLine = (from: number, to: number) => {
+		const end = Math.min(to + 1, text.length);
+		if (end <= from) return;
+		const range = HIDE_BLOCK.range(from, end);
+		decoRanges.push(range);
+		hideRanges.push(range);
 	};
 
 	for (const c of comments) {
+		const code = isCodeComment(c);
 		if (c.open) {
-			if (isOwnLine(c.open)) hideOwnLine(c.open, true);
+			if (code && isOwnLine(c.open)) blockHideLine(c.open.from, c.open.to);
 			else addMarker(c.open, "before");
 		}
 		if (c.close) {
-			if (isOwnLine(c.close)) hideOwnLine(c.close, false);
+			if (code && isOwnLine(c.close)) blockHideLine(c.close.from, c.close.to);
 			else addMarker(c.close, "after");
 		}
-		if (c.body) {
+		if (c.body && code) {
+			blockHideLine(c.body.from, c.body.to);
+		} else if (c.body) {
 			// Swallow the newline before the body so its line disappears cleanly.
 			let from = c.body.from;
 			if (from > 0 && text.charCodeAt(from - 1) === 10 /* \n */) from -= 1;
@@ -245,7 +253,7 @@ const compute = (state: EditorState): CommentFieldValue => {
 		}
 		// A code comment highlights the resolved target lines inside the block, not
 		// the whole between-markers range (which would include the fences).
-		const r = isCodeComment(c) ? resolveCodeAnchor(text, c) : anchorRange(c);
+		const r = code ? resolveCodeAnchor(text, c) : anchorRange(c);
 		if (r && r.to > r.from) {
 			// A mark decoration paints over live source text, so it shows in Source
 			// mode and (via the Reading-view post-processor) in Reading view. It does

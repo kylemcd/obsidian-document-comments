@@ -89,6 +89,22 @@ describe("editor extensions open every note without crashing", () => {
 		expect(() => open(doc)).not.toThrow();
 	});
 
+	test("note with a code-block comment (block-replace decorations)", () => {
+		const doc = [
+			"before",
+			"<!--c:cc1-->",
+			"```js",
+			"const a = 1;",
+			"```",
+			"<!--/c:cc1-->",
+			'<!--co:cc1 by:me at:2026-01-01T00:00:00.000Z status:open quote:"const a = 1;" line:0',
+			"me: hi",
+			"-->",
+			"",
+		].join("\n");
+		expect(() => open(doc)).not.toThrow();
+	});
+
 	test("note with overlapping / nested comments", () => {
 		const doc = [
 			"Already <!--c:zz1q--><!--c:xoua6-->resolved<!--/c:xoua6--><!--/c:zz1q--> here.",
