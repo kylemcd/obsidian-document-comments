@@ -217,25 +217,31 @@ export const computeDeleteComment = (doc: string, id: string): Result<Change[], 
 	// parser records. Copy-pasting a commented span duplicates the markers; deleting
 	// only the first pair used to leave invisible, UI-unremovable leftovers behind.
 	const ranges: Change[] = [];
-	// A marker alone on its line (code-comment block wrap) takes its newline with it,
-	// so deleting the comment doesn't leave a blank line around the code block.
+	// Length of the line terminator ending at / starting at a boundary, counting CRLF
+	// as one unit. `charCodeAt` past either end of the string is NaN, so both read 0
+	// there — no bounds guards needed. Handling CRLF matters because deletes on the
+	// raw-file path (sidebar / Reading view) see the file's real endings: an LF-only
+	// check left a marker's `\r\n` behind as a stray blank line around the code block.
+	const leadingTerm = (p: number): number =>
+		doc.charCodeAt(p - 1) === 10 ? (doc.charCodeAt(p - 2) === 13 ? 2 : 1) : 0;
+	const trailingTerm = (p: number): number =>
+		doc.charCodeAt(p) === 13 && doc.charCodeAt(p + 1) === 10 ? 2 : doc.charCodeAt(p) === 10 ? 1 : 0;
+	// A marker alone on its line (code-comment block wrap) takes its line terminator
+	// with it, so deleting the comment doesn't leave a blank line around the code block.
 	const aloneOnLine = (from: number, to: number): boolean =>
-		(from === 0 || doc.charCodeAt(from - 1) === 10) && (to === doc.length || doc.charCodeAt(to) === 10);
+		(from === 0 || leadingTerm(from) > 0) && (to === doc.length || trailingTerm(to) > 0);
 	scanAll(doc, new RegExp(`<!--c:${id}-->`, "g"), (from, to) => {
-		const end = aloneOnLine(from, to) && to < doc.length ? to + 1 : to;
+		const end = aloneOnLine(from, to) ? to + trailingTerm(to) : to;
 		ranges.push({ from, to: end, insert: "" });
 	});
 	scanAll(doc, new RegExp(`<!--/c:${id}-->`, "g"), (from, to) => {
-		const start = aloneOnLine(from, to) && from > 0 ? from - 1 : from;
+		const start = aloneOnLine(from, to) ? from - leadingTerm(from) : from;
 		ranges.push({ from: start, to, insert: "" });
 	});
 	scanAll(doc, new RegExp(`<!--co:${id}(?![A-Za-z0-9])[\\s\\S]*?-->`, "g"), (from, to) => {
-		// Swallow the newline before the body so its line disappears cleanly,
-		// including the CR of a CRLF pair so no stray \r is left behind.
-		let start = from;
-		if (start > 0 && doc.charCodeAt(start - 1) === 10) start -= 1;
-		if (start > 0 && doc.charCodeAt(start - 1) === 13) start -= 1;
-		ranges.push({ from: start, to, insert: "" });
+		// Swallow the whole line terminator before the body so its line disappears
+		// cleanly, CR included, leaving no stray blank line.
+		ranges.push({ from: from - leadingTerm(from), to, insert: "" });
 	});
 	if (ranges.length === 0) return Result.err("Nothing to delete.");
 	ranges.sort((a, b) => a.from - b.from);

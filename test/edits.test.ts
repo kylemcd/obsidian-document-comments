@@ -165,6 +165,27 @@ describe("computeDeleteComment", () => {
 		const cleaned = applyChanges(withDupe, computeDeleteComment(withDupe, "k3f9").unwrap());
 		expect(cleaned).not.toContain("k3f9");
 	});
+
+	// Deletes on the raw-file path (sidebar / Reading view) see the file's real line
+	// endings. A code comment's own-line markers must take their whole CRLF terminator
+	// with them, or a `\r\n` is left behind as a stray blank line around the block.
+	it("round-trips a code-block comment on a CRLF file without leaving blank lines", () => {
+		const base = "intro\n\n```js\nconst a = 1;\n```\n\noutro\n";
+		const at = base.indexOf("const a = 1;");
+		const withComment = applyChanges(
+			base,
+			computeAddComment(base, at, at + "const a = 1;".length, {
+				id: "cc1",
+				createdAt: "t",
+				author: "a",
+				text: "b",
+			}).unwrap(),
+		);
+		const toCrlf = (s: string): string => s.replace(/\n/g, "\r\n");
+		const crlf = toCrlf(withComment);
+		const restored = applyChanges(crlf, computeDeleteComment(crlf, "cc1").unwrap());
+		expect(restored).toBe(toCrlf(base));
+	});
 });
 
 describe("malformed / boundary edit inputs", () => {
