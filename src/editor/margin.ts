@@ -3,6 +3,7 @@ import { Result } from "better-result";
 import { EditorView, PluginValue, ViewPlugin } from "@codemirror/view";
 import { ParsedComment } from "../format/types";
 import { anchorRange, hasMarginAnchor } from "../format/parse";
+import { isCodeComment, resolveCodeAnchor } from "../format/code-anchor";
 import { commentField } from "./state";
 import { commentConfig } from "./config";
 import { Draft, clearDraft, draftField } from "./draft";
@@ -212,11 +213,14 @@ class MarginView implements PluginValue {
 			placements.push({ el, top: coords.top - editorTop, height: el.offsetHeight });
 		};
 
+		const doc = this.view.state.doc.toString();
 		for (const c of this.comments()) {
 			const card = this.cards.get(c.id);
 			if (!card) continue;
-			const range = anchorRange(c);
+			// A code comment's card aligns to its target line, not the block top.
+			const range = isCodeComment(c) ? resolveCodeAnchor(doc, c) : anchorRange(c);
 			if (range) place(card.el, range.from);
+			else card.el.addClass("dc-offscreen"); // orphaned (e.g. the commented code changed)
 		}
 
 		if (draft && this.draftEl) place(this.draftEl, draft.from);

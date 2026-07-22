@@ -1,6 +1,7 @@
 import { Result } from "better-result";
 import { CommentData, ParsedComment, Reaction } from "../format/types";
 import { isInFencedCode, parseComments } from "../format/parse";
+import { codeSelectionTarget } from "../format/code-anchor";
 import { closeMarker, openMarker, serializeBody } from "../format/serialize";
 
 /** A document edit in original coordinates (matches CodeMirror's ChangeSpec shape). */
@@ -35,10 +36,10 @@ export const computeAddComment = (
 	if (input.expected !== undefined && doc.slice(from, to) !== input.expected) {
 		return Result.err("The selection moved — try adding the comment again.");
 	}
-	// Markers inside a fence render as literal text and the parser masks them, so
-	// the comment would be invisible in every surface. Refuse rather than corrupt.
+	// Markers can't live inside a fence (they'd render literally and the parser
+	// masks them), so a code selection anchors the whole block with a line target.
 	if (isInFencedCode(doc, from) || isInFencedCode(doc, to - 1)) {
-		return Result.err("Can't comment inside a code block.");
+		return computeAddCodeComment(doc, from, to, input);
 	}
 	({ from, to } = expandInlineCodeSelection(doc, from, to));
 
@@ -56,6 +57,35 @@ export const computeAddComment = (
 		{ from, to: from, insert: openMarker(input.id) },
 		{ from: to, to, insert: closeMarker(input.id) },
 		{ from: paraEnd, to: paraEnd, insert: "\n" + serializeBody(input.id, data) },
+	]);
+};
+
+/** Anchor a code selection: wrap the whole fenced block with own-line markers and
+ *  record the block-relative line range + exact code as the body's `line:`/`quote:`. */
+const computeAddCodeComment = (
+	doc: string,
+	from: number,
+	to: number,
+	input: NewCommentInput,
+): Result<Change[], string> => {
+	const target = codeSelectionTarget(doc, from, to);
+	if (!target) return Result.err("Couldn't map that selection to code lines.");
+	const data: CommentData = {
+		author: input.author,
+		createdAt: input.createdAt,
+		status: "open",
+		quote: target.quote,
+		codeLines: target.codeLines,
+		thread: [{ author: input.author, timestamp: input.createdAt, text: input.text }],
+		reactions: [],
+	};
+	return Result.ok([
+		{ from: target.fenceStart, to: target.fenceStart, insert: openMarker(input.id) + "\n" },
+		{
+			from: target.fenceEnd,
+			to: target.fenceEnd,
+			insert: "\n" + closeMarker(input.id) + "\n" + serializeBody(input.id, data),
+		},
 	]);
 };
 
@@ -162,6 +192,7 @@ const toData = (c: ParsedComment): CommentData => {
 		createdAt: c.createdAt,
 		status: c.status,
 		quote: c.quote,
+		codeLines: c.codeLines,
 		thread: c.thread,
 		reactions: c.reactions,
 	};
@@ -186,8 +217,18 @@ export const computeDeleteComment = (doc: string, id: string): Result<Change[], 
 	// parser records. Copy-pasting a commented span duplicates the markers; deleting
 	// only the first pair used to leave invisible, UI-unremovable leftovers behind.
 	const ranges: Change[] = [];
-	scanAll(doc, new RegExp(`<!--c:${id}-->`, "g"), (from, to) => ranges.push({ from, to, insert: "" }));
-	scanAll(doc, new RegExp(`<!--/c:${id}-->`, "g"), (from, to) => ranges.push({ from, to, insert: "" }));
+	// A marker alone on its line (code-comment block wrap) takes its newline with it,
+	// so deleting the comment doesn't leave a blank line around the code block.
+	const aloneOnLine = (from: number, to: number): boolean =>
+		(from === 0 || doc.charCodeAt(from - 1) === 10) && (to === doc.length || doc.charCodeAt(to) === 10);
+	scanAll(doc, new RegExp(`<!--c:${id}-->`, "g"), (from, to) => {
+		const end = aloneOnLine(from, to) && to < doc.length ? to + 1 : to;
+		ranges.push({ from, to: end, insert: "" });
+	});
+	scanAll(doc, new RegExp(`<!--/c:${id}-->`, "g"), (from, to) => {
+		const start = aloneOnLine(from, to) && from > 0 ? from - 1 : from;
+		ranges.push({ from: start, to, insert: "" });
+	});
 	scanAll(doc, new RegExp(`<!--co:${id}(?![A-Za-z0-9])[\\s\\S]*?-->`, "g"), (from, to) => {
 		// Swallow the newline before the body so its line disappears cleanly,
 		// including the CR of a CRLF pair so no stray \r is left behind.

@@ -10,6 +10,7 @@ import {
 import { Decoration, DecorationSet, EditorView, ViewPlugin, WidgetType } from "@codemirror/view";
 import { ParsedComment } from "../format/types";
 import { anchorRange, parseComments } from "../format/parse";
+import { isCodeComment, resolveCodeAnchor } from "../format/code-anchor";
 import { commentPreview } from "../format/preview";
 
 export type CommentFieldValue = {
@@ -209,16 +210,42 @@ const compute = (state: EditorState): CommentFieldValue => {
 		}
 	};
 
+	// A marker alone on its line (code-comment block wrap) — hide it AND swallow one
+	// adjacent newline so the fenced block doesn't get a blank line above/below it.
+	const isOwnLine = (marker: { from: number; to: number }): boolean => {
+		return (
+			(marker.from === 0 || text.charCodeAt(marker.from - 1) === 10) &&
+			(marker.to === text.length || text.charCodeAt(marker.to) === 10)
+		);
+	};
+	const hideOwnLine = (marker: { from: number; to: number }, swallowTrailing: boolean) => {
+		if (swallowTrailing && marker.to < text.length && text.charCodeAt(marker.to) === 10) {
+			addHide(marker.from, marker.to + 1);
+		} else if (!swallowTrailing && marker.from > 0 && text.charCodeAt(marker.from - 1) === 10) {
+			addHide(marker.from - 1, marker.to);
+		} else {
+			addHide(marker.from, marker.to);
+		}
+	};
+
 	for (const c of comments) {
-		if (c.open) addMarker(c.open, "before");
-		if (c.close) addMarker(c.close, "after");
+		if (c.open) {
+			if (isOwnLine(c.open)) hideOwnLine(c.open, true);
+			else addMarker(c.open, "before");
+		}
+		if (c.close) {
+			if (isOwnLine(c.close)) hideOwnLine(c.close, false);
+			else addMarker(c.close, "after");
+		}
 		if (c.body) {
 			// Swallow the newline before the body so its line disappears cleanly.
 			let from = c.body.from;
 			if (from > 0 && text.charCodeAt(from - 1) === 10 /* \n */) from -= 1;
 			addHide(from, c.body.to);
 		}
-		const r = anchorRange(c);
+		// A code comment highlights the resolved target lines inside the block, not
+		// the whole between-markers range (which would include the fences).
+		const r = isCodeComment(c) ? resolveCodeAnchor(text, c) : anchorRange(c);
 		if (r && r.to > r.from) {
 			// A mark decoration paints over live source text, so it shows in Source
 			// mode and (via the Reading-view post-processor) in Reading view. It does

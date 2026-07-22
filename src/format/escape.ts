@@ -31,6 +31,34 @@ export const escapeReactionAuthor = (s: string): string => {
 	return s.replace(/\\/g, "\\\\").replace(/,/g, "\\,");
 };
 
+/**
+ * A code comment's `quote` is the exact multi-line code it targets and is the
+ * re-anchor key, so it must round-trip byte-for-byte — unlike a prose quote,
+ * which is collapsed for readability. It lives in the header's `quote:"…"` field,
+ * so newlines, `"` (would close the field), and `-->` (would end the block) are
+ * all encoded reversibly. Backslashes are doubled first so every marker is
+ * unambiguous on the single decode pass.
+ */
+export const encodeCodeQuote = (s: string): string => {
+	return s
+		.replace(/\\/g, "\\\\")
+		.replace(/"/g, "\\q")
+		.replace(/\r/g, "\\r")
+		.replace(/\n/g, "\\n")
+		.replace(/-->/g, "--\\g>");
+};
+
+export const decodeCodeQuote = (s: string): string => {
+	return s.replace(/\\(.)/g, (match, c: string) => {
+		if (c === "n") return "\n";
+		if (c === "r") return "\r";
+		if (c === "q") return '"';
+		if (c === "g") return "";
+		if (c === "\\") return "\\";
+		return match;
+	});
+};
+
 export const splitReactionAuthors = (s: string): string[] => {
 	return s
 		.split(/(?<!\\),/)

@@ -1,5 +1,5 @@
 import { CommentData, CommentStatus, ParsedComment, Reaction, TextRange, ThreadEntry } from "./types";
-import { splitReactionAuthors, unescapeText } from "./escape";
+import { decodeCodeQuote, splitReactionAuthors, unescapeText } from "./escape";
 
 // Anchor + body markers. All are HTML comments so they're invisible everywhere.
 const OPEN_RE = /<!--c:([A-Za-z0-9]+)-->/g;
@@ -73,6 +73,7 @@ export const parseComments = (doc: string): ParsedComment[] => {
 			createdAt: data.createdAt,
 			status: data.status,
 			quote: data.quote,
+			codeLines: data.codeLines,
 			thread: data.thread,
 			reactions: data.reactions,
 			open: opens.get(id) ?? null,
@@ -117,12 +118,27 @@ const parseHeader = (header: string): Omit<CommentData, "thread" | "reactions"> 
 		if (key !== undefined && value !== undefined) attrs[key] = value;
 	}
 	const status: CommentStatus = attrs.status === "resolved" ? "resolved" : "open";
+	const codeLines = parseLineRange(attrs.line);
+	// A code comment's quote is stored encoded (exact); a prose quote is stored
+	// already-collapsed, so it's used verbatim.
+	const quote = attrs.quote === undefined ? undefined : codeLines ? decodeCodeQuote(attrs.quote) : attrs.quote;
 	return {
 		author: attrs.by,
 		createdAt: attrs.at,
 		status,
-		quote: attrs.quote,
+		quote,
+		codeLines,
 	};
+};
+
+/** Parse a `line:F-T` (or `line:F`) header value into an inclusive line range. */
+const parseLineRange = (value: string | undefined): TextRange | undefined => {
+	if (!value) return undefined;
+	const match = /^(\d+)(?:-(\d+))?$/.exec(value);
+	if (!match || match[1] === undefined) return undefined;
+	const from = Number(match[1]);
+	const to = match[2] !== undefined ? Number(match[2]) : from;
+	return to >= from ? { from, to } : undefined;
 };
 
 /** Fenced code-block ranges (``` or ~~~), from the opening fence to the closing

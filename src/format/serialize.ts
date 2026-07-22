@@ -1,5 +1,5 @@
 import { CommentData, ThreadEntry } from "./types";
-import { escapeReactionAuthor, escapeText } from "./escape";
+import { encodeCodeQuote, escapeReactionAuthor, escapeText } from "./escape";
 
 export const openMarker = (id: string): string => {
 	return `<!--c:${id}-->`;
@@ -15,7 +15,16 @@ export const serializeBody = (id: string, data: CommentData): string => {
 	if (data.author) head.push(`by:${sanitizeToken(data.author)}`);
 	if (data.createdAt) head.push(`at:${sanitizeToken(data.createdAt)}`);
 	head.push(`status:${data.status}`);
-	if (data.quote) head.push(`quote:"${sanitizeQuote(data.quote)}"`);
+	// A code quote must round-trip exactly (it re-anchors to the code); a prose
+	// quote is collapsed for readability.
+	if (data.quote) {
+		const quote = data.codeLines ? encodeCodeQuote(data.quote) : sanitizeQuote(data.quote);
+		head.push(`quote:"${quote}"`);
+	}
+	if (data.codeLines) {
+		const { from, to } = data.codeLines;
+		head.push(`line:${from === to ? from : `${from}-${to}`}`);
+	}
 
 	const lines = data.thread.map(serializeEntry);
 	const reactionLines = (data.reactions ?? [])

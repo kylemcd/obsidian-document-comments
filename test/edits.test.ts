@@ -117,8 +117,8 @@ describe("reply / resolve", () => {
 	});
 });
 
-describe("computeAddComment code-block guard", () => {
-	it("refuses a selection inside a fenced code block", () => {
+describe("computeAddComment in code blocks", () => {
+	it("creates a code comment (block wrap + line target) for a selection inside a fence", () => {
 		const doc = "text\n```js\nconst spinner = 1;\n```\nmore";
 		const from = doc.indexOf("spinner");
 		const result = computeAddComment(doc, from, from + "spinner".length, {
@@ -127,10 +127,15 @@ describe("computeAddComment code-block guard", () => {
 			author: "a",
 			text: "b",
 		});
-		expect(result.isErr()).toBe(true);
+		expect(result.isOk()).toBe(true);
+		const out = applyChanges(doc, result.unwrap());
+		expect(out).toContain("<!--c:x-->\n```js");
+		const c = parseComments(out).find((entry) => entry.id === "x")!;
+		expect(c.codeLines).toEqual({ from: 0, to: 0 });
+		expect(c.quote).toBe("const spinner = 1;");
 	});
 
-	it("still allows a selection outside any fence", () => {
+	it("still anchors a normal prose selection outside any fence", () => {
 		const doc = "text\n```js\nconst spinner = 1;\n```\nmore prose here";
 		const from = doc.indexOf("prose");
 		const result = computeAddComment(doc, from, from + "prose".length, {
@@ -140,6 +145,7 @@ describe("computeAddComment code-block guard", () => {
 			text: "b",
 		});
 		expect(result.isOk()).toBe(true);
+		expect(parseComments(applyChanges(doc, result.unwrap()))[0]!.codeLines).toBeUndefined();
 	});
 });
 

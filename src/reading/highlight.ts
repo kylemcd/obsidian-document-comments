@@ -1,6 +1,7 @@
 import type { MarkdownPostProcessorContext } from "obsidian";
 import { ParsedComment } from "../format/types";
 import { anchorRange, parseComments } from "../format/parse";
+import { isCodeComment, resolveCodeAnchor } from "../format/code-anchor";
 import { commentPreview } from "../format/preview";
 
 export type SectionRange = {
@@ -63,6 +64,19 @@ export const highlightPostProcessor = (el: HTMLElement, ctx: MarkdownPostProcess
 	if (comments.length === 0) return;
 
 	for (const c of comments) {
+		// A code comment highlights its resolved target lines within this block's
+		// <pre>. Each line is wrapped separately — a whole-line match sits in one
+		// text node for plain code blocks (syntax-highlighted blocks split it across
+		// token spans, where the wrap fails gracefully; a precise highlight there is
+		// a follow-up using the CSS Custom Highlight path).
+		if (isCodeComment(c)) {
+			const target = resolveCodeAnchor(text, c);
+			if (!target || target.from < sectionFrom || target.from >= sectionTo) continue;
+			for (const lineText of text.slice(target.from, target.to).split("\n")) {
+				if (lineText.trim()) wrapFirstMatch(el, lineText, c.id, c.status === "resolved", commentPreview(c));
+			}
+			continue;
+		}
 		const range = anchorRange(c);
 		if (!range) continue;
 		// Only act on comments whose anchor starts within this rendered section.
