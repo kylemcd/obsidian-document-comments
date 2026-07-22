@@ -1,7 +1,7 @@
 import { App, MarkdownView, Notice, setIcon } from "obsidian";
 import { Result } from "better-result";
 import { ParsedComment } from "../format/types";
-import { existingIds, parseComments } from "../format/parse";
+import { existingIds, hasMarginAnchor, parseComments } from "../format/parse";
 import { generateId } from "../format/ids";
 import { Card, CardCallbacks, cardSignature } from "../ui/card";
 import {
@@ -98,7 +98,7 @@ class ReadingMargin {
 		} catch {
 			return; // file vanished or unreadable — keep the last render
 		}
-		const all = parseComments(data).filter((c) => c.body);
+		const all = parseComments(data).filter(hasMarginAnchor);
 		// Sidebar open → inline cards step aside (the panel lists them instead).
 		this.comments = this.deps.showComments() && !this.deps.sidebarOpen() ? all : [];
 		this.reconcileCards();

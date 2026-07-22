@@ -87,6 +87,12 @@ export const isAnchored = (c: ParsedComment): boolean => {
 	return !!c.open && !!c.close && c.open.to <= c.close.from;
 };
 
+/** A floating margin card needs both its thread body and a valid text anchor.
+ * Orphaned threads remain available in the sidebar, where no anchor is needed. */
+export const hasMarginAnchor = (c: ParsedComment): boolean => {
+	return !!c.body && isAnchored(c);
+};
+
 /** The highlighted text range (between the markers), or null if not anchored. */
 export const anchorRange = (c: ParsedComment): TextRange | null => {
 	return isAnchored(c) ? { from: c.open!.to, to: c.close!.from } : null;
