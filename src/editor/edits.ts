@@ -1,6 +1,6 @@
 import { Result } from "better-result";
 import { CommentData, ParsedComment, Reaction } from "../format/types";
-import { parseComments } from "../format/parse";
+import { isInFencedCode, parseComments } from "../format/parse";
 import { closeMarker, openMarker, serializeBody } from "../format/serialize";
 
 /** A document edit in original coordinates (matches CodeMirror's ChangeSpec shape). */
@@ -27,6 +27,11 @@ export const computeAddComment = (
 ): Result<Change[], string> => {
 	if (to < from) [from, to] = [to, from];
 	if (to === from) return Result.err("Select some text to comment on.");
+	// Markers inside a fence render as literal text and the parser masks them, so
+	// the comment would be invisible in every surface. Refuse rather than corrupt.
+	if (isInFencedCode(doc, from) || isInFencedCode(doc, to - 1)) {
+		return Result.err("Can't comment inside a code block.");
+	}
 	({ from, to } = expandInlineCodeSelection(doc, from, to));
 
 	const quote = doc.slice(from, to);
@@ -162,19 +167,27 @@ const toggleReactions = (reactions: Reaction[], emoji: string, author: string): 
 };
 
 export const computeDeleteComment = (doc: string, id: string): Result<Change[], string> => {
-	const c = parseComments(doc).find((x) => x.id === id);
-	if (!c) return Result.err("Comment not found.");
+	if (!parseComments(doc).some((x) => x.id === id)) return Result.err("Comment not found.");
+	// Remove EVERY occurrence of this id's markers/body, not just the first the
+	// parser records. Copy-pasting a commented span duplicates the markers; deleting
+	// only the first pair used to leave invisible, UI-unremovable leftovers behind.
 	const ranges: Change[] = [];
-	if (c.open) ranges.push({ from: c.open.from, to: c.open.to, insert: "" });
-	if (c.close) ranges.push({ from: c.close.from, to: c.close.to, insert: "" });
-	if (c.body) {
-		let from = c.body.from;
-		if (from > 0 && doc.charCodeAt(from - 1) === 10) from -= 1;
-		ranges.push({ from, to: c.body.to, insert: "" });
-	}
+	scanAll(doc, new RegExp(`<!--c:${id}-->`, "g"), (from, to) => ranges.push({ from, to, insert: "" }));
+	scanAll(doc, new RegExp(`<!--/c:${id}-->`, "g"), (from, to) => ranges.push({ from, to, insert: "" }));
+	scanAll(doc, new RegExp(`<!--co:${id}(?![A-Za-z0-9])[\\s\\S]*?-->`, "g"), (from, to) => {
+		// Swallow the newline before the body so its line disappears cleanly.
+		const start = from > 0 && doc.charCodeAt(from - 1) === 10 ? from - 1 : from;
+		ranges.push({ from: start, to, insert: "" });
+	});
 	if (ranges.length === 0) return Result.err("Nothing to delete.");
 	ranges.sort((a, b) => a.from - b.from);
 	return Result.ok(ranges);
+};
+
+/** Invoke `fn(from, to)` for every match of a global regex. Stateful cursor scan. */
+const scanAll = (doc: string, re: RegExp, fn: (from: number, to: number) => void): void => {
+	let m: RegExpExecArray | null;
+	while ((m = re.exec(doc))) fn(m.index, m.index + m[0].length);
 };
 
 /** Apply changes (original coordinates, CM semantics) — used by tests. */

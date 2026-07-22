@@ -165,9 +165,22 @@ const compute = (state: EditorState): CommentFieldValue => {
 		decoRanges.push(range);
 		hideRanges.push(range);
 	};
+	// Every marker's end offset, so an opener won't borrow a space a neighboring
+	// closer already claimed. Two comments separated by a single space
+	// (`…<!--/c:a--> <!--c:b-->…`) both want that space — the closer via "after",
+	// the opener via "before" — and the overlapping replace/atomic ranges left no
+	// caret position between the comments and rendered a double-width space.
+	const markerEnds = new Set<number>();
+	for (const c of comments) {
+		if (c.open) markerEnds.add(c.open.to);
+		if (c.close) markerEnds.add(c.close.to);
+	}
+
 	const addMarker = (marker: { from: number; to: number }, outside: "before" | "after") => {
 		const hasOutsideSpace =
-			outside === "before" ? text.charAt(marker.from - 1) === " " : text.charAt(marker.to) === " ";
+			outside === "before"
+				? text.charAt(marker.from - 1) === " " && !markerEnds.has(marker.from - 1)
+				: text.charAt(marker.to) === " ";
 		if (hasOutsideSpace) {
 			// Keep the marker invisible while giving its two legal caret endpoints
 			// the same visual geometry as an ordinary source space. Only borrow the
@@ -287,6 +300,12 @@ const protectMarkersFromUserEdits = (
 	for (const comment of value.comments) {
 		if (comment.open) protectedRanges.push(comment.open.from, comment.open.to);
 		if (comment.close) protectedRanges.push(comment.close.from, comment.close.to);
+		// The hidden body block is atomic too, so a forward-Delete at the end of the
+		// anchored line expands over it and would silently destroy the whole thread
+		// (the doc looks unchanged, since the body line is invisible). Protect it so
+		// only the swallowed newline is removed and the lines join. Programmatic
+		// comment deletion carries no user event and bypasses this filter entirely.
+		if (comment.body) protectedRanges.push(comment.body.from, comment.body.to);
 	}
 	return protectedRanges.length > 0 ? protectedRanges : true;
 };

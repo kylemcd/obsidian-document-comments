@@ -115,11 +115,47 @@ describe("reply / resolve", () => {
 	});
 });
 
+describe("computeAddComment code-block guard", () => {
+	it("refuses a selection inside a fenced code block", () => {
+		const doc = "text\n```js\nconst spinner = 1;\n```\nmore";
+		const from = doc.indexOf("spinner");
+		const result = computeAddComment(doc, from, from + "spinner".length, {
+			id: "x",
+			createdAt: "t",
+			author: "a",
+			text: "b",
+		});
+		expect(result.isErr()).toBe(true);
+	});
+
+	it("still allows a selection outside any fence", () => {
+		const doc = "text\n```js\nconst spinner = 1;\n```\nmore prose here";
+		const from = doc.indexOf("prose");
+		const result = computeAddComment(doc, from, from + "prose".length, {
+			id: "x",
+			createdAt: "t",
+			author: "a",
+			text: "b",
+		});
+		expect(result.isOk()).toBe(true);
+	});
+});
+
 describe("computeDeleteComment", () => {
 	it("round-trips back to the original document", () => {
 		const out = add();
 		const restored = applyChanges(out, computeDeleteComment(out, "k3f9").unwrap());
 		expect(restored).toBe(DOC);
+	});
+
+	it("removes duplicated markers left by copy-pasting a commented span", () => {
+		const out = add();
+		// Simulate a paste: duplicate the anchor markers elsewhere in the doc.
+		const anchor = openMarker("k3f9") + "ship on Friday" + closeMarker("k3f9");
+		const withDupe = out.replace("Next paragraph.", "Next paragraph. " + anchor);
+		expect(withDupe.match(/<!--c:k3f9-->/g)!.length).toBe(2);
+		const cleaned = applyChanges(withDupe, computeDeleteComment(withDupe, "k3f9").unwrap());
+		expect(cleaned).not.toContain("k3f9");
 	});
 });
 

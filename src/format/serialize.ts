@@ -1,4 +1,5 @@
 import { CommentData, ThreadEntry } from "./types";
+import { escapeReactionAuthor, escapeText } from "./escape";
 
 export const openMarker = (id: string): string => {
 	return `<!--c:${id}-->`;
@@ -19,7 +20,7 @@ export const serializeBody = (id: string, data: CommentData): string => {
 	const lines = data.thread.map(serializeEntry);
 	const reactionLines = (data.reactions ?? [])
 		.filter((r) => r.authors.length > 0)
-		.map((r) => `+${r.emoji} ${r.authors.join(", ")}`);
+		.map((r) => `+${r.emoji} ${r.authors.map(escapeReactionAuthor).join(", ")}`);
 	const body = [...lines, ...reactionLines];
 	const block = body.length ? body.join("\n") + "\n" : "";
 	return `<!--${head.join(" ")}\n${block}-->`;
@@ -27,19 +28,27 @@ export const serializeBody = (id: string, data: CommentData): string => {
 
 const serializeEntry = (e: ThreadEntry): string => {
 	const who = e.timestamp ? `${e.author} (${e.timestamp})` : e.author;
-	return `${who}: ${sanitizeBodyText(e.text)}`;
+	// Break `-->` in the author too — it sits on the entry line inside the block.
+	return `${breakTerminator(who)}: ${escapeText(sanitizeBodyText(e.text))}`;
 };
 
 /** Body text must never contain the comment terminator `-->`. Break it with a
  *  zero-width space so the block stays well-formed and the text reads the same. */
 export const sanitizeBodyText = (s: string): string => {
-	return s.replace(/-->/g, "--​>");
+	return breakTerminator(s);
 };
 
+/** Header values sit on the block's first line, which the terminator can't cross.
+ *  Break any `-->` (whitespace/quote normalization alone left the header able to
+ *  end the HTML comment early, leaking the thread into every non-plugin renderer). */
 const sanitizeToken = (s: string): string => {
-	return s.replace(/\s+/g, "_");
+	return breakTerminator(s).replace(/\s+/g, "_");
 };
 
 const sanitizeQuote = (s: string): string => {
-	return s.replace(/\s+/g, " ").replace(/"/g, "'").trim();
+	return breakTerminator(s.replace(/\s+/g, " ").replace(/"/g, "'")).trim();
+};
+
+const breakTerminator = (s: string): string => {
+	return s.replace(/-->/g, "--​>");
 };

@@ -164,4 +164,40 @@ describe("commentField decorations", () => {
 
 		expect(tr.newDoc.toString()).toBe("some text<!--/c:x--> after");
 	});
+
+	// Regression: forward-Delete at the end of an anchored line used to expand over
+	// the atomic hidden body block and silently delete the entire thread.
+	test("forward deletion at a block end keeps the hidden comment body", () => {
+		const body = '<!--co:ab1cd by:me status:open quote:"g"\nme: precious thread text\n-->';
+		const doc = `gamma <!--c:ab1cd-->g<!--/c:ab1cd-->\n${body}\nDelta`;
+		const bodyFrom = doc.indexOf("<!--co:");
+		const state = EditorState.create({ doc, extensions: [commentField] });
+		// CM expands the caret's forward delete across the whole atomic range
+		// (swallowed newline + body block).
+		const tr = state.update({
+			changes: { from: bodyFrom - 1, to: bodyFrom + body.length },
+			userEvent: "delete.forward",
+		});
+
+		expect(tr.newDoc.toString()).toContain("precious thread text");
+		// Only the swallowed newline is removed, joining the lines.
+		expect(tr.newDoc.toString()).toBe(`gamma <!--c:ab1cd-->g<!--/c:ab1cd-->${body}\nDelta`);
+	});
+
+	// Regression: two comments separated by a single space each tried to borrow it,
+	// producing overlapping atomic ranges with no caret position between them.
+	test("adjacent comments sharing one space do not overlap their atomic ranges", () => {
+		const doc =
+			"<!--c:aaaaa-->word1<!--/c:aaaaa--> <!--c:bbbbb-->word2<!--/c:bbbbb-->\n" +
+			"<!--co:aaaaa status:open\nme: one\n-->\n<!--co:bbbbb status:open\nme: two\n-->";
+		const state = EditorState.create({ doc, extensions: [commentField] });
+		const ranges: Array<[number, number]> = [];
+		const cursor = state.field(commentField).atomic.iter();
+		while (cursor.value) {
+			ranges.push([cursor.from, cursor.to]);
+			cursor.next();
+		}
+		const overlaps = ranges.some(([f1, t1], i) => ranges.some(([f2, t2], j) => i < j && f1 < t2 && f2 < t1));
+		expect(overlaps).toBe(false);
+	});
 });

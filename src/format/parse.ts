@@ -1,4 +1,5 @@
 import { CommentData, CommentStatus, ParsedComment, Reaction, TextRange, ThreadEntry } from "./types";
+import { splitReactionAuthors, unescapeText } from "./escape";
 
 // Anchor + body markers. All are HTML comments so they're invisible everywhere.
 const OPEN_RE = /<!--c:([A-Za-z0-9]+)-->/g;
@@ -119,11 +120,11 @@ const parseHeader = (header: string): Omit<CommentData, "thread" | "reactions"> 
 	};
 };
 
-/** Ranges that should be ignored when scanning for markers: fenced and inline code. */
-const maskedRanges = (doc: string): Array<[number, number]> => {
+/** Fenced code-block ranges (``` or ~~~), from the opening fence to the closing
+ *  fence line. Single-pass line scanner with fence-open/close state — doesn't map
+ *  to an array method. */
+export const fencedRanges = (doc: string): Array<[number, number]> => {
 	const ranges: Array<[number, number]> = [];
-
-	// Fenced code blocks (``` or ~~~), masked from the opening fence to the closing fence line.
 	let offset = 0;
 	let fenceStart = -1;
 	let fenceChar = "";
@@ -140,6 +141,18 @@ const maskedRanges = (doc: string): Array<[number, number]> => {
 		offset = lineEnd + 1;
 	}
 	if (fenceStart >= 0) ranges.push([fenceStart, doc.length]);
+	return ranges;
+};
+
+/** True when `pos` sits inside a fenced code block — anchoring a comment there
+ *  would write literal marker text into the code, so creation refuses it. */
+export const isInFencedCode = (doc: string, pos: number): boolean => {
+	return isInside(fencedRanges(doc), pos);
+};
+
+/** Ranges that should be ignored when scanning for markers: fenced and inline code. */
+const maskedRanges = (doc: string): Array<[number, number]> => {
+	const ranges = fencedRanges(doc);
 
 	// Inline code spans.
 	const inline = /`+[^`\n]*`+/g;
@@ -162,27 +175,25 @@ const parseBody = (block: string): { thread: ThreadEntry[]; reactions: Reaction[
 	const thread: ThreadEntry[] = [];
 	const reactions: Reaction[] = [];
 	for (const raw of block.split("\n")) {
-		const line = raw.replace(/\s+$/, "");
+		// Strip only a trailing CR (CRLF files) — trailing spaces inside an entry
+		// are meaningful and survive because newlines are escaped, not folded.
+		const line = raw.replace(/\r$/, "");
 		if (line.trim() === "") continue;
 
 		const rx = REACTION_LINE_RE.exec(line);
 		if (rx) {
-			const authors = rx[2]
-				.split(",")
-				.map((a) => a.trim())
-				.filter(Boolean);
-			reactions.push({ emoji: rx[1], authors });
+			reactions.push({ emoji: rx[1], authors: splitReactionAuthors(rx[2]) });
 			continue;
 		}
 
 		const m = THREAD_LINE_RE.exec(line);
 		if (m && m[1].trim() !== "") {
-			thread.push({ author: m[1].trim(), timestamp: m[2] || undefined, text: m[3] });
+			thread.push({ author: m[1].trim(), timestamp: m[2] || undefined, text: unescapeText(m[3]) });
 		} else if (thread.length > 0) {
-			// Unstructured continuation line — fold into the previous entry.
-			thread[thread.length - 1].text += "\n" + line;
+			// Unstructured continuation line (legacy, pre-escaping) — fold into the previous entry.
+			thread[thread.length - 1].text += "\n" + unescapeText(line);
 		} else {
-			thread.push({ author: "", text: line });
+			thread.push({ author: "", text: unescapeText(line) });
 		}
 	}
 	return { thread, reactions };
