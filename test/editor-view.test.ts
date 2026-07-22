@@ -170,6 +170,12 @@ describe("editor extensions open every note without crashing", () => {
 		);
 		expect(withComment).toContain("dc-has"); // a comment reserves the column
 		expect(withComment).toContain("dc-highlights");
+
+		const orphanOnly = open(
+			'Text without an anchor.\n<!--co:orphan status:open quote:"old text"\nme: dangling\n-->',
+		);
+		expect(orphanOnly).not.toContain("dc-has");
+		expect(orphanOnly).toContain("dc-highlights");
 	});
 
 	// Regression for issue #30: once every comment is resolved and resolved

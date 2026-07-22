@@ -2,7 +2,7 @@ import { Notice, setIcon } from "obsidian";
 import { Result } from "better-result";
 import { EditorView, PluginValue, ViewPlugin } from "@codemirror/view";
 import { ParsedComment } from "../format/types";
-import { anchorRange, isAnchored } from "../format/parse";
+import { anchorRange, hasMarginAnchor } from "../format/parse";
 import { commentField } from "./state";
 import { commentConfig } from "./config";
 import { clearDraft, draftField } from "./draft";
@@ -25,8 +25,6 @@ const CARD_GAP = 8;
 const notifyErr = (result: Result<unknown, string>): void => {
 	if (result.isErr()) new Notice(`Couldn't save the comment: ${result.error}`);
 };
-const ORPHAN_TOP = 8;
-
 /**
  * Renders the floating right-margin column: one card per comment, vertically
  * aligned to its anchor line, with a stacking pass so cards never overlap.
@@ -145,7 +143,7 @@ class MarginView implements PluginValue {
 		if (!fv) return [];
 		// Resolved cards stay in the DOM and are hidden via a container class, so
 		// toggling visibility never requires rebuilding the editor.
-		return fv.comments.filter((c) => c.body);
+		return fv.comments.filter(hasMarginAnchor);
 	}
 
 	private reconcile(): void {
@@ -189,7 +187,6 @@ class MarginView implements PluginValue {
 
 		const editorTop = this.view.dom.getBoundingClientRect().top;
 		const placements: Array<{ el: HTMLElement; top: number }> = [];
-		let orphanCursor = ORPHAN_TOP;
 
 		const place = (el: HTMLElement, pos: number) => {
 			const coords = this.view.coordsAtPos(pos);
@@ -205,24 +202,18 @@ class MarginView implements PluginValue {
 		for (const c of this.comments()) {
 			const card = this.cards.get(c.id);
 			if (!card) continue;
-			if (!isAnchored(c)) {
-				card.el.removeClass("dc-offscreen");
-				if (card.el.offsetHeight === 0) continue;
-				card.el.setCssStyles({ top: `${orphanCursor}px` });
-				orphanCursor += card.el.offsetHeight + CARD_GAP;
-				continue;
-			}
-			place(card.el, anchorRange(c)!.from);
+			const range = anchorRange(c);
+			if (range) place(card.el, range.from);
 		}
 
 		if (draft && this.draftEl) place(this.draftEl, draft.from);
 
 		// Stack the cards: honor anchor order, push each down past the previous one so
-		// they never overlap. The first card's floor is -Infinity (unless orphans pin
-		// the top), so a card whose anchor has scrolled above the viewport keeps a
+		// they never overlap. The first card's floor is -Infinity, so a card whose
+		// anchor has scrolled above the viewport keeps a
 		// negative top and slides off the top edge instead of sticking there in view.
 		placements.sort((a, b) => a.top - b.top);
-		let cursor = orphanCursor > ORPHAN_TOP ? orphanCursor : Number.NEGATIVE_INFINITY;
+		let cursor = Number.NEGATIVE_INFINITY;
 		for (const p of placements) {
 			const y = Math.max(p.top, cursor);
 			p.el.setCssStyles({ top: `${y}px` });

@@ -2,6 +2,7 @@ import { EditorState, StateField } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { commentField } from "./state";
 import { commentConfig } from "./config";
+import { hasMarginAnchor } from "../format/parse";
 
 // Defined ABOVE editorLayoutField: StateField.define evaluates `provide` EAGERLY
 // at module load, and the provider arrow it builds references this helper. A
@@ -24,7 +25,9 @@ const editorLayoutClasses = (state: EditorState): string => {
 	// in it once every comment was resolved (issue #30). Mirror that visibility here.
 	// The reading-view margin applies the same guard (src/reading/margin.ts).
 	const hasColumn =
-		showInline && !!fv && fv.comments.some((c) => c.body && (cfg.showResolved() || c.status !== "resolved"));
+		showInline &&
+		!!fv &&
+		fv.comments.some((c) => hasMarginAnchor(c) && (cfg.showResolved() || c.status !== "resolved"));
 
 	const classes: string[] = [];
 	if (hasColumn) classes.push("dc-has");
