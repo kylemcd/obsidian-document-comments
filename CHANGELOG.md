@@ -3,6 +3,15 @@
 All notable changes to **Document Comments**. The release workflow uses the section
 matching the pushed tag as that GitHub release's notes, so add an entry here before tagging.
 
+## 0.1.11
+- **Comments on code blocks** — select one or more lines inside a fenced code block and comment on them. The lines are highlighted in Live Preview and Reading view, and a commented code block lays out exactly like an uncommented one, with no added gap above or below it.
+- Fixed a forward-delete (the Del / Fn+Delete key) at the end of a commented line silently destroying the entire comment thread, with nothing appearing to change in the note.
+- Fixed multi-line comment text — a reply written with line breaks — becoming corrupted on save, where it could re-parse into a broken entry and a phantom reaction. Line breaks, blank lines, and trailing spaces are now preserved.
+- Fixed commenting on text (or signing with an author name) containing `-->`, which could break the stored comment and leak the discussion as visible text in Reading view, on GitHub, and in exports.
+- Deleting a comment now removes every copy of its markers, so copy-pasting commented text no longer leaves behind invisible markers that couldn't be removed.
+- Comment edits and replies made from the sidebar or Reading view now go through the open editor when the note is open, so they join its undo history and no longer risk clobbering unsaved changes.
+- Orphaned comments — a discussion whose highlighted text is no longer present — no longer appear as empty cards in the margin; they remain available in the **All discussions** sidebar ([#43](https://github.com/kylemcd/obsidian-document-comments/issues/43)).
+
 ## 0.1.10
 - Removed the `text-decoration-color` declarations that Obsidian's community-plugin review groups under the partially supported `text-decoration` browser feature. Open and resolved table comments remain visually distinct through their highlight backgrounds.
 

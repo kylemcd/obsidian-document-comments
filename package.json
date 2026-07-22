@@ -1,6 +1,6 @@
 {
 	"name": "document-comments",
-	"version": "0.1.10",
+	"version": "0.1.11",
 	"description": "Notion-style margin comments for Obsidian, stored inline in markdown.",
 	"main": "main.js",
 	"scripts": {
