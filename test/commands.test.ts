@@ -6,7 +6,7 @@ import { parseComments } from "../src/format/parse";
 
 // A minimal `app.vault.process` stub: run the mutator over an in-memory string and
 // keep the result. Mirrors how Obsidian applies the transform and returns the text.
-function fakeApp(getDoc: () => string, setDoc: (s: string) => void): App {
+const fakeApp = (getDoc: () => string, setDoc: (s: string) => void): App => {
 	return {
 		vault: {
 			process: async (_file: TFile, fn: (data: string) => string) => {
@@ -16,7 +16,7 @@ function fakeApp(getDoc: () => string, setDoc: (s: string) => void): App {
 			},
 		},
 	} as unknown as App;
-}
+};
 
 describe("insertCommentInFile", () => {
 	it("writes a new comment to the file and returns its id", async () => {

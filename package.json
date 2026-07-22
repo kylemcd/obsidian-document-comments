@@ -1,6 +1,6 @@
 {
 	"name": "document-comments",
-	"version": "0.1.0",
+	"version": "0.1.10",
 	"description": "Notion-style margin comments for Obsidian, stored inline in markdown.",
 	"main": "main.js",
 	"scripts": {
@@ -9,8 +9,8 @@
 		"typecheck": "node node_modules/typescript-7/bin/tsc -noEmit -skipLibCheck",
 		"format": "oxfmt src test",
 		"format:check": "oxfmt --check src test",
-		"lint": "oxlint src && eslint src package.json",
-		"lint:fix": "oxlint src --fix && eslint src package.json --fix",
+		"lint": "oxlint src test && eslint src package.json",
+		"lint:fix": "oxlint src test --fix && eslint src package.json --fix",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"check": "npm run format:check && npm run lint && npm run typecheck && npm test"

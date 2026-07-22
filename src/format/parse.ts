@@ -34,22 +34,24 @@ export const parseComments = (doc: string): ParsedComment[] => {
 
 	OPEN_RE.lastIndex = 0;
 	while ((m = OPEN_RE.exec(doc))) {
-		if (masked(m.index)) continue;
-		if (!opens.has(m[1])) opens.set(m[1], { from: m.index, to: m.index + m[0].length });
-		track(m[1]);
+		const [full, id] = m;
+		if (id === undefined || full === undefined || masked(m.index)) continue;
+		if (!opens.has(id)) opens.set(id, { from: m.index, to: m.index + full.length });
+		track(id);
 	}
 
 	CLOSE_RE.lastIndex = 0;
 	while ((m = CLOSE_RE.exec(doc))) {
-		if (masked(m.index)) continue;
-		if (!closes.has(m[1])) closes.set(m[1], { from: m.index, to: m.index + m[0].length });
-		track(m[1]);
+		const [full, id] = m;
+		if (id === undefined || full === undefined || masked(m.index)) continue;
+		if (!closes.has(id)) closes.set(id, { from: m.index, to: m.index + full.length });
+		track(id);
 	}
 
 	BODY_RE.lastIndex = 0;
 	while ((m = BODY_RE.exec(doc))) {
-		if (masked(m.index)) continue;
-		const id = m[1];
+		const [full, id] = m;
+		if (id === undefined || full === undefined || masked(m.index)) continue;
 		if (!bodies.has(id)) {
 			const { thread, reactions } = parseBody(m[3] ?? "");
 			const data: CommentData = {
@@ -57,7 +59,7 @@ export const parseComments = (doc: string): ParsedComment[] => {
 				thread,
 				reactions,
 			};
-			bodies.set(id, { range: { from: m.index, to: m.index + m[0].length }, data });
+			bodies.set(id, { range: { from: m.index, to: m.index + full.length }, data });
 		}
 		track(id);
 	}
@@ -110,7 +112,9 @@ const parseHeader = (header: string): Omit<CommentData, "thread" | "reactions"> 
 	let m: RegExpExecArray | null;
 	HEADER_ATTR_RE.lastIndex = 0;
 	while ((m = HEADER_ATTR_RE.exec(header))) {
-		attrs[m[1]] = m[2] !== undefined ? m[2] : m[3];
+		const key = m[1];
+		const value = m[2] ?? m[3];
+		if (key !== undefined && value !== undefined) attrs[key] = value;
 	}
 	const status: CommentStatus = attrs.status === "resolved" ? "resolved" : "open";
 	return {
@@ -131,11 +135,11 @@ export const fencedRanges = (doc: string): Array<[number, number]> => {
 	let fenceChar = "";
 	for (const line of doc.split("\n")) {
 		const lineEnd = offset + line.length;
-		const fence = /^[ \t]*(`{3,}|~{3,})/.exec(line);
-		if (fenceStart < 0 && fence) {
+		const marker = /^[ \t]*(`{3,}|~{3,})/.exec(line)?.[1];
+		if (fenceStart < 0 && marker) {
 			fenceStart = offset;
-			fenceChar = fence[1][0];
-		} else if (fenceStart >= 0 && fence && fence[1][0] === fenceChar) {
+			fenceChar = marker[0] ?? "";
+		} else if (fenceStart >= 0 && marker && marker[0] === fenceChar) {
 			ranges.push([fenceStart, lineEnd]);
 			fenceStart = -1;
 		}
@@ -179,17 +183,18 @@ const parseBody = (block: string): { thread: ThreadEntry[]; reactions: Reaction[
 		if (line.trim() === "") continue;
 
 		const rx = REACTION_LINE_RE.exec(line);
-		if (rx) {
+		if (rx && rx[1] !== undefined && rx[2] !== undefined) {
 			reactions.push({ emoji: rx[1], authors: splitReactionAuthors(rx[2]) });
 			continue;
 		}
 
 		const m = THREAD_LINE_RE.exec(line);
-		if (m && m[1].trim() !== "") {
+		const last = thread[thread.length - 1];
+		if (m && m[1] !== undefined && m[3] !== undefined && m[1].trim() !== "") {
 			thread.push({ author: m[1].trim(), timestamp: m[2] || undefined, text: unescapeText(m[3]) });
-		} else if (thread.length > 0) {
+		} else if (last) {
 			// Unstructured continuation line (legacy, pre-escaping) — fold into the previous entry.
-			thread[thread.length - 1].text += "\n" + unescapeText(line);
+			last.text += "\n" + unescapeText(line);
 		} else {
 			thread.push({ author: "", text: unescapeText(line) });
 		}

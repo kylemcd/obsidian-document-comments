@@ -38,14 +38,15 @@ export const tableHighlightTargets = (doc: string, comments: ParsedComment[]): T
 				if (index === start + 1 || index < start || index >= end) return false;
 				return range.from >= line.from && range.to <= line.to;
 			});
-			if (lineIndex < 0) continue;
+			const line = lines[lineIndex];
+			if (!line) continue;
 
 			const quote = doc.slice(range.from, range.to);
 			if (!quote.trim()) continue;
 			targets.push({
 				table,
 				row: lineIndex === start ? 0 : lineIndex - start - 1,
-				column: tableColumnAt(lines[lineIndex].text, range.from - lines[lineIndex].from),
+				column: tableColumnAt(line.text, range.from - line.from),
 				quote,
 				resolved: comment.status === "resolved",
 			});
@@ -260,10 +261,18 @@ const sourceTables = (lines: Array<{ text: string; from: number; to: number }>):
 	// past it — a for loop is the natural fit, not an array method.
 	const tables: SourceTable[] = [];
 	for (let start = 0; start + 1 < lines.length; start++) {
-		if (!isTableRow(lines[start].text) || !isDelimiterRow(lines[start + 1].text)) continue;
+		const head = lines[start];
+		const delimiter = lines[start + 1];
+		if (!head || !delimiter || !isTableRow(head.text) || !isDelimiterRow(delimiter.text)) continue;
 		let end = start + 2;
-		while (end < lines.length && isTableRow(lines[end].text)) end++;
-		tables.push({ start, end, from: lines[start].from, to: lines[end - 1].to });
+		let row = lines[end];
+		while (row && isTableRow(row.text)) {
+			end++;
+			row = lines[end];
+		}
+		const lastRow = lines[end - 1];
+		if (!lastRow) continue;
+		tables.push({ start, end, from: head.from, to: lastRow.to });
 		start = end - 1;
 	}
 	return tables;

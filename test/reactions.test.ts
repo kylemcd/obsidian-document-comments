@@ -4,9 +4,9 @@ import { serializeBody, openMarker, closeMarker } from "../src/format/serialize"
 import { applyChanges, computeDeleteEntry, computeEditEntry, computeToggleReaction } from "../src/editor/edits";
 import { CommentData } from "../src/format/types";
 
-function wrap(id: string, body: string): string {
+const wrap = (id: string, body: string): string => {
 	return openMarker(id) + "anchor" + closeMarker(id) + "\n" + body;
-}
+};
 
 const DATA: CommentData = {
 	author: "kyle",

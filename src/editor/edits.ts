@@ -189,8 +189,11 @@ export const computeDeleteComment = (doc: string, id: string): Result<Change[], 
 	scanAll(doc, new RegExp(`<!--c:${id}-->`, "g"), (from, to) => ranges.push({ from, to, insert: "" }));
 	scanAll(doc, new RegExp(`<!--/c:${id}-->`, "g"), (from, to) => ranges.push({ from, to, insert: "" }));
 	scanAll(doc, new RegExp(`<!--co:${id}(?![A-Za-z0-9])[\\s\\S]*?-->`, "g"), (from, to) => {
-		// Swallow the newline before the body so its line disappears cleanly.
-		const start = from > 0 && doc.charCodeAt(from - 1) === 10 ? from - 1 : from;
+		// Swallow the newline before the body so its line disappears cleanly,
+		// including the CR of a CRLF pair so no stray \r is left behind.
+		let start = from;
+		if (start > 0 && doc.charCodeAt(start - 1) === 10) start -= 1;
+		if (start > 0 && doc.charCodeAt(start - 1) === 13) start -= 1;
 		ranges.push({ from: start, to, insert: "" });
 	});
 	if (ranges.length === 0) return Result.err("Nothing to delete.");

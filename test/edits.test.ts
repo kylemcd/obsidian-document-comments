@@ -16,7 +16,7 @@ const DOC = "We should ship on Friday regardless of the QA timeline.\n\nNext par
 const FROM = DOC.indexOf("ship on Friday");
 const TO = FROM + "ship on Friday".length;
 
-function add(): string {
+const add = (): string => {
 	const changes = computeAddComment(DOC, FROM, TO, {
 		id: "k3f9",
 		createdAt: "2026-06-17T10:00:00.000Z",
@@ -24,7 +24,7 @@ function add(): string {
 		text: "I thought we agreed Thursday?",
 	}).unwrap();
 	return applyChanges(DOC, changes);
-}
+};
 
 describe("computeAddComment", () => {
 	it("wraps the selection and appends a body", () => {
@@ -162,17 +162,6 @@ describe("computeDeleteComment", () => {
 });
 
 describe("malformed / boundary edit inputs", () => {
-	const add = (): string =>
-		applyChanges(
-			DOC,
-			computeAddComment(DOC, FROM, TO, {
-				id: "k3f9",
-				createdAt: "t",
-				author: "kyle",
-				text: "first",
-			}).unwrap(),
-		);
-
 	it("errs on a reversed from/to being empty after the swap", () => {
 		expect(computeAddComment(DOC, TO, FROM, { id: "x", createdAt: "t", author: "a", text: "b" }).isOk()).toBe(true);
 		// A reversed zero-width range is still empty.
@@ -215,6 +204,6 @@ describe("blockEnd", () => {
 	});
 });
 
-function stripComments(s: string): string {
+const stripComments = (s: string): string => {
 	return s.replace(/<!--\/?co?:[A-Za-z0-9]+[\s\S]*?-->/g, "");
-}
+};
