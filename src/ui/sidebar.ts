@@ -3,7 +3,8 @@ import { EditorView } from "@codemirror/view";
 import { Result } from "better-result";
 import { ParsedComment } from "../format/types";
 import { anchorRange, parseComments } from "../format/parse";
-import { Card, CardCallbacks, cardSignature } from "./card";
+import { Card, CardCallbacks } from "./card";
+import { cardSignature } from "./card-format";
 import {
 	Change,
 	computeAppendReply,
@@ -349,11 +350,11 @@ export class CommentsSidebarView extends ItemView {
 		if (active?.file) return active.file;
 		const recent = this.app.workspace.getMostRecentLeaf();
 		if (recent?.view instanceof MarkdownView && recent.view.file) return recent.view.file;
-		for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
-			const v = leaf.view;
-			if (v instanceof MarkdownView && v.file) return v.file;
-		}
-		return null;
+		const anyOpen = this.app.workspace
+			.getLeavesOfType("markdown")
+			.map((leaf) => leaf.view)
+			.find((v): v is MarkdownView => v instanceof MarkdownView && !!v.file);
+		return anyOpen?.file ?? null;
 	}
 
 	private async currentText(file: TFile): Promise<string> {
@@ -363,10 +364,11 @@ export class CommentsSidebarView extends ItemView {
 	}
 
 	private markdownViewForFile(file: TFile): MarkdownView | null {
-		for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
-			const v = leaf.view;
-			if (v instanceof MarkdownView && v.file === file) return v;
-		}
-		return null;
+		return (
+			this.app.workspace
+				.getLeavesOfType("markdown")
+				.map((leaf) => leaf.view)
+				.find((v): v is MarkdownView => v instanceof MarkdownView && v.file === file) ?? null
+		);
 	}
 }

@@ -73,9 +73,7 @@ export const highlightPostProcessor = (el: HTMLElement, ctx: MarkdownPostProcess
 };
 
 const offsetOfLine = (lines: string[], lineNo: number): number => {
-	let offset = 0;
-	for (let i = 0; i < lineNo && i < lines.length; i++) offset += lines[i].length + 1;
-	return offset;
+	return lines.slice(0, lineNo).reduce((offset, line) => offset + line.length + 1, 0);
 };
 
 /** Wrap the first single-text-node occurrence of `needle` in a highlight span.

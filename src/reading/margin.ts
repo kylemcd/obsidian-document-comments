@@ -2,7 +2,8 @@ import { App, MarkdownView, Notice, setIcon } from "obsidian";
 import { Result } from "better-result";
 import { ParsedComment, TextRange } from "../format/types";
 import { hasMarginAnchor, parseComments } from "../format/parse";
-import { Card, CardCallbacks, cardSignature } from "../ui/card";
+import { Card, CardCallbacks } from "../ui/card";
+import { cardSignature } from "../ui/card-format";
 import {
 	Change,
 	computeAppendReply,

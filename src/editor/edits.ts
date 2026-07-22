@@ -119,18 +119,18 @@ export const computeSetResolved = (doc: string, id: string, resolved: boolean): 
 
 /** Replace the text of the i-th message in a thread. */
 export const computeEditEntry = (doc: string, id: string, index: number, text: string): Result<Change[], string> => {
-	return replaceBody(doc, id, (c) => ({
-		...toData(c),
-		thread: c.thread.map((e, i) => (i === index ? { ...e, text } : e)),
-	}));
+	return replaceBody(doc, id, (c) => {
+		if (index < 0 || index >= c.thread.length) return null;
+		return { ...toData(c), thread: c.thread.map((e, i) => (i === index ? { ...e, text } : e)) };
+	});
 };
 
 /** Remove the i-th message from a thread (used for replies). */
 export const computeDeleteEntry = (doc: string, id: string, index: number): Result<Change[], string> => {
-	return replaceBody(doc, id, (c) => ({
-		...toData(c),
-		thread: c.thread.filter((_, i) => i !== index),
-	}));
+	return replaceBody(doc, id, (c) => {
+		if (index < 0 || index >= c.thread.length) return null;
+		return { ...toData(c), thread: c.thread.filter((_, i) => i !== index) };
+	});
 };
 
 /** Add/remove the author from an emoji reaction. */
@@ -143,11 +143,17 @@ export const computeToggleReaction = (
 	return replaceBody(doc, id, (c) => ({ ...toData(c), reactions: toggleReactions(c.reactions, emoji, author) }));
 };
 
-const replaceBody = (doc: string, id: string, mutate: (c: ParsedComment) => CommentData): Result<Change[], string> => {
+const replaceBody = (
+	doc: string,
+	id: string,
+	mutate: (c: ParsedComment) => CommentData | null,
+): Result<Change[], string> => {
 	const c = parseComments(doc).find((x) => x.id === id);
 	if (!c) return Result.err("Comment not found.");
 	if (!c.body) return Result.err("Comment has no body to update.");
-	return Result.ok([{ from: c.body.from, to: c.body.to, insert: serializeBody(id, mutate(c)) }]);
+	const data = mutate(c);
+	if (!data) return Result.err("That reply no longer exists.");
+	return Result.ok([{ from: c.body.from, to: c.body.to, insert: serializeBody(id, data) }]);
 };
 
 const toData = (c: ParsedComment): CommentData => {
@@ -201,6 +207,8 @@ const scanAll = (doc: string, re: RegExp, fn: (from: number, to: number) => void
 /** Apply changes (original coordinates, CM semantics) — used by tests. */
 export const applyChanges = (doc: string, changes: Change[]): string => {
 	const ordered = changes.map((c, i) => ({ ...c, i })).sort((a, b) => a.from - b.from || a.i - b.i);
+	// Single pass building the output string while advancing a consumed-up-to
+	// watermark — two coupled outputs, so a plain map/reduce wouldn't read cleaner.
 	let out = "";
 	let last = 0;
 	for (const c of ordered) {

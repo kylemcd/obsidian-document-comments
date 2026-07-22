@@ -6,7 +6,8 @@ import { anchorRange, hasMarginAnchor } from "../format/parse";
 import { commentField } from "./state";
 import { commentConfig } from "./config";
 import { Draft, clearDraft, draftField } from "./draft";
-import { Card, CardCallbacks, CardView, cardSignature } from "../ui/card";
+import { Card, CardCallbacks, CardView } from "../ui/card";
+import { cardSignature } from "../ui/card-format";
 import {
 	addComment,
 	appendReply,

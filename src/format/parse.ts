@@ -28,6 +28,8 @@ export const parseComments = (doc: string): ParsedComment[] => {
 		}
 	};
 
+	// Three global-regex scans, each first-wins into a map while recording first-seen
+	// order — stateful accumulation that doesn't reduce to a single array method.
 	let m: RegExpExecArray | null;
 
 	OPEN_RE.lastIndex = 0;
@@ -60,11 +62,10 @@ export const parseComments = (doc: string): ParsedComment[] => {
 		track(id);
 	}
 
-	const result: ParsedComment[] = [];
-	for (const id of order) {
+	return order.map((id) => {
 		const body = bodies.get(id);
 		const data: CommentData = body ? body.data : { status: "open", thread: [], reactions: [] };
-		result.push({
+		return {
 			id,
 			author: data.author,
 			createdAt: data.createdAt,
@@ -75,9 +76,8 @@ export const parseComments = (doc: string): ParsedComment[] => {
 			open: opens.get(id) ?? null,
 			close: closes.get(id) ?? null,
 			body: body ? body.range : null,
-		});
-	}
-	return result;
+		};
+	});
 };
 
 /** The set of ids already present in a document (for id generation). */
@@ -96,7 +96,8 @@ export const hasMarginAnchor = (c: ParsedComment): boolean => {
 
 /** The highlighted text range (between the markers), or null if not anchored. */
 export const anchorRange = (c: ParsedComment): TextRange | null => {
-	return isAnchored(c) ? { from: c.open!.to, to: c.close!.from } : null;
+	if (!c.open || !c.close || c.open.to > c.close.from) return null;
+	return { from: c.open.to, to: c.close.from };
 };
 
 /** Has content (a body) but is not properly anchored — show in the unanchored list. */
@@ -163,10 +164,7 @@ const maskedRanges = (doc: string): Array<[number, number]> => {
 };
 
 const isInside = (ranges: Array<[number, number]>, index: number): boolean => {
-	for (const [from, to] of ranges) {
-		if (index >= from && index < to) return true;
-	}
-	return false;
+	return ranges.some(([from, to]) => index >= from && index < to);
 };
 
 const REACTION_LINE_RE = /^\+\s*(\S+)\s+(.+)$/;

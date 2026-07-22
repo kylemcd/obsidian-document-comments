@@ -1,6 +1,6 @@
 import { App, Component, MarkdownRenderer, Menu, setIcon } from "obsidian";
 import { ParsedComment } from "../format/types";
-import { isAnchored } from "../format/parse";
+import { cardSignature, formatRelativeTime } from "./card-format";
 
 const QUICK_EMOJI = ["👍", "❤️", "😄", "🎉", "😮", "👀", "🙏"];
 
@@ -462,28 +462,7 @@ export class Card {
 	}
 }
 
-/** Content signature, independent of document position — drives margin diffing. */
-export const cardSignature = (c: ParsedComment): string => {
-	return JSON.stringify([c.status, c.author, c.createdAt, c.thread, c.reactions, isAnchored(c)]);
-};
-
 const autogrow = (ta: HTMLTextAreaElement): void => {
 	ta.setCssStyles({ height: "auto" });
 	ta.setCssStyles({ height: `${ta.scrollHeight}px` });
-};
-
-const formatRelativeTime = (iso?: string): string => {
-	if (!iso) return "";
-	const then = new Date(iso).getTime();
-	if (Number.isNaN(then)) return "";
-	const diff = Date.now() - then;
-	const sec = Math.round(diff / 1000);
-	if (sec < 45) return "just now";
-	const min = Math.round(sec / 60);
-	if (min < 60) return `${min}m`;
-	const hr = Math.round(min / 60);
-	if (hr < 24) return `${hr}h`;
-	const day = Math.round(hr / 24);
-	if (day < 7) return `${day}d`;
-	return new Date(then).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 };

@@ -5,6 +5,8 @@ import {
 	computeAddComment,
 	computeAppendReply,
 	computeDeleteComment,
+	computeDeleteEntry,
+	computeEditEntry,
 	computeSetResolved,
 } from "../src/editor/edits";
 import { anchorRange, parseComments } from "../src/format/parse";
@@ -156,6 +158,50 @@ describe("computeDeleteComment", () => {
 		expect(withDupe.match(/<!--c:k3f9-->/g)!.length).toBe(2);
 		const cleaned = applyChanges(withDupe, computeDeleteComment(withDupe, "k3f9").unwrap());
 		expect(cleaned).not.toContain("k3f9");
+	});
+});
+
+describe("malformed / boundary edit inputs", () => {
+	const add = (): string =>
+		applyChanges(
+			DOC,
+			computeAddComment(DOC, FROM, TO, {
+				id: "k3f9",
+				createdAt: "t",
+				author: "kyle",
+				text: "first",
+			}).unwrap(),
+		);
+
+	it("errs on a reversed from/to being empty after the swap", () => {
+		expect(computeAddComment(DOC, TO, FROM, { id: "x", createdAt: "t", author: "a", text: "b" }).isOk()).toBe(true);
+		// A reversed zero-width range is still empty.
+		expect(computeAddComment(DOC, FROM, FROM, { id: "x", createdAt: "t", author: "a", text: "b" }).isErr()).toBe(
+			true,
+		);
+	});
+
+	it("errs when the captured selection no longer matches (expected guard)", () => {
+		const result = computeAddComment(DOC, FROM, TO, {
+			id: "x",
+			createdAt: "t",
+			author: "a",
+			text: "b",
+			expected: "something else entirely",
+		});
+		expect(result.isErr()).toBe(true);
+	});
+
+	it("errs on an out-of-range entry edit instead of a silent no-op write", () => {
+		const out = add();
+		expect(computeEditEntry(out, "k3f9", 99, "nope").isErr()).toBe(true);
+		expect(computeDeleteEntry(out, "k3f9", -1).isErr()).toBe(true);
+	});
+
+	it("errs when replying to a comment that has no body", () => {
+		const markerOnly = openMarker("m1") + "x" + closeMarker("m1");
+		expect(computeSetResolved(markerOnly, "m1", true).isErr()).toBe(true);
+		expect(computeAppendReply(markerOnly, "m1", { createdAt: "t", author: "a", text: "b" }).isErr()).toBe(true);
 	});
 });
 

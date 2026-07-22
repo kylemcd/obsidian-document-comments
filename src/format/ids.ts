@@ -11,11 +11,5 @@ export const generateId = (existing: Iterable<string> = []): string => {
 };
 
 const randomId = (len: number): string => {
-	// Tight character-by-character build from a fixed alphabet; no array-method
-	// form is clearer here.
-	let out = "";
-	for (let i = 0; i < len; i++) {
-		out += ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
-	}
-	return out;
+	return Array.from({ length: len }, () => ALPHABET[Math.floor(Math.random() * ALPHABET.length)]).join("");
 };

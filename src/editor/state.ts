@@ -27,6 +27,8 @@ class SpaceWidget extends WidgetType {
 	}
 
 	toDOM(view: EditorView): HTMLElement {
+		// Obsidian's createSpan auto-appends to the receiver; detach it so we hand
+		// CodeMirror a free-standing node to place itself.
 		const span = view.dom.createSpan({
 			cls: "dc-comment-boundary-space",
 			text: " ",
@@ -45,6 +47,7 @@ class MarkerWidget extends WidgetType {
 	}
 
 	toDOM(view: EditorView): HTMLElement {
+		// createSpan auto-appends; detach so CodeMirror receives a free node to place.
 		const span = view.dom.createSpan({
 			cls: "dc-comment-marker",
 			text: "\u200b",
@@ -55,6 +58,12 @@ class MarkerWidget extends WidgetType {
 	}
 }
 
+/**
+ * Arrow-key handling around hidden markers. Atomic ranges already skip the marker
+ * interior; this plugin makes a single Left/Right press land on the far side of a
+ * marker (and its borrowed space) in one step, and extends a shift-selection the
+ * same way, so the caret never appears to stall on an invisible marker.
+ */
 const markerNavigationPlugin = (field: StateField<CommentFieldValue>) => {
 	const move = (view: EditorView, forward: boolean, extend: boolean): boolean => {
 		const value = view.state.field(field, false);
