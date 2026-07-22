@@ -1,4 +1,4 @@
-import { Notice, editorInfoField, setIcon } from "obsidian";
+import { Notice, editorInfoField } from "obsidian";
 import { Result } from "better-result";
 import { EditorView, PluginValue, ViewPlugin } from "@codemirror/view";
 import { ParsedComment } from "../format/types";
@@ -20,6 +20,7 @@ import {
 import { closestSpanId, spanSelector } from "../util/css";
 import { stackTops } from "../ui/stack";
 import { CARD_GAP, FLASH_MS } from "../ui/constants";
+import { buildDraftComposer } from "../ui/draft-composer";
 
 /** Editor-margin writes go through a live CodeMirror view (no I/O), so the only
  *  failure is a compute error — surface it as a notice rather than swallowing it. */
@@ -258,50 +259,15 @@ class MarginView implements PluginValue {
 	}
 
 	private buildDraftEl(): HTMLElement {
-		const el = createDiv("doc-comment-card is-draft");
-		const box = el.createDiv("dc-field dc-field--composer");
-		const textarea = box.createEl("textarea", {
-			cls: "dc-field__input",
-			attr: { placeholder: "Write a comment…", rows: "2" },
-		});
-		const actions = box.createDiv("dc-field__actions");
-
-		const cancel = () => this.view.dispatch({ effects: clearDraft.of(null) });
-		const submit = () => {
-			const text = textarea.value.trim();
-			const draft = this.view.state.field(draftField, false);
-			if (text && draft) notifyErr(addComment(this.view, draft.from, draft.to, text, this.cb.getAuthor()));
-			this.view.dispatch({ effects: clearDraft.of(null) });
-		};
-
-		const cancelBtn = actions.createEl("button", {
-			cls: "dc-round dc-round--cancel",
-			attr: { "aria-label": "Cancel" },
-		});
-		setIcon(cancelBtn, "x");
-		cancelBtn.addEventListener("click", (e) => {
-			e.stopPropagation();
-			cancel();
-		});
-
-		const confirmBtn = actions.createEl("button", {
-			cls: "dc-round dc-round--confirm",
-			attr: { "aria-label": "Comment" },
-		});
-		setIcon(confirmBtn, "check");
-		confirmBtn.addEventListener("click", (e) => {
-			e.stopPropagation();
-			submit();
-		});
-
-		textarea.addEventListener("keydown", (e) => {
-			if (e.key === "Escape") {
-				e.preventDefault();
-				cancel();
-			} else if (e.key === "Enter" && !e.shiftKey) {
-				e.preventDefault();
-				submit();
-			}
+		// Editor path: offsets come live from draftField (mapped through every edit),
+		// so no stale-offset verification is needed here.
+		const { el } = buildDraftComposer({
+			onCancel: () => this.view.dispatch({ effects: clearDraft.of(null) }),
+			onSubmit: (text) => {
+				const draft = this.view.state.field(draftField, false);
+				if (text && draft) notifyErr(addComment(this.view, draft.from, draft.to, text, this.cb.getAuthor()));
+				this.view.dispatch({ effects: clearDraft.of(null) });
+			},
 		});
 		return el;
 	}

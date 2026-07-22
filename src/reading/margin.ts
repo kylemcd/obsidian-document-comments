@@ -1,4 +1,4 @@
-import { App, MarkdownView, Notice, setIcon } from "obsidian";
+import { App, MarkdownView, Notice } from "obsidian";
 import { Result } from "better-result";
 import { ParsedComment, TextRange } from "../format/types";
 import { hasMarginAnchor, parseComments } from "../format/parse";
@@ -17,6 +17,7 @@ import { applyCommentEdit, insertComment as routeInsertComment } from "../editor
 import { closestSpanId, spanSelector } from "../util/css";
 import { stackTops } from "../ui/stack";
 import { CARD_GAP, FLASH_MS } from "../ui/constants";
+import { buildDraftComposer } from "../ui/draft-composer";
 
 export type ReadingDeps = {
 	app: App;
@@ -221,50 +222,14 @@ class ReadingMargin {
 	}
 
 	private buildDraftEl(): HTMLElement {
-		const el = createDiv("doc-comment-card is-draft");
-		const box = el.createDiv("dc-field dc-field--composer");
-		const textarea = box.createEl("textarea", {
-			cls: "dc-field__input",
-			attr: { placeholder: "Write a comment…", rows: "2" },
-		});
-		const actions = box.createDiv("dc-field__actions");
-
-		const submit = () => {
-			const text = textarea.value.trim();
-			const draft = this.draft;
-			const expected = this.draftText;
-			this.clearDraft();
-			if (text && draft) void this.insertComment(draft.from, draft.to, text, expected);
-		};
-
-		const cancelBtn = actions.createEl("button", {
-			cls: "dc-round dc-round--cancel",
-			attr: { "aria-label": "Cancel" },
-		});
-		setIcon(cancelBtn, "x");
-		cancelBtn.addEventListener("click", (e) => {
-			e.stopPropagation();
-			this.clearDraft();
-		});
-
-		const confirmBtn = actions.createEl("button", {
-			cls: "dc-round dc-round--confirm",
-			attr: { "aria-label": "Comment" },
-		});
-		setIcon(confirmBtn, "check");
-		confirmBtn.addEventListener("click", (e) => {
-			e.stopPropagation();
-			submit();
-		});
-
-		textarea.addEventListener("keydown", (e) => {
-			if (e.key === "Escape") {
-				e.preventDefault();
+		const { el } = buildDraftComposer({
+			onCancel: () => this.clearDraft(),
+			onSubmit: (text) => {
+				const draft = this.draft;
+				const expected = this.draftText;
 				this.clearDraft();
-			} else if (e.key === "Enter" && !e.shiftKey) {
-				e.preventDefault();
-				submit();
-			}
+				if (text && draft) void this.insertComment(draft.from, draft.to, text, expected);
+			},
 		});
 		return el;
 	}
