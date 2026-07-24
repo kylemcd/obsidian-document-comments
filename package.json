@@ -21,7 +21,7 @@
 	"author": "Kyle McDonald",
 	"license": "MIT",
 	"devDependencies": {
-		"@codemirror/state": "^6.6.0",
+		"@codemirror/state": "^6.7.1",
 		"@codemirror/view": "^6.43.6",
 		"@types/node": "^26.1.1",
 		"esbuild": "^0.28.1",
