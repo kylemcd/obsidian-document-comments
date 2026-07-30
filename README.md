@@ -1,24 +1,33 @@
 # Document Comments
 
-Notion / Linear-style **margin comments** for Obsidian — except the comments live **inside the markdown file**, stored as HTML comments. They render as floating cards in the right margin, but any other tool or AI agent that reads the raw `.md` sees them in context (a comment-free editor, a `git diff`, or an LLM all read the same thing).
+Document Comments adds inline comments to Obsidian notes. It shows each comment as a card beside the text on desktop.
 
-![Document Comments — threaded comment cards in the right margin of an Obsidian note](screenshot.png)
+The plugin stores each comment inside its Markdown file as an HTML comment. Other editors, version control tools, and agents can read the comment.
 
-> Available in Obsidian's **Community plugins** store, on **desktop and mobile** — see [Install](#install).
+[Install Document Comments from the Obsidian community plugin directory](https://community.obsidian.md/plugins/document-comments).
+
+![Document Comments with threaded comment cards beside an Obsidian note](screenshot.png)
 
 ## Features
 
-- **Inline storage.** Comments are plain HTML comments in the file — invisible in Reading view and in other markdown renderers, and legible to agents/tools that read the raw text.
-- **Margin cards** in Live Preview, Source, and Reading view, aligned to the highlighted text. Click a card to jump to its anchor; hover to light it up.
-- **Threads, resolve / reopen, emoji reactions, edit & delete** — every action is a plain edit to the markdown, so it round-trips cleanly.
-- **Markdown in comment text** — code spans, bold, links, lists, etc. render in the cards (margin and sidebar).
-- **Long comments collapse** to a *Show more* preview; a thread taller than the screen opens in the sidebar instead.
-- **Inline composer.** Select text → command or right-click → a draft card opens in the margin (no modal). On mobile, a small dialog takes its place.
-- **"All discussions" sidebar** — a panel listing the active note's comments with **Open / Resolved / All** filter tabs; while it's open the inline cards step aside (the in-text highlights stay).
-- **Toggle comments** on/off (also hides the text highlights), and **hide resolved** comments by default.
-- **Mobile.** On phones and tablets the floating margin is turned off (there's no room for it): the in-text **highlights** still mark commented text, and you read, reply, and resolve through the **sidebar** panel — new comments are composed in a quick dialog. It's the same inline storage, so a note's comments are identical on desktop and mobile.
+### Comments and storage
 
-## How comments are stored
+- Store comments inside Markdown files without a separate database.
+- Add comments to prose, inline code, tables, and selected lines in fenced code blocks.
+- Reply, resolve, reopen, edit, delete, or react to a comment.
+- Write Markdown in comments, including links, lists, bold text, and code spans.
+- Use the same notes on desktop and mobile.
+
+### Views and controls
+
+- Show comment cards in Live Preview, Source view, and Reading view.
+- Open long comments in the sidebar.
+- Filter the sidebar by open, resolved, or all comments.
+- Hide all comments or hide resolved comments.
+
+## Comment format
+
+The plugin uses an anchor pair and a comment block:
 
 ```markdown
 We should <!--c:k3f9-->ship on Friday<!--/c:k3f9--> regardless of the QA timeline.
@@ -28,31 +37,46 @@ sam (2026-06-17T10:05:00.000Z): Thursday is better for QA.
 -->
 ```
 
-`<!--c:ID-->…<!--/c:ID-->` delimits the highlighted span; `<!--co:ID …-->` holds the thread. An agent can list comments by scanning for `<!--co:`, and find the referenced text via the matching `<!--c:ID-->` span or the redundant `quote:` value. The markers are HTML comments, so they don't render anywhere except this plugin.
+The `<!--c:ID-->` and `<!--/c:ID-->` markers identify the selected text. The matching `<!--co:ID ...-->` block stores the comment thread.
+
+Markdown renderers hide these HTML comments. Tools that read the source file can find each comment and its selected text.
+
+Comments on fenced code blocks use the same format. The comment block also stores the selected line range and exact code text.
 
 ## Install
 
-Requires **Obsidian 1.7.2 or newer** (desktop or mobile).
+Document Comments requires Obsidian 1.7.2 or newer. It supports desktop and mobile.
 
-### Community plugins (recommended)
+### Community plugins
 
-1. Open **Settings → Community plugins → Browse**.
-2. Search for **Document Comments**, click **Install**, then **Enable**.
+Use the [Document Comments plugin page](https://community.obsidian.md/plugins/document-comments), or install it from Obsidian:
 
-### BRAT — for pre-release builds
+1. Open **Settings → Community plugins**.
+2. Select **Browse**.
+3. Search for **Document Comments**.
+4. Select **Install**.
+5. Select **Enable**.
 
-1. Install **BRAT** (Settings → Community plugins → Browse → search "BRAT") and enable it.
-2. Run the command **BRAT: Add a beta plugin for testing** and enter:
-   `kylemcd/obsidian-document-comments`
-3. Enable **Document Comments** in Settings → Community plugins.
+### BRAT
 
-BRAT installs from the latest GitHub release and updates it automatically when new ones ship.
+Use BRAT to install a pre-release build:
 
-### Manual
+1. Install **BRAT** from Community plugins.
+2. Enable **BRAT**.
+3. Run **BRAT: Add a beta plugin for testing**.
+4. Enter `kylemcd/obsidian-document-comments`.
+5. Enable **Document Comments** in Community plugins.
+
+BRAT installs the latest GitHub release and checks for updates.
+
+### Manual install
 
 1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/kylemcd/obsidian-document-comments/releases).
-2. Drop them in `<your-vault>/.obsidian/plugins/document-comments/` (create the folder).
-3. In Obsidian, reload (or restart), then enable **Document Comments** under Settings → Community plugins.
+2. Copy the files to `<your-vault>/.obsidian/plugins/document-comments/`.
+3. Restart or reload Obsidian.
+4. Enable **Document Comments** in Community plugins.
+
+Create the `document-comments` directory if it does not exist.
 
 ### Build from source
 
@@ -63,40 +87,132 @@ npm install
 npm run build
 ```
 
-Then copy (or symlink) `main.js`, `manifest.json`, and `styles.css` into
-`<your-vault>/.obsidian/plugins/document-comments/` and enable the plugin.
+Copy or link `main.js`, `manifest.json`, and `styles.css` to `<your-vault>/.obsidian/plugins/document-comments/`.
 
-## Usage
+Then enable **Document Comments** in Community plugins.
 
-- **Add a comment:** select text, then run **Add comment** from the command palette. Type in the margin card and press Enter (Shift+Enter for a newline).
-- **Reply / resolve / react / edit / delete:** hover a card to reveal its action bar, or use the ⋯ menu.
-- **Open the sidebar:** the *Open comments sidebar* ribbon icon or command.
-- **Show/hide comments and resolved:** the ribbon, or the *Toggle comments* / *Toggle resolved comments* commands.
+## Use the plugin
 
-Set the name attached to your comments under **Settings → Document Comments → Author**.
+### Add a comment in an editing view
+
+1. Select text or one or more lines in a fenced code block.
+2. Run **Add comment** from the command palette or your configured editor menu.
+3. Write the comment in the margin composer.
+4. Press Enter to save the comment.
+
+Press Shift+Enter to add a line break. On mobile, use the dialog to save the comment.
+
+### Add the command to the right-click menu
+
+The optional [Commander plugin](https://community.obsidian.md/plugins/cmdr) can add commands to the editor menu.
+
+#### Install Commander
+
+1. Install **Commander**.
+2. Enable **Commander**.
+
+#### Configure the editor menu
+
+1. Open **Settings → Commander**.
+2. Select **Editor Menu**.
+3. Select **Add command**.
+4. Search for `Document Comments: Add comment`.
+5. Select the command.
+6. Choose an icon.
+
+The command now appears at the bottom of the editor right-click menu. Select text before you use it.
+
+### Add a comment in Reading view
+
+1. Select text in the active note.
+2. Run **Add comment in reading view**.
+3. Write the comment.
+4. Save the comment.
+
+The Reading view command cannot add comments to embedded content.
+
+### Manage a comment
+
+Select a card to open its reply field. Hover over an entry to show its reaction, resolve, edit, and delete controls.
+
+Use the **Open comments sidebar** command or ribbon icon to show all comments in the active note.
+
+Use **Toggle comments** to show or hide all cards and highlights. Use **Toggle resolved comments** to show or hide resolved comments.
+
+### Set the author
+
+Open **Settings → Document Comments**. Set **Author** to the name that the plugin adds to new comments.
+
+The plugin uses `me` when the Author setting is empty.
+
+## Desktop and mobile behavior
+
+Desktop views show cards in a margin beside the note. The cards align with their selected text and avoid overlaps.
+
+Mobile views show the highlights without a margin. Use the sidebar to read and manage comments.
+
+Mobile uses a dialog for new comments. The stored comment format stays the same on all devices.
+
+## Agent support
+
+This repository includes an agent skill for the Document Comments format:
+
+```text
+skills/document-comments/
+```
+
+The skill explains how to read and edit comments without damaging their markers. It also includes a validation script:
+
+```bash
+python3 skills/document-comments/scripts/validate_comments.py path/to/file.md
+```
 
 ## Privacy
 
-No network use, no telemetry, no accounts. Everything stays in your vault.
+The plugin does not use the network, telemetry, or accounts. It stores all comment data in the note.
 
 ## Known limitations
 
-- On **mobile**, the floating margin column is turned off (there's no room for it). Comments are read and managed through the **sidebar** instead — highlights still mark the text, and new comments are composed in a dialog. Same inline storage, so it round-trips with desktop.
-- Comments whose highlighted text **overlaps** another comment's are stored fine but are a rough edge; avoid stacking comments on the same words for now.
-- In **Live Preview**, table highlights use the browser's CSS Custom Highlight support because Obsidian renders tables as self-contained editor widgets.
+- Reading view comments work best with plain text inside one paragraph.
+- Reading view cannot add a comment to text inside an embed.
+- Avoid overlapping comment anchors because comments on the same words can be difficult to manage.
+- The sidebar shows an orphaned comment when no matching selected text remains.
+- Live Preview table highlights require browser support for CSS Custom Highlight.
 
 ## Development
 
 ```bash
 npm install
-npm run dev      # esbuild watch → main.js
-npm run build    # typecheck + production bundle
-npm run check    # oxfmt + oxlint + eslint + tsc + vitest
-npm test         # vitest
+npm run dev
+npm run build
+npm run check
+npm test
 ```
 
-**Releasing.** Pushing a version tag (e.g. `git tag 0.1.1 && git push origin 0.1.1`) runs [`.github/workflows/release.yml`](.github/workflows/release.yml): it builds the plugin, generates GitHub [artifact attestations](https://docs.github.com/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds) for the release assets, and publishes the release (and fails fast if the tag doesn't match `manifest.json`'s version). Verify a downloaded asset with `gh attestation verify main.js --repo kylemcd/obsidian-document-comments`.
+- `npm run dev` watches the source files and rebuilds `main.js`.
+- `npm run build` checks types and creates a production bundle.
+- `npm run check` checks formatting, lint rules, types, and tests.
+- `npm test` runs the test suite.
+
+### Release
+
+Update `manifest.json`, `package.json`, `versions.json`, and `CHANGELOG.md` before a release.
+
+Push a tag that exactly matches the version in `manifest.json`:
+
+```bash
+git tag 0.1.11
+git push origin 0.1.11
+```
+
+The [release workflow](.github/workflows/release.yml) builds the plugin and publishes the GitHub release. It also creates attestations for the release files.
+
+Verify a downloaded file with this command:
+
+```bash
+gh attestation verify main.js --repo kylemcd/obsidian-document-comments
+```
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Document Comments uses the MIT License. See [LICENSE](LICENSE).
