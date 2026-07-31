@@ -19,7 +19,7 @@ import { editorLayoutField } from "./editor/layout";
 import { draftField, setDraft } from "./editor/draft";
 import { addComment, insertCommentInFile } from "./editor/commands";
 import { findHighlightAtSelection } from "./editor/edits";
-import { findSectionRange, highlightPostProcessor } from "./reading/highlight";
+import { findSectionRange, highlightPostProcessor, mapReadingSelection } from "./reading/highlight";
 import { ReadingDeps, ReadingMarginManager } from "./reading/margin";
 import { COMMENTS_VIEW_TYPE, CommentsSidebarView, SidebarDeps } from "./ui/sidebar";
 import { CommentModal } from "./ui/comment-modal";
@@ -213,8 +213,8 @@ export default class DocCommentsPlugin extends Plugin {
 	 *  source offsets (best-effort) and prompt for the comment text. */
 	private startAddCommentReading(view: MarkdownView): void {
 		const selection = activeWindow.getSelection();
-		const selected = selection?.toString().trim() ?? "";
-		if (!selection || selection.rangeCount === 0 || !selected) {
+		const selected = selection?.toString() ?? "";
+		if (!selection || selection.rangeCount === 0 || !selected.trim()) {
 			new Notice("Select some text to comment on.");
 			return;
 		}
@@ -230,14 +230,14 @@ export default class DocCommentsPlugin extends Plugin {
 			new Notice("Can only comment on this note's own text, not embedded content.");
 			return;
 		}
-		const idx = section.source.indexOf(selected);
-		if (idx < 0) {
+		const data = view.getViewData();
+		const sourceSelection = mapReadingSelection(selection, section, data);
+		if (!sourceSelection) {
 			new Notice("Couldn't map the selection to the Markdown — try plain text without formatting.");
 			return;
 		}
-		const from = section.from + idx;
-		const to = from + selected.length;
-		const emptyAction = findHighlightAtSelection(view.getViewData(), from, to)
+		const { from, to, expected } = sourceSelection;
+		const emptyAction = findHighlightAtSelection(data, from, to)
 			? "remove"
 			: this.settings.allowEmptyComments
 				? "highlight"
@@ -254,14 +254,14 @@ export default class DocCommentsPlugin extends Plugin {
 				this.app,
 				selected,
 				(text) => {
-					void this.insertReadingComment(file, from, to, text, selected);
+					void this.insertReadingComment(file, from, to, text, expected);
 				},
 				emptyAction,
 			).open();
 			return;
 		}
 		// Same inline draft composer as the editor (no modal).
-		this.readingManager?.startDraft(view, from, to, selection.getRangeAt(0), selected, emptyAction);
+		this.readingManager?.startDraft(view, from, to, selection.getRangeAt(0), expected, emptyAction);
 	}
 
 	/** Mobile reading-view create: write to the file (no editor surface) and refresh.

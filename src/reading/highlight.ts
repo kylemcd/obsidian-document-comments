@@ -1,6 +1,6 @@
 import type { MarkdownPostProcessorContext } from "obsidian";
 import { ParsedComment } from "../format/types";
-import { anchorRange, parseComments } from "../format/parse";
+import { anchorRange, fencedRanges, isHighlight, parseComments } from "../format/parse";
 import { isCodeComment, resolveCodeAnchor } from "../format/code-anchor";
 import { commentPreview } from "../format/preview";
 
@@ -25,6 +25,35 @@ export const findSectionRange = (node: Node): SectionRange | null => {
 		el = el.parentElement;
 	}
 	return null;
+};
+
+export type SourceSelection = {
+	from: number;
+	to: number;
+	expected: string;
+};
+
+/** Map a rendered selection back to source without discarding boundary spaces.
+ *  An exact existing highlight carries its source identity in `data-cid`, which
+ *  also disambiguates repeated rendered text. */
+export const mapReadingSelection = (
+	selection: Selection,
+	section: SectionRange,
+	doc: string,
+): SourceSelection | null => {
+	const selected = selection.toString();
+	if (!selected.trim()) return null;
+
+	const highlighted = selectedHighlightRange(selection, selected, doc);
+	if (highlighted) return highlighted;
+
+	const idx = section.source.indexOf(selected);
+	if (idx < 0) return null;
+	return {
+		from: section.from + idx,
+		to: section.from + idx + selected.length,
+		expected: selected,
+	};
 };
 
 // Parsing the whole file per rendered block would be wasteful, so cache the last
@@ -53,10 +82,11 @@ export const highlightPostProcessor = (el: HTMLElement, ctx: MarkdownPostProcess
 	const lines = text.split("\n");
 	const sectionFrom = offsetOfLine(lines, lineStart);
 	const sectionTo = offsetOfLine(lines, lineEnd + 1);
+	const sectionSource = text.slice(sectionFrom, sectionTo);
 	// Remember this block's source range for selection → markdown mapping.
 	sectionRanges.set(el, {
 		from: sectionFrom,
-		source: text.slice(sectionFrom, sectionTo),
+		source: sectionSource,
 		sourcePath: ctx.sourcePath,
 	});
 
@@ -86,10 +116,8 @@ export const highlightPostProcessor = (el: HTMLElement, ctx: MarkdownPostProcess
 		const preview = commentPreview(c);
 		const codeText = inlineCodeText(quote);
 		if (codeText !== null) {
-			for (const code of el.querySelectorAll<HTMLElement>("code")) {
-				if (code.closest("pre")) continue;
-				if (wrapFirstMatch(code, codeText, c.id, c.status === "resolved", preview)) break;
-			}
+			const code = inlineCodeElement(el, sectionSource, range.from - sectionFrom, codeText);
+			if (code) wrapFirstMatch(code, codeText, c.id, c.status === "resolved", preview);
 			continue;
 		}
 		wrapFirstMatch(el, quote, c.id, c.status === "resolved", preview);
@@ -106,6 +134,102 @@ const inlineCodeText = (source: string): string | null => {
 	// CommonMark removes one boundary space when the content is not all spaces.
 	if (content.startsWith(" ") && content.endsWith(" ") && content.trim()) content = content.slice(1, -1);
 	return content;
+};
+
+type InlineCodeSpan = { from: number; text: string };
+
+/** Match a source code span to the same occurrence in rendered DOM. */
+const inlineCodeElement = (
+	root: HTMLElement,
+	sectionSource: string,
+	targetFrom: number,
+	targetText: string,
+): HTMLElement | null => {
+	const occurrence = inlineCodeSpans(sectionSource).filter(
+		(span) => span.from < targetFrom && span.text === targetText,
+	).length;
+	const matches = [...root.querySelectorAll<HTMLElement>("code")].filter(
+		(code) => !code.closest("pre") && code.textContent === targetText,
+	);
+	return matches[occurrence] ?? null;
+};
+
+/** Find rendered Markdown code spans while preserving their source offsets. */
+const inlineCodeSpans = (source: string): InlineCodeSpan[] => {
+	const spans: InlineCodeSpan[] = [];
+	const masked = [
+		...fencedRanges(source),
+		...[...source.matchAll(/<!--[\s\S]*?-->/g)].flatMap(
+			(match): Array<[number, number]> =>
+				match.index === undefined ? [] : [[match.index, match.index + match[0].length]],
+		),
+	];
+	let cursor = 0;
+
+	while (cursor < source.length) {
+		const open = source.indexOf("`", cursor);
+		if (open < 0) break;
+		const openLength = backtickRun(source, open);
+		if (isMasked(masked, open) || isEscapedBacktick(source, open)) {
+			cursor = open + openLength;
+			continue;
+		}
+
+		let closeCursor = open + openLength;
+		let found = false;
+		while (closeCursor < source.length) {
+			const close = source.indexOf("`", closeCursor);
+			if (close < 0) break;
+			const closeLength = backtickRun(source, close);
+			if (closeLength === openLength) {
+				const end = close + closeLength;
+				const text = inlineCodeText(source.slice(open, end));
+				if (text !== null) spans.push({ from: open, text });
+				cursor = end;
+				found = true;
+				break;
+			}
+			closeCursor = close + closeLength;
+		}
+		if (!found) cursor = open + openLength;
+	}
+
+	return spans;
+};
+
+const backtickRun = (source: string, from: number): number => {
+	let to = from;
+	while (source.charAt(to) === "`") to++;
+	return to - from;
+};
+
+const isEscapedBacktick = (source: string, position: number): boolean => {
+	let slashes = 0;
+	for (let cursor = position - 1; cursor >= 0 && source.charAt(cursor) === "\\"; cursor--) slashes++;
+	return slashes % 2 === 1;
+};
+
+const isMasked = (ranges: Array<[number, number]>, position: number): boolean => {
+	return ranges.some(([from, to]) => position >= from && position < to);
+};
+
+const selectedHighlightRange = (selection: Selection, selected: string, doc: string): SourceSelection | null => {
+	const anchor = closestHighlight(selection.anchorNode);
+	const focus = closestHighlight(selection.focusNode);
+	if (!anchor || anchor !== focus || selected !== anchor.textContent) return null;
+	const id = anchor.dataset.cid;
+	if (!id) return null;
+	const comment = parseComments(doc).find((candidate) => candidate.id === id && isHighlight(candidate));
+	if (!comment) return null;
+	const range = isCodeComment(comment) ? resolveCodeAnchor(doc, comment) : anchorRange(comment);
+	if (!range) return null;
+	return { ...range, expected: doc.slice(range.from, range.to) };
+};
+
+const closestHighlight = (node: Node | null): HTMLElement | null => {
+	if (!node) return null;
+	const el = node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : node.parentElement;
+	return el?.closest<HTMLElement>(".doc-comment-span[data-cid]") ?? null;
 };
 
 const offsetOfLine = (lines: string[], lineNo: number): number => {
