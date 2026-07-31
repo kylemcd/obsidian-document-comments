@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { App, TFile } from "obsidian";
 import { Result } from "better-result";
 import { insertCommentInFile, processFileEdit } from "../src/editor/commands";
-import { applyChanges, computeAddComment } from "../src/editor/edits";
+import { applyChanges, computeAddComment, computeAppendReply } from "../src/editor/edits";
 import { anchorRange, parseComments } from "../src/format/parse";
 
 // A minimal `app.vault.process` stub: run the mutator over an in-memory string and
@@ -81,6 +81,46 @@ describe("insertCommentInFile", () => {
 		expect(result.isOk()).toBe(true);
 		expect(result.unwrap()).toBe("h1");
 		expect(doc).toBe(original);
+	});
+
+	it("uses a captured empty comment id against fresh file content", async () => {
+		const original = "We should ship on Friday regardless.\n";
+		const originalFrom = original.indexOf("ship on Friday");
+		let doc = applyChanges(
+			original,
+			computeAddComment(original, originalFrom, originalFrom + "ship on Friday".length, {
+				id: "h1",
+				createdAt: "t1",
+				author: "kyle",
+				text: "",
+			}).unwrap(),
+		);
+		doc = applyChanges(
+			doc,
+			computeAppendReply(doc, "h1", { createdAt: "t2", author: "sam", text: "Remote reply" }).unwrap(),
+		);
+		const range = anchorRange(parseComments(doc)[0])!;
+		const app = fakeApp(
+			() => doc,
+			(next) => (doc = next),
+		);
+
+		const result = await insertCommentInFile(
+			app,
+			{} as TFile,
+			range.from,
+			range.to,
+			"Local reply",
+			"kyle",
+			undefined,
+			true,
+			"h1",
+		);
+		const comments = parseComments(doc);
+
+		expect(result.unwrap()).toBe("h1");
+		expect(comments).toHaveLength(1);
+		expect(comments[0].thread.map((entry) => entry.text)).toEqual(["Remote reply", "Local reply"]);
 	});
 
 	it("errs and writes nothing for an empty range", async () => {

@@ -126,6 +126,69 @@ describe("computeAddComment", () => {
 		expect(out).toBe(DOC);
 	});
 
+	it("appends to the captured empty comment after another reply arrives", () => {
+		const highlighted = applyChanges(
+			DOC,
+			computeAddComment(DOC, FROM, TO, {
+				id: "h1",
+				createdAt: "t1",
+				author: "kyle",
+				text: "",
+			}).unwrap(),
+		);
+		const changed = applyChanges(
+			highlighted,
+			computeAppendReply(highlighted, "h1", { createdAt: "t2", author: "sam", text: "Remote reply" }).unwrap(),
+		);
+		const range = anchorRange(parseComments(changed)[0])!;
+		const out = applyChanges(
+			changed,
+			computeAddComment(changed, range.from, range.to, {
+				id: "unused",
+				targetHighlightId: "h1",
+				createdAt: "t3",
+				author: "kyle",
+				text: "Local reply",
+			}).unwrap(),
+		);
+		const comments = parseComments(out);
+
+		expect(comments).toHaveLength(1);
+		expect(comments[0].id).toBe("h1");
+		expect(comments[0].thread.map((entry) => entry.text)).toEqual(["Remote reply", "Local reply"]);
+		expect(out).not.toContain("unused");
+	});
+
+	it("refuses stale removal after the captured empty comment receives a reply", () => {
+		const highlighted = applyChanges(
+			DOC,
+			computeAddComment(DOC, FROM, TO, {
+				id: "h1",
+				createdAt: "t1",
+				author: "kyle",
+				text: "",
+			}).unwrap(),
+		);
+		const changed = applyChanges(
+			highlighted,
+			computeAppendReply(highlighted, "h1", { createdAt: "t2", author: "sam", text: "Remote reply" }).unwrap(),
+		);
+		const range = anchorRange(parseComments(changed)[0])!;
+		const result = computeAddComment(changed, range.from, range.to, {
+			id: "unused",
+			targetHighlightId: "h1",
+			createdAt: "t3",
+			author: "kyle",
+			text: "",
+			allowEmpty: true,
+		});
+
+		expect(result.isErr()).toBe(true);
+		if (result.isErr()) expect(result.error).toContain("now has text");
+		expect(parseComments(changed)).toHaveLength(1);
+		expect(changed).not.toContain("unused");
+	});
+
 	it("keeps the prose intact once markup is stripped", () => {
 		const out = add();
 		expect(stripComments(out)).toContain("We should ship on Friday regardless of the QA timeline.");

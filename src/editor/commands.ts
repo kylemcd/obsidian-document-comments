@@ -26,16 +26,23 @@ export const addComment = (
 	author: string,
 	expected?: string,
 	allowEmpty = true,
+	targetHighlightId?: string,
 ): Result<string, string> => {
 	const doc = view.state.doc.toString();
 	const highlight = findHighlightAtSelection(doc, from, to);
-	const id = highlight?.id ?? generateId(existingIds(doc));
-	return computeAddComment(doc, from, to, { id, createdAt: now(), author, text, expected, allowEmpty }).map(
-		(changes) => {
-			if (changes.length > 0) view.dispatch({ changes, scrollIntoView: false });
-			return changes.length > 0 ? id : "";
-		},
-	);
+	const id = targetHighlightId ?? highlight?.id ?? generateId(existingIds(doc));
+	return computeAddComment(doc, from, to, {
+		id,
+		createdAt: now(),
+		author,
+		text,
+		expected,
+		allowEmpty,
+		targetHighlightId,
+	}).map((changes) => {
+		if (changes.length > 0) view.dispatch({ changes, scrollIntoView: false });
+		return changes.length > 0 ? id : "";
+	});
 };
 
 export const appendReply = (view: EditorView, id: string, text: string, author: string): Result<void, string> => {
@@ -115,13 +122,14 @@ export const insertCommentInFile = async (
 	author: string,
 	expected?: string,
 	allowEmpty = true,
+	targetHighlightId?: string,
 ): Promise<Result<string, string>> => {
 	let computed: Result<string, string> = Result.err("No change was written.");
 	const io = await Result.tryPromise({
 		try: () =>
 			app.vault.process(file, (data) => {
 				const highlight = findHighlightAtSelection(data, from, to);
-				const id = highlight?.id ?? generateId(existingIds(data));
+				const id = targetHighlightId ?? highlight?.id ?? generateId(existingIds(data));
 				const result = computeAddComment(data, from, to, {
 					id,
 					createdAt: now(),
@@ -129,6 +137,7 @@ export const insertCommentInFile = async (
 					text,
 					expected,
 					allowEmpty,
+					targetHighlightId,
 				});
 				if (result.isErr()) {
 					computed = Result.err(result.error);

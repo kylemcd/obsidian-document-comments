@@ -48,8 +48,9 @@ export const insertComment = async (
 	author: string,
 	expected?: string,
 	allowEmpty = true,
+	targetHighlightId?: string,
 ): Promise<Result<string, string>> => {
 	const cm = editorViewForFile(app, file);
-	if (cm) return addComment(cm, from, to, text, author, expected, allowEmpty);
-	return insertCommentInFile(app, file, from, to, text, author, expected, allowEmpty);
+	if (cm) return addComment(cm, from, to, text, author, expected, allowEmpty, targetHighlightId);
+	return insertCommentInFile(app, file, from, to, text, author, expected, allowEmpty, targetHighlightId);
 };

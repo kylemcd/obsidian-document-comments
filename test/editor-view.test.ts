@@ -405,10 +405,13 @@ describe("editor extensions open every note without crashing", () => {
 			}),
 			parent,
 		});
-		view.dispatch({ effects: setDraft.of({ from: 0, to: 4 }) });
+		view.dispatch({ effects: setDraft.of({ from: 0, to: 4, targetHighlightId: "h1" }) });
+		view.dispatch({ changes: { from: 0, insert: "x" } });
 		view.requestMeasure();
 		const className = view.dom.className;
+		const draft = view.state.field(draftField);
 		view.destroy();
+		expect(draft).toMatchObject({ from: 1, to: 5, targetHighlightId: "h1" });
 		expect(className).not.toContain("dc-has"); // draft is a floating overlay, no column reserved
 		expect(className).toContain("dc-highlights"); // highlights still follow the master toggle
 	});

@@ -1,6 +1,6 @@
 import { Result } from "better-result";
 import { CommentData, ParsedComment, Reaction } from "../format/types";
-import { anchorRange, isHighlight, isInFencedCode, parseComments } from "../format/parse";
+import { anchorRange, isAnchored, isHighlight, isInFencedCode, parseComments } from "../format/parse";
 import { codeSelectionTarget, isCodeComment, resolveCodeAnchor } from "../format/code-anchor";
 import { closeMarker, openMarker, serializeBody } from "../format/serialize";
 
@@ -16,6 +16,9 @@ export type NewCommentInput = {
 	createdAt: string;
 	author: string;
 	text: string;
+	/** Empty comment selected when the composer opened. Resolve this id against
+	 *  fresh content instead of rediscovering it from a stale selection. */
+	targetHighlightId?: string;
 	/** Whether a new empty comment can persist as a highlight. Existing highlights
 	 *  can still be removed when this is false. Defaults to true for format callers. */
 	allowEmpty?: boolean;
@@ -35,6 +38,23 @@ export const computeAddComment = (
 	input: NewCommentInput,
 ): Result<Change[], string> => {
 	if (to < from) [from, to] = [to, from];
+	if (input.targetHighlightId) {
+		const target = parseComments(doc).find((comment) => comment.id === input.targetHighlightId);
+		if (!target?.body || !isAnchored(target)) {
+			return Result.err("The empty comment no longer exists.");
+		}
+		if (input.text) {
+			return computeAppendReply(doc, target.id, {
+				createdAt: input.createdAt,
+				author: input.author,
+				text: input.text,
+			});
+		}
+		if (target.thread.length > 0) {
+			return Result.err("The empty comment now has text. Open the comment to make changes.");
+		}
+		return computeDeleteComment(doc, target.id);
+	}
 	if (to === from) return Result.err("Select some text to comment on.");
 	if (input.expected !== undefined && doc.slice(from, to) !== input.expected) {
 		return Result.err("The selection moved — try adding the comment again.");

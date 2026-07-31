@@ -175,15 +175,13 @@ export default class DocCommentsPlugin extends Plugin {
 			new Notice("Select some text to comment on.");
 			return;
 		}
+		const doc = view.state.doc.toString();
+		const targetHighlightId = findHighlightAtSelection(doc, from, to)?.id;
 		if (Platform.isMobile) {
 			// No floating margin composer on mobile — collect the text in a modal,
 			// then write through the same editor path so it's a single undo step.
 			const quote = view.state.doc.sliceString(from, to);
-			const emptyAction = findHighlightAtSelection(view.state.doc.toString(), from, to)
-				? "remove"
-				: this.settings.allowEmptyComments
-					? "highlight"
-					: "none";
+			const emptyAction = targetHighlightId ? "remove" : this.settings.allowEmptyComments ? "highlight" : "none";
 			new CommentModal(
 				this.app,
 				quote,
@@ -198,6 +196,7 @@ export default class DocCommentsPlugin extends Plugin {
 						this.authorName(),
 						quote,
 						this.settings.allowEmptyComments,
+						targetHighlightId,
 					);
 					if (result.isErr()) new Notice(`Couldn't add the comment: ${result.error}`);
 				},
@@ -206,7 +205,7 @@ export default class DocCommentsPlugin extends Plugin {
 			return;
 		}
 		// Show a draft composer card in the margin (Notion-style) instead of a modal.
-		view.dispatch({ effects: setDraft.of({ from, to }) });
+		view.dispatch({ effects: setDraft.of({ from, to, targetHighlightId }) });
 	}
 
 	/** Reading view has no editor surface, so map the rendered selection back to
@@ -237,11 +236,8 @@ export default class DocCommentsPlugin extends Plugin {
 			return;
 		}
 		const { from, to, expected } = sourceSelection;
-		const emptyAction = findHighlightAtSelection(data, from, to)
-			? "remove"
-			: this.settings.allowEmptyComments
-				? "highlight"
-				: "none";
+		const targetHighlightId = findHighlightAtSelection(data, from, to)?.id;
+		const emptyAction = targetHighlightId ? "remove" : this.settings.allowEmptyComments ? "highlight" : "none";
 		if (Platform.isMobile) {
 			// No margin composer on mobile — write straight to the file from a modal,
 			// then refresh so the new highlight appears in the reading view.
@@ -254,14 +250,22 @@ export default class DocCommentsPlugin extends Plugin {
 				this.app,
 				selected,
 				(text) => {
-					void this.insertReadingComment(file, from, to, text, expected);
+					void this.insertReadingComment(file, from, to, text, expected, targetHighlightId);
 				},
 				emptyAction,
 			).open();
 			return;
 		}
 		// Same inline draft composer as the editor (no modal).
-		this.readingManager?.startDraft(view, from, to, selection.getRangeAt(0), expected, emptyAction);
+		this.readingManager?.startDraft(
+			view,
+			from,
+			to,
+			selection.getRangeAt(0),
+			expected,
+			emptyAction,
+			targetHighlightId,
+		);
 	}
 
 	/** Mobile reading-view create: write to the file (no editor surface) and refresh.
@@ -272,6 +276,7 @@ export default class DocCommentsPlugin extends Plugin {
 		to: number,
 		text: string,
 		expected: string,
+		targetHighlightId?: string,
 	): Promise<void> {
 		(
 			await insertCommentInFile(
@@ -283,6 +288,7 @@ export default class DocCommentsPlugin extends Plugin {
 				this.authorName(),
 				expected,
 				this.settings.allowEmptyComments,
+				targetHighlightId,
 			)
 		).match({
 			ok: () => this.scheduleReadingRefresh(),

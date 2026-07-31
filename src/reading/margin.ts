@@ -44,6 +44,7 @@ class ReadingMargin {
 	private draft: TextRange | null = null;
 	private draftText = "";
 	private draftEmptyAction: EmptySubmitAction = "none";
+	private draftTargetHighlightId: string | undefined;
 	private draftEl: HTMLElement | null = null;
 	private draftAnchor: HTMLElement | null = null;
 	private cb: CardCallbacks;
@@ -208,7 +209,14 @@ class ReadingMargin {
 
 	/** Show an inline draft composer for a new comment (Reading-view "Add").
 	 *  `expected` is the source text at [from,to], verified when the write lands. */
-	showDraft(from: number, to: number, range: Range, expected: string, emptyAction: EmptySubmitAction): void {
+	showDraft(
+		from: number,
+		to: number,
+		range: Range,
+		expected: string,
+		emptyAction: EmptySubmitAction,
+		targetHighlightId?: string,
+	): void {
 		this.clearDraft();
 		const span = this.scroller.createSpan({ cls: "doc-comment-span dc-draft" });
 		span.detach();
@@ -222,6 +230,7 @@ class ReadingMargin {
 		this.draft = { from, to };
 		this.draftText = expected;
 		this.draftEmptyAction = emptyAction;
+		this.draftTargetHighlightId = targetHighlightId;
 		this.draftEl = this.buildDraftEl();
 		this.container.appendChild(this.draftEl);
 		this.position();
@@ -238,14 +247,21 @@ class ReadingMargin {
 			onSubmit: (text) => {
 				const draft = this.draft;
 				const expected = this.draftText;
+				const targetHighlightId = this.draftTargetHighlightId;
 				this.clearDraft();
-				if (draft) void this.insertComment(draft.from, draft.to, text, expected);
+				if (draft) void this.insertComment(draft.from, draft.to, text, expected, targetHighlightId);
 			},
 		});
 		return el;
 	}
 
-	private async insertComment(from: number, to: number, text: string, expected: string): Promise<void> {
+	private async insertComment(
+		from: number,
+		to: number,
+		text: string,
+		expected: string,
+		targetHighlightId?: string,
+	): Promise<void> {
 		const file = this.view.file;
 		if (!file) return;
 		(
@@ -258,6 +274,7 @@ class ReadingMargin {
 				this.deps.getAuthor(),
 				expected,
 				this.deps.allowEmptyComments(),
+				targetHighlightId,
 			)
 		).match({
 			ok: () => void this.refresh(),
@@ -281,6 +298,7 @@ class ReadingMargin {
 		this.draft = null;
 		this.draftText = "";
 		this.draftEmptyAction = "none";
+		this.draftTargetHighlightId = undefined;
 		// Re-run layout so the composer's `dc-margin` (and its reserved slot in the
 		// stack) is dropped immediately on cancel — the editor margin gets this for
 		// free via its dispatch cycle; the reading margin has to ask for it.
@@ -430,6 +448,7 @@ export class ReadingMarginManager {
 		range: Range,
 		expected: string,
 		emptyAction: EmptySubmitAction,
+		targetHighlightId?: string,
 	): void {
 		const rv = view.containerEl.querySelector(".markdown-reading-view");
 		if (!(rv instanceof HTMLElement)) return;
@@ -439,7 +458,7 @@ export class ReadingMarginManager {
 			this.margins.set(rv, margin);
 			void margin.refresh();
 		}
-		margin.showDraft(from, to, range, expected, emptyAction);
+		margin.showDraft(from, to, range, expected, emptyAction, targetHighlightId);
 	}
 
 	destroy(): void {
