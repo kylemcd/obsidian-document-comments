@@ -59,6 +59,73 @@ describe("computeAddComment", () => {
 		expect(out).toContain('<!--co:h1 by:kyle at:2026-06-17T10:00:00.000Z status:open quote:"ship on Friday"\n-->');
 	});
 
+	it("does not create a highlight when empty comments are disabled", () => {
+		const changes = computeAddComment(DOC, FROM, TO, {
+			id: "h1",
+			createdAt: "t",
+			author: "kyle",
+			text: "",
+			allowEmpty: false,
+		}).unwrap();
+
+		expect(changes).toEqual([]);
+		expect(applyChanges(DOC, changes)).toBe(DOC);
+	});
+
+	it("converts an existing highlight into a comment without nesting markers", () => {
+		const highlighted = applyChanges(
+			DOC,
+			computeAddComment(DOC, FROM, TO, {
+				id: "h1",
+				createdAt: "t1",
+				author: "kyle",
+				text: "",
+			}).unwrap(),
+		);
+		const range = anchorRange(parseComments(highlighted)[0])!;
+		const out = applyChanges(
+			highlighted,
+			computeAddComment(highlighted, range.from, range.to, {
+				id: "unused",
+				createdAt: "t2",
+				author: "sam",
+				text: "Can we ship Thursday?",
+				allowEmpty: false,
+			}).unwrap(),
+		);
+		const comments = parseComments(out);
+
+		expect(comments).toHaveLength(1);
+		expect(comments[0].id).toBe("h1");
+		expect(comments[0].thread).toEqual([{ author: "sam", timestamp: "t2", text: "Can we ship Thursday?" }]);
+		expect(out).not.toContain("unused");
+	});
+
+	it("removes an existing highlight with an empty submission even when empty comments are disabled", () => {
+		const highlighted = applyChanges(
+			DOC,
+			computeAddComment(DOC, FROM, TO, {
+				id: "h1",
+				createdAt: "t1",
+				author: "kyle",
+				text: "",
+			}).unwrap(),
+		);
+		const range = anchorRange(parseComments(highlighted)[0])!;
+		const out = applyChanges(
+			highlighted,
+			computeAddComment(highlighted, range.from, range.to, {
+				id: "unused",
+				createdAt: "t2",
+				author: "sam",
+				text: "",
+				allowEmpty: false,
+			}).unwrap(),
+		);
+
+		expect(out).toBe(DOC);
+	});
+
 	it("keeps the prose intact once markup is stripped", () => {
 		const out = add();
 		expect(stripComments(out)).toContain("We should ship on Friday regardless of the QA timeline.");
@@ -87,6 +154,34 @@ describe("computeAddComment", () => {
 		const comment = parseComments(out).find((entry) => entry.id === "code1");
 		expect(comment?.quote).toBe("`Spinner`");
 		expect(out.slice(anchorRange(comment!)!.from, anchorRange(comment!)!.to)).toBe("`Spinner`");
+	});
+
+	it("converts an inline-code highlight when the code text is selected again", () => {
+		const doc = "Use `Spinner` here.";
+		const originalFrom = doc.indexOf("Spinner");
+		const highlighted = applyChanges(
+			doc,
+			computeAddComment(doc, originalFrom, originalFrom + "Spinner".length, {
+				id: "h3",
+				createdAt: "t1",
+				author: "a",
+				text: "",
+			}).unwrap(),
+		);
+		const from = highlighted.indexOf("Spinner");
+		const out = applyChanges(
+			highlighted,
+			computeAddComment(highlighted, from, from + "Spinner".length, {
+				id: "unused",
+				createdAt: "t2",
+				author: "b",
+				text: "Use the shared component.",
+			}).unwrap(),
+		);
+
+		expect(parseComments(out)).toHaveLength(1);
+		expect(parseComments(out)[0].id).toBe("h3");
+		expect(parseComments(out)[0].thread[0].text).toBe("Use the shared component.");
 	});
 
 	it("supports inline code delimited by multiple backticks", () => {
@@ -181,6 +276,45 @@ describe("computeAddComment in code blocks", () => {
 
 		expect(comment.thread).toEqual([]);
 		expect(comment.codeLines).toEqual({ from: 0, to: 0 });
+	});
+
+	it("converts and removes an existing code highlight through the same add flow", () => {
+		const doc = "```js\nconst spinner = 1;\n```";
+		const originalFrom = doc.indexOf("const spinner");
+		const highlighted = applyChanges(
+			doc,
+			computeAddComment(doc, originalFrom, originalFrom + "const spinner = 1;".length, {
+				id: "h2",
+				createdAt: "t1",
+				author: "a",
+				text: "",
+			}).unwrap(),
+		);
+		const from = highlighted.indexOf("const spinner");
+		const to = from + "const spinner = 1;".length;
+		const promoted = applyChanges(
+			highlighted,
+			computeAddComment(highlighted, from, to, {
+				id: "unused",
+				createdAt: "t2",
+				author: "b",
+				text: "Explain this.",
+			}).unwrap(),
+		);
+		expect(parseComments(promoted)).toHaveLength(1);
+		expect(parseComments(promoted)[0].thread[0].text).toBe("Explain this.");
+
+		const removed = applyChanges(
+			highlighted,
+			computeAddComment(highlighted, from, to, {
+				id: "unused",
+				createdAt: "t2",
+				author: "b",
+				text: "",
+				allowEmpty: false,
+			}).unwrap(),
+		);
+		expect(removed).toBe(doc);
 	});
 });
 

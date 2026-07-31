@@ -123,6 +123,10 @@ Document Comments disables empty comments by default.
 
 The plugin highlights the selected text without a comment card or sidebar entry.
 
+To manage a highlight, select all its highlighted text and run **Add comment** again. Write text to convert it into a comment. Submit the empty field to remove the highlight.
+
+When **Allow empty comments** is off, an empty field closes without a change.
+
 ### Add the command to the right-click menu
 
 The optional [Commander plugin](https://community.obsidian.md/plugins/cmdr) can add commands to the editor menu.

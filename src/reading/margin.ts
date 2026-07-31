@@ -18,6 +18,7 @@ import { closestSpanId, spanSelector } from "../util/css";
 import { stackTops } from "../ui/stack";
 import { CARD_GAP, FLASH_MS } from "../ui/constants";
 import { buildDraftComposer } from "../ui/draft-composer";
+import { EmptySubmitAction } from "../ui/draft-behavior";
 
 export type ReadingDeps = {
 	app: App;
@@ -42,6 +43,7 @@ class ReadingMargin {
 	private activeId: string | null = null;
 	private draft: TextRange | null = null;
 	private draftText = "";
+	private draftEmptyAction: EmptySubmitAction = "none";
 	private draftEl: HTMLElement | null = null;
 	private draftAnchor: HTMLElement | null = null;
 	private cb: CardCallbacks;
@@ -200,7 +202,7 @@ class ReadingMargin {
 
 	/** Show an inline draft composer for a new comment (Reading-view "Add").
 	 *  `expected` is the source text at [from,to], verified when the write lands. */
-	showDraft(from: number, to: number, range: Range, expected: string): void {
+	showDraft(from: number, to: number, range: Range, expected: string, emptyAction: EmptySubmitAction): void {
 		this.clearDraft();
 		const span = this.scroller.createSpan({ cls: "doc-comment-span dc-draft" });
 		span.detach();
@@ -213,6 +215,7 @@ class ReadingMargin {
 		this.draftAnchor = span;
 		this.draft = { from, to };
 		this.draftText = expected;
+		this.draftEmptyAction = emptyAction;
 		this.draftEl = this.buildDraftEl();
 		this.container.appendChild(this.draftEl);
 		this.position();
@@ -224,15 +227,13 @@ class ReadingMargin {
 
 	private buildDraftEl(): HTMLElement {
 		const { el } = buildDraftComposer({
-			allowEmpty: this.deps.allowEmptyComments(),
+			emptyAction: this.draftEmptyAction,
 			onCancel: () => this.clearDraft(),
 			onSubmit: (text) => {
 				const draft = this.draft;
 				const expected = this.draftText;
 				this.clearDraft();
-				if ((text || this.deps.allowEmptyComments()) && draft) {
-					void this.insertComment(draft.from, draft.to, text, expected);
-				}
+				if (draft) void this.insertComment(draft.from, draft.to, text, expected);
 			},
 		});
 		return el;
@@ -241,7 +242,18 @@ class ReadingMargin {
 	private async insertComment(from: number, to: number, text: string, expected: string): Promise<void> {
 		const file = this.view.file;
 		if (!file) return;
-		(await routeInsertComment(this.deps.app, file, from, to, text, this.deps.getAuthor(), expected)).match({
+		(
+			await routeInsertComment(
+				this.deps.app,
+				file,
+				from,
+				to,
+				text,
+				this.deps.getAuthor(),
+				expected,
+				this.deps.allowEmptyComments(),
+			)
+		).match({
 			ok: () => void this.refresh(),
 			err: (message) => new Notice(`Couldn't add the comment: ${message}`),
 		});
@@ -262,6 +274,7 @@ class ReadingMargin {
 		this.draftEl = null;
 		this.draft = null;
 		this.draftText = "";
+		this.draftEmptyAction = "none";
 		// Re-run layout so the composer's `dc-margin` (and its reserved slot in the
 		// stack) is dropped immediately on cancel — the editor margin gets this for
 		// free via its dispatch cycle; the reading margin has to ask for it.
@@ -404,7 +417,14 @@ export class ReadingMarginManager {
 	}
 
 	/** Show the inline new-comment composer on the active reading view. */
-	startDraft(view: MarkdownView, from: number, to: number, range: Range, expected: string): void {
+	startDraft(
+		view: MarkdownView,
+		from: number,
+		to: number,
+		range: Range,
+		expected: string,
+		emptyAction: EmptySubmitAction,
+	): void {
 		const rv = view.containerEl.querySelector(".markdown-reading-view");
 		if (!(rv instanceof HTMLElement)) return;
 		let margin = this.margins.get(rv);
@@ -413,7 +433,7 @@ export class ReadingMarginManager {
 			this.margins.set(rv, margin);
 			void margin.refresh();
 		}
-		margin.showDraft(from, to, range, expected);
+		margin.showDraft(from, to, range, expected, emptyAction);
 	}
 
 	destroy(): void {

@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import type { App, TFile } from "obsidian";
 import { Result } from "better-result";
 import { insertCommentInFile, processFileEdit } from "../src/editor/commands";
-import { parseComments } from "../src/format/parse";
+import { applyChanges, computeAddComment } from "../src/editor/edits";
+import { anchorRange, parseComments } from "../src/format/parse";
 
 // A minimal `app.vault.process` stub: run the mutator over an in-memory string and
 // keep the result. Mirrors how Obsidian applies the transform and returns the text.
@@ -38,6 +39,48 @@ describe("insertCommentInFile", () => {
 		expect(comments[0]!.quote).toBe("ship on Friday");
 		expect(comments[0]!.thread[0]!.text).toBe("Thursday?");
 		expect(comments[0]!.thread[0]!.author).toBe("kyle");
+	});
+
+	it("writes nothing for a blank submit when empty comments are disabled", async () => {
+		let doc = "We should ship on Friday regardless.\n";
+		const original = doc;
+		const from = doc.indexOf("ship on Friday");
+		const to = from + "ship on Friday".length;
+		const app = fakeApp(
+			() => doc,
+			(s) => (doc = s),
+		);
+
+		const result = await insertCommentInFile(app, {} as TFile, from, to, "", "kyle", undefined, false);
+
+		expect(result.isOk()).toBe(true);
+		expect(result.unwrap()).toBe("");
+		expect(doc).toBe(original);
+	});
+
+	it("removes an existing highlight even when empty comments are disabled", async () => {
+		const original = "We should ship on Friday regardless.\n";
+		const originalFrom = original.indexOf("ship on Friday");
+		let doc = applyChanges(
+			original,
+			computeAddComment(original, originalFrom, originalFrom + "ship on Friday".length, {
+				id: "h1",
+				createdAt: "t",
+				author: "kyle",
+				text: "",
+			}).unwrap(),
+		);
+		const range = anchorRange(parseComments(doc)[0])!;
+		const app = fakeApp(
+			() => doc,
+			(s) => (doc = s),
+		);
+
+		const result = await insertCommentInFile(app, {} as TFile, range.from, range.to, "", "kyle", undefined, false);
+
+		expect(result.isOk()).toBe(true);
+		expect(result.unwrap()).toBe("h1");
+		expect(doc).toBe(original);
 	});
 
 	it("errs and writes nothing for an empty range", async () => {

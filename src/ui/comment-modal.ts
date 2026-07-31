@@ -1,4 +1,5 @@
 import { App, Modal, Setting } from "obsidian";
+import { draftPlaceholder, EmptySubmitAction, emptySubmitLabel } from "./draft-behavior";
 
 /**
  * A plain text-entry dialog for composing a new comment. Used where the inline
@@ -13,7 +14,7 @@ export class CommentModal extends Modal {
 		app: App,
 		private quote: string,
 		private onSubmit: (text: string) => void,
-		private allowEmpty = false,
+		private emptyAction: EmptySubmitAction = "none",
 	) {
 		super(app);
 	}
@@ -29,7 +30,7 @@ export class CommentModal extends Modal {
 			cls: "dc-modal-input",
 			attr: {
 				rows: "4",
-				placeholder: this.allowEmpty ? "Write a comment, or leave empty to highlight…" : "Write a comment…",
+				placeholder: draftPlaceholder(this.emptyAction),
 			},
 		});
 		input.addEventListener("input", () => {
@@ -49,7 +50,8 @@ export class CommentModal extends Modal {
 			.addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()))
 			.addButton((b) => {
 				const updateLabel = () => {
-					b.setButtonText(this.allowEmpty && !this.value.trim() ? "Highlight" : "Comment");
+					const emptyLabel = emptySubmitLabel(this.emptyAction);
+					b.setButtonText(!this.value.trim() && this.emptyAction !== "none" ? emptyLabel : "Comment");
 				};
 				input.addEventListener("input", updateLabel);
 				updateLabel();
@@ -60,7 +62,7 @@ export class CommentModal extends Modal {
 	private submit(): void {
 		const text = this.value.trim();
 		this.close();
-		if (text || this.allowEmpty) this.onSubmit(text);
+		if (text || this.emptyAction !== "none") this.onSubmit(text);
 	}
 
 	onClose(): void {

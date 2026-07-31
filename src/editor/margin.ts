@@ -18,6 +18,7 @@ import {
 	setResolved,
 	toggleReaction,
 } from "./commands";
+import { findHighlightAtSelection } from "./edits";
 import { closestSpanId, spanSelector } from "../util/css";
 import { stackTops } from "../ui/stack";
 import { CARD_GAP, FLASH_MS } from "../ui/constants";
@@ -264,15 +265,29 @@ class MarginView implements PluginValue {
 
 	private buildDraftEl(): HTMLElement {
 		const cfg = this.view.state.facet(commentConfig);
+		const initialDraft = this.view.state.field(draftField, false);
+		const initialHighlight = initialDraft
+			? findHighlightAtSelection(this.view.state.doc.toString(), initialDraft.from, initialDraft.to)
+			: null;
 		// Editor path: offsets come live from draftField (mapped through every edit),
 		// so no stale-offset verification is needed here.
 		const { el } = buildDraftComposer({
-			allowEmpty: cfg.allowEmptyComments(),
+			emptyAction: initialHighlight ? "remove" : cfg.allowEmptyComments() ? "highlight" : "none",
 			onCancel: () => this.view.dispatch({ effects: clearDraft.of(null) }),
 			onSubmit: (text) => {
 				const draft = this.view.state.field(draftField, false);
-				if ((text || cfg.allowEmptyComments()) && draft) {
-					notifyErr(addComment(this.view, draft.from, draft.to, text, this.cb.getAuthor()));
+				if (draft) {
+					notifyErr(
+						addComment(
+							this.view,
+							draft.from,
+							draft.to,
+							text,
+							this.cb.getAuthor(),
+							undefined,
+							cfg.allowEmptyComments(),
+						),
+					);
 				}
 				this.view.dispatch({ effects: clearDraft.of(null) });
 			},
