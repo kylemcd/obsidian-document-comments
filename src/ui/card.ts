@@ -50,6 +50,7 @@ export class Card {
 	private comment: ParsedComment;
 	private open = false;
 	private editingIndex = -1;
+	private addingFirstEntry = false;
 	/** In-progress text of the entry editor, so an external update mid-edit
 	 *  (a synced reply, a reaction toggled elsewhere) doesn't discard it. */
 	private editDraft = "";
@@ -109,6 +110,7 @@ export class Card {
 		const editingEmpty = this.editingIndex === 0 && comment.thread.length === 0;
 		if (!editingEmpty && this.editingIndex >= comment.thread.length) {
 			this.editingIndex = -1;
+			this.addingFirstEntry = false;
 			this.editDraft = "";
 		}
 		this.render();
@@ -411,7 +413,7 @@ export class Card {
 			this.cancelEdit();
 			return;
 		}
-		const addsFirstEntry = this.comment.thread.length === 0;
+		const addsFirstEntry = this.addingFirstEntry;
 		if (addsFirstEntry) {
 			if (this.savingFirstEntry) return;
 			this.editDraft = value;
@@ -435,6 +437,7 @@ export class Card {
 
 	private finishEdit(): void {
 		this.editingIndex = -1;
+		this.addingFirstEntry = false;
 		this.editDraft = "";
 		this.render();
 		this.cb.onResize();
@@ -442,6 +445,7 @@ export class Card {
 
 	private cancelEdit(): void {
 		this.editingIndex = -1;
+		this.addingFirstEntry = false;
 		this.editDraft = "";
 		this.render();
 		this.cb.onResize();
@@ -449,6 +453,7 @@ export class Card {
 
 	private startEdit(index: number): void {
 		this.editingIndex = index;
+		this.addingFirstEntry = index === 0 && this.comment.thread.length === 0;
 		this.editDraft = this.comment.thread[index]?.text ?? "";
 		this.render();
 		this.cb.onResize();

@@ -151,6 +151,24 @@ describe("empty comment card", () => {
 		card.destroy();
 	});
 
+	test("appends the draft when another first reply arrives during editing", () => {
+		const cb = callbacks();
+		const card = new Card(emptyComment(), cb, { sourcePath: () => "note.md" });
+		card.el.querySelector<HTMLElement>(".dc-entry__text--empty")?.click();
+
+		const editor = card.el.querySelector<HTMLTextAreaElement>(".dc-field--edit textarea");
+		if (editor) {
+			editor.value = "Local reply";
+			editor.dispatchEvent(new Event("input"));
+		}
+		card.update(commentWithText());
+		card.el.querySelector<HTMLButtonElement>("button[aria-label='Save']")?.click();
+
+		expect(cb.reply).toHaveBeenCalledWith("h1", "Local reply");
+		expect(cb.editEntry).not.toHaveBeenCalled();
+		card.destroy();
+	});
+
 	test("keeps a reply draft when saving fails", async () => {
 		const cb = callbacks();
 		cb.reply = vi.fn(async () => Result.err("write failed"));
