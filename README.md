@@ -14,7 +14,7 @@ The plugin stores each comment inside its Markdown file as an HTML comment. Othe
 
 - Store comments inside Markdown files without a separate database.
 - Add comments to prose, inline code, tables, and selected lines in fenced code blocks.
-- Save selected text as a highlight without a comment.
+- Save an empty comment and highlight its selected text.
 - Reply, resolve, reopen, edit, delete, or react to a comment.
 - Write Markdown in comments, including links, lists, bold text, and code spans.
 - Use the same notes on desktop and mobile.
@@ -44,7 +44,7 @@ Markdown renderers hide these HTML comments. Tools that read the source file can
 
 Comments on fenced code blocks use the same format. The comment block also stores the selected line range and exact code text.
 
-A highlight without a comment uses the same markers. Its comment block has no thread lines:
+An empty comment uses the same markers. Its comment block has no thread lines:
 
 ```markdown
 We should <!--c:h7k2-->ship on Friday<!--/c:h7k2--> regardless of the QA timeline.
@@ -111,7 +111,7 @@ Then enable **Document Comments** in Community plugins.
 
 Press Shift+Enter to add a line break. On mobile, use the dialog to save the comment.
 
-### Add a highlight without a comment
+### Add an empty comment
 
 Document Comments disables empty comments by default.
 
@@ -119,11 +119,13 @@ Document Comments disables empty comments by default.
 2. Enable **Allow empty comments**.
 3. Select text and run **Add comment**.
 4. Leave the comment field empty.
-5. Press Enter on desktop, or select **Highlight** on mobile.
+5. Press Enter on desktop, or select **Empty comment** on mobile.
 
-The plugin highlights the selected text without a comment card or sidebar entry.
+The plugin highlights the selected text and shows a comment card. The card shows **Empty** until you add text.
 
-To manage a highlight, select all its highlighted text and run **Add comment** again. Write text to convert it into a comment. Submit the empty field to remove the highlight.
+Select **Empty** to add the first comment text. Use the card menu to delete the empty comment.
+
+You can also select all the highlighted text and run **Add comment** again. Write text to add the first comment. Submit the empty field to delete it.
 
 When **Allow empty comments** is off, an empty field closes without a change.
 

@@ -260,6 +260,29 @@ body {
 	overflow-wrap: anywhere;
 	color: var(--text-normal);
 }
+.dc-entry__text--empty {
+	display: block;
+	width: 100%;
+	height: auto;
+	min-height: 0;
+	margin: 0;
+	padding: 0;
+	border: none;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-faint);
+	font: inherit;
+	line-height: inherit;
+	text-align: left;
+	cursor: text;
+}
+.dc-entry__text--empty:hover,
+.dc-entry__text--empty:focus-visible {
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-muted);
+}
 /* Comment text is Markdown-rendered: tighten block spacing so a one-line comment
    reads like plain text, and keep code / lists / quotes legible inside the card. */
 .dc-entry__text > :first-child {

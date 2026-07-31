@@ -1,6 +1,6 @@
 import { App, Component, MarkdownRenderer, Menu, setIcon } from "obsidian";
 import { ParsedComment } from "../format/types";
-import { cardSignature, formatRelativeTime } from "./card-format";
+import { CardEntry, cardEntries, cardSignature, formatRelativeTime } from "./card-format";
 
 const QUICK_EMOJI = ["👍", "❤️", "😄", "🎉", "😮", "👀", "🙏"];
 
@@ -99,7 +99,8 @@ export class Card {
 		// Keep an open entry editor across external updates; commit/cancel clear
 		// editingIndex first, so a landed edit still collapses the editor. Only drop
 		// it if the edited entry no longer exists (e.g. deleted elsewhere).
-		if (this.editingIndex >= comment.thread.length) {
+		const editingEmpty = this.editingIndex === 0 && comment.thread.length === 0;
+		if (!editingEmpty && this.editingIndex >= comment.thread.length) {
 			this.editingIndex = -1;
 			this.editDraft = "";
 		}
@@ -170,8 +171,8 @@ export class Card {
 		this.clipEl = clip;
 		const thread = clip.createDiv("dc-thread");
 		this.threadEl = thread;
-		c.thread.forEach((entry, i) => this.renderEntry(thread, entry, i));
-		if (this.open) this.renderComposer(clip);
+		cardEntries(c).forEach((entry, i) => this.renderEntry(thread, entry, i));
+		if (this.open && this.editingIndex < 0) this.renderComposer(clip);
 
 		this.footEl = this.el.createDiv("dc-card-foot");
 		this.applyClampState();
@@ -246,11 +247,7 @@ export class Card {
 		});
 	}
 
-	private renderEntry(
-		parent: HTMLElement,
-		entry: { author: string; timestamp?: string; text: string },
-		i: number,
-	): void {
+	private renderEntry(parent: HTMLElement, entry: CardEntry, i: number): void {
 		const row = parent.createDiv("dc-entry");
 
 		const bar = row.createDiv("dc-entry__bar");
@@ -270,6 +267,16 @@ export class Card {
 
 		if (this.editingIndex === i) {
 			this.renderEditor(row, i);
+		} else if (entry.empty) {
+			const placeholder = row.createEl("button", {
+				cls: "dc-entry__text dc-entry__text--empty",
+				text: entry.text,
+				attr: { "aria-label": "Edit empty comment" },
+			});
+			placeholder.addEventListener("click", (event) => {
+				event.stopPropagation();
+				this.startEdit(i);
+			});
 		} else {
 			this.renderText(row.createDiv("dc-entry__text"), entry.text);
 		}
@@ -341,7 +348,7 @@ export class Card {
 		const box = parent.createDiv("dc-field dc-field--composer");
 		const ta = box.createEl("textarea", {
 			cls: "dc-field__input",
-			attr: { placeholder: "Reply…", rows: "1" },
+			attr: { placeholder: this.comment.thread.length === 0 ? "Comment…" : "Reply…", rows: "1" },
 		});
 		ta.value = this.draft;
 		autogrow(ta);
@@ -376,10 +383,12 @@ export class Card {
 		}
 		// Collapse the editor before the write lands so the incoming external
 		// update() doesn't reopen it (and doesn't clobber a concurrent edit elsewhere).
+		const addsFirstEntry = this.comment.thread.length === 0;
 		this.editingIndex = -1;
 		this.editDraft = "";
 		this.render();
-		this.cb.editEntry(this.id, index, text);
+		if (addsFirstEntry) this.cb.reply(this.id, text);
+		else this.cb.editEntry(this.id, index, text);
 		this.cb.onResize();
 	}
 

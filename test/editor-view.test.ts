@@ -329,7 +329,7 @@ describe("editor extensions open every note without crashing", () => {
 				"",
 			].join("\n"),
 		);
-		expect(withHighlight).not.toContain("dc-has"); // a highlight has no margin card
+		expect(withHighlight).toContain("dc-has"); // an empty comment keeps its margin card
 		expect(withHighlight).toContain("dc-highlights");
 
 		const orphanOnly = open(

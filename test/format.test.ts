@@ -6,7 +6,7 @@ import {
 	isHighlight,
 	isOrphan,
 	existingIds,
-	hasCommentThread,
+	hasCommentCard,
 	hasMarginAnchor,
 } from "../src/format/parse";
 import { serializeBody, openMarker, closeMarker } from "../src/format/serialize";
@@ -59,13 +59,16 @@ describe("parseComments", () => {
 		const c = parseComments(doc)[0];
 		expect(isAnchored(c)).toBe(false);
 		expect(isOrphan(c)).toBe(true);
+		expect(hasCommentCard(c)).toBe(true);
 		expect(hasMarginAnchor(c)).toBe(false);
 	});
 
-	it("only treats a complete anchored thread as a margin card", () => {
+	it("only treats a complete anchored body as a margin card", () => {
 		const anchored = parseComments(CANONICAL)[0];
 		const markerOnly = parseComments(openMarker("missing") + "text" + closeMarker("missing"))[0];
+		expect(hasCommentCard(anchored)).toBe(true);
 		expect(hasMarginAnchor(anchored)).toBe(true);
+		expect(hasCommentCard(markerOnly)).toBe(false);
 		expect(hasMarginAnchor(markerOnly)).toBe(false);
 	});
 
@@ -75,8 +78,8 @@ describe("parseComments", () => {
 
 		expect(isAnchored(comment)).toBe(true);
 		expect(isHighlight(comment)).toBe(true);
-		expect(hasCommentThread(comment)).toBe(false);
-		expect(hasMarginAnchor(comment)).toBe(false);
+		expect(hasCommentCard(comment)).toBe(true);
+		expect(hasMarginAnchor(comment)).toBe(true);
 	});
 
 	it("handles multiple and overlapping comments", () => {

@@ -96,15 +96,15 @@ export const isHighlight = (c: ParsedComment): boolean => {
 	return !!c.body && c.thread.length === 0;
 };
 
-/** Comment cards require at least one thread entry. */
-export const hasCommentThread = (c: ParsedComment): boolean => {
-	return !!c.body && c.thread.length > 0;
+/** A comment card requires a body. Its thread can be empty. */
+export const hasCommentCard = (c: ParsedComment): boolean => {
+	return !!c.body;
 };
 
-/** A floating margin card needs a thread plus a valid text anchor.
+/** A floating margin card needs a body plus a valid text anchor.
  * Orphaned threads remain available in the sidebar, where no anchor is needed. */
 export const hasMarginAnchor = (c: ParsedComment): boolean => {
-	return hasCommentThread(c) && isAnchored(c);
+	return hasCommentCard(c) && isAnchored(c);
 };
 
 /** The highlighted text range (between the markers), or null if not anchored. */

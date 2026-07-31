@@ -46,7 +46,7 @@ bob (2026-01-15T11:00:00.000Z): They confirmed Thursday.
   the line(s) right after the block (paragraph, heading, list item) that contains
   the anchor.
 
-A body block with no thread lines represents a highlight without a comment.
+A body block with no thread lines represents an empty comment.
 
 All three use the **same ID**. That is how they are linked.
 
@@ -108,7 +108,7 @@ agent (2026-01-15T14:30:00.000Z): this needs a source
 -->
 ```
 
-## Adding a highlight without a comment
+## Adding an empty comment
 
 Use the same anchor markers and body block as a comment. Do not add a thread line:
 
@@ -118,7 +118,7 @@ Our roadmap commits us to <!--c:q4m2-->net zero by 2030<!--/c:q4m2--> across all
 -->
 ```
 
-The plugin shows the highlight without a comment card or comment-list entry.
+The plugin highlights the selected text and shows an editable **Empty** card.
 
 ## Replying, resolving, and deleting
 
@@ -140,7 +140,7 @@ Each block's header gives the author/time/status, the `quote:` (or the text
 between that ID's markers) tells you what it's attached to, and the lines after
 the header are the thread. A body whose ID has no matching `<!--c:ID-->` /
 `<!--/c:ID-->` pair is an **orphan** — its anchored text was edited away.
-A body with matching markers but no thread lines is a **highlight**.
+A body with matching markers but no thread lines is an **empty comment**.
 
 ## Pitfalls that silently break comments
 

@@ -15,4 +15,9 @@ describe("draft behavior", () => {
 		expect(draftPlaceholder("remove")).toContain("remove the highlight");
 		expect(emptySubmitLabel("remove")).toBe("Remove highlight");
 	});
+
+	test("labels a new blank submission as an empty comment", () => {
+		expect(draftPlaceholder("highlight")).toBe("Write a comment, or leave empty…");
+		expect(emptySubmitLabel("highlight")).toBe("Empty comment");
+	});
 });

@@ -8,7 +8,7 @@ export type DocCommentsSettings = {
 	showComments: boolean;
 	/** Show resolved comments in the margin. */
 	showResolved: boolean;
-	/** Allow a blank comment to persist as a highlight without a card. */
+	/** Allow a blank comment to persist with an empty comment card. */
 	allowEmptyComments: boolean;
 };
 
@@ -59,7 +59,7 @@ const SETTING_META: ReadonlyArray<{
 	{
 		key: "allowEmptyComments",
 		name: "Allow empty comments",
-		desc: "Save selected text as a highlight when the comment text is empty.",
+		desc: "Save an empty comment and highlight its selected text.",
 		aliases: ["empty comments", "comment-free highlights"],
 		control: { type: "toggle" },
 	},
