@@ -4,6 +4,8 @@ export type DraftComposerHandlers = {
 	/** Called with the trimmed text on Enter or the confirm button. */
 	onSubmit: (text: string) => void;
 	onCancel: () => void;
+	/** Allow the confirm action to submit an empty comment as a highlight. */
+	allowEmpty?: boolean;
 };
 
 /**
@@ -18,10 +20,16 @@ export const buildDraftComposer = (
 	const box = el.createDiv("dc-field dc-field--composer");
 	const textarea = box.createEl("textarea", {
 		cls: "dc-field__input",
-		attr: { placeholder: "Write a comment…", rows: "2" },
+		attr: {
+			placeholder: handlers.allowEmpty ? "Write a comment, or leave empty to highlight…" : "Write a comment…",
+			rows: "2",
+		},
 	});
 	const actions = box.createDiv("dc-field__actions");
-	const submit = () => handlers.onSubmit(textarea.value.trim());
+	const submit = () => {
+		const text = textarea.value.trim();
+		if (text || handlers.allowEmpty) handlers.onSubmit(text);
+	};
 
 	const cancelBtn = actions.createEl("button", {
 		cls: "dc-round dc-round--cancel",
@@ -35,12 +43,15 @@ export const buildDraftComposer = (
 
 	const confirmBtn = actions.createEl("button", {
 		cls: "dc-round dc-round--confirm",
-		attr: { "aria-label": "Comment" },
+		attr: { "aria-label": handlers.allowEmpty ? "Highlight" : "Comment" },
 	});
 	setIcon(confirmBtn, "check");
 	confirmBtn.addEventListener("click", (e) => {
 		e.stopPropagation();
 		submit();
+	});
+	textarea.addEventListener("input", () => {
+		confirmBtn.setAttribute("aria-label", handlers.allowEmpty && !textarea.value.trim() ? "Highlight" : "Comment");
 	});
 
 	textarea.addEventListener("keydown", (e) => {

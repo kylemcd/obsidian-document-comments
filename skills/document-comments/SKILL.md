@@ -1,7 +1,7 @@
 ---
 name: document-comments
 description: >-
-  Read, add, reply to, resolve, or delete inline comments stored directly in a
+  Read, add, reply to, resolve, or delete inline comments and highlights stored directly in a
   Markdown file using the Document Comments format — invisible HTML-comment
   anchor markers (`<!--c:ID-->…<!--/c:ID-->`) around the commented text plus a
   matching `<!--co:ID …-->` body block holding the thread. Use this whenever a
@@ -45,6 +45,8 @@ bob (2026-01-15T11:00:00.000Z): They confirmed Thursday.
 - **Body block** `<!--co:ID …-->` holds the metadata and the thread. It goes on
   the line(s) right after the block (paragraph, heading, list item) that contains
   the anchor.
+
+A body block with no thread lines represents a highlight without a comment.
 
 All three use the **same ID**. That is how they are linked.
 
@@ -106,6 +108,18 @@ agent (2026-01-15T14:30:00.000Z): this needs a source
 -->
 ```
 
+## Adding a highlight without a comment
+
+Use the same anchor markers and body block as a comment. Do not add a thread line:
+
+```markdown
+Our roadmap commits us to <!--c:q4m2-->net zero by 2030<!--/c:q4m2--> across all operations.
+<!--co:q4m2 by:agent at:2026-01-15T14:30:00.000Z status:open quote:"net zero by 2030"
+-->
+```
+
+The plugin shows the highlight without a comment card or comment-list entry.
+
 ## Replying, resolving, and deleting
 
 These all edit the **body block**; the anchor markers stay put.
@@ -126,6 +140,7 @@ Each block's header gives the author/time/status, the `quote:` (or the text
 between that ID's markers) tells you what it's attached to, and the lines after
 the header are the thread. A body whose ID has no matching `<!--c:ID-->` /
 `<!--/c:ID-->` pair is an **orphan** — its anchored text was edited away.
+A body with matching markers but no thread lines is a **highlight**.
 
 ## Pitfalls that silently break comments
 
@@ -153,7 +168,7 @@ which reports each comment's status and flags anything malformed:
 python3 skills/document-comments/scripts/validate_comments.py path/to/file.md
 ```
 
-Every comment you created or touched should report `ANCHORED` (or `resolved`).
+Every comment you created or touched should report `ANCHORED` or `HIGHLIGHT`.
 An `ORPHAN`, `MARKERS-ONLY`, or `INVALID ID` line means a comment is broken —
 fix it before finishing. This catches the quiet failures the format is prone to.
 

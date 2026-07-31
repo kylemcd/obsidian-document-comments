@@ -49,6 +49,22 @@ describe("reading-view highlight post-processor", () => {
 		expect(span?.getAttribute("title")).toBe("me: ok");
 	});
 
+	test("wraps an empty comment as a highlight without a preview", () => {
+		const doc = [
+			"We ship on <!--c:h1-->Friday<!--/c:h1--> regardless.",
+			'<!--co:h1 by:me at:2026-01-01T00:00:00.000Z status:open quote:"Friday"',
+			"-->",
+			"",
+		].join("\n");
+		const el = document.createElement("p");
+		el.textContent = "We ship on Friday regardless.";
+		highlightPostProcessor(el, ctxFor(doc, 0, 0));
+		const span = el.querySelector(".doc-comment-span[data-cid='h1']");
+
+		expect(span?.textContent).toBe("Friday");
+		expect(span?.hasAttribute("title")).toBe(false);
+	});
+
 	test("wraps a comment anchor that lands inside a table cell", () => {
 		const doc = [
 			"| Day | Note |",

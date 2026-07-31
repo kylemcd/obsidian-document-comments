@@ -2,7 +2,7 @@ import { App, Debouncer, ItemView, MarkdownView, Notice, TFile, WorkspaceLeaf, d
 import { EditorView } from "@codemirror/view";
 import { Result } from "better-result";
 import { ParsedComment } from "../format/types";
-import { anchorRange, parseComments } from "../format/parse";
+import { anchorRange, hasCommentThread, parseComments } from "../format/parse";
 import { Card, CardCallbacks } from "./card";
 import { cardSignature } from "./card-format";
 import {
@@ -197,7 +197,7 @@ export class CommentsSidebarView extends ItemView {
 			return;
 		}
 
-		const all = parseComments(data).filter((c) => c.body);
+		const all = parseComments(data).filter(hasCommentThread);
 		const open = all.filter((c) => c.status !== "resolved");
 		const resolved = all.filter((c) => c.status === "resolved");
 		const shown = this.filter === "open" ? open : this.filter === "resolved" ? resolved : all;

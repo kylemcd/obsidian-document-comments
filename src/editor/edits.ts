@@ -49,7 +49,7 @@ export const computeAddComment = (
 		createdAt: input.createdAt,
 		status: "open",
 		quote,
-		thread: [{ author: input.author, timestamp: input.createdAt, text: input.text }],
+		thread: input.text ? [{ author: input.author, timestamp: input.createdAt, text: input.text }] : [],
 		reactions: [],
 	};
 	const paraEnd = blockEnd(doc, to);
@@ -76,7 +76,7 @@ const computeAddCodeComment = (
 		status: "open",
 		quote: target.quote,
 		codeLines: target.codeLines,
-		thread: [{ author: input.author, timestamp: input.createdAt, text: input.text }],
+		thread: input.text ? [{ author: input.author, timestamp: input.createdAt, text: input.text }] : [],
 		reactions: [],
 	};
 	return Result.ok([

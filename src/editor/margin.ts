@@ -263,13 +263,17 @@ class MarginView implements PluginValue {
 	}
 
 	private buildDraftEl(): HTMLElement {
+		const cfg = this.view.state.facet(commentConfig);
 		// Editor path: offsets come live from draftField (mapped through every edit),
 		// so no stale-offset verification is needed here.
 		const { el } = buildDraftComposer({
+			allowEmpty: cfg.allowEmptyComments(),
 			onCancel: () => this.view.dispatch({ effects: clearDraft.of(null) }),
 			onSubmit: (text) => {
 				const draft = this.view.state.field(draftField, false);
-				if (text && draft) notifyErr(addComment(this.view, draft.from, draft.to, text, this.cb.getAuthor()));
+				if ((text || cfg.allowEmptyComments()) && draft) {
+					notifyErr(addComment(this.view, draft.from, draft.to, text, this.cb.getAuthor()));
+				}
 				this.view.dispatch({ effects: clearDraft.of(null) });
 			},
 		});

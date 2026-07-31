@@ -13,6 +13,7 @@ export class CommentModal extends Modal {
 		app: App,
 		private quote: string,
 		private onSubmit: (text: string) => void,
+		private allowEmpty = false,
 	) {
 		super(app);
 	}
@@ -26,7 +27,10 @@ export class CommentModal extends Modal {
 
 		const input = contentEl.createEl("textarea", {
 			cls: "dc-modal-input",
-			attr: { rows: "4", placeholder: "Write a comment…" },
+			attr: {
+				rows: "4",
+				placeholder: this.allowEmpty ? "Write a comment, or leave empty to highlight…" : "Write a comment…",
+			},
 		});
 		input.addEventListener("input", () => {
 			this.value = input.value;
@@ -43,18 +47,20 @@ export class CommentModal extends Modal {
 
 		new Setting(contentEl)
 			.addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()))
-			.addButton((b) =>
-				b
-					.setButtonText("Comment")
-					.setCta()
-					.onClick(() => this.submit()),
-			);
+			.addButton((b) => {
+				const updateLabel = () => {
+					b.setButtonText(this.allowEmpty && !this.value.trim() ? "Highlight" : "Comment");
+				};
+				input.addEventListener("input", updateLabel);
+				updateLabel();
+				b.setCta().onClick(() => this.submit());
+			});
 	}
 
 	private submit(): void {
 		const text = this.value.trim();
 		this.close();
-		if (text) this.onSubmit(text);
+		if (text || this.allowEmpty) this.onSubmit(text);
 	}
 
 	onClose(): void {

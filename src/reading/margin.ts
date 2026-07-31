@@ -24,6 +24,7 @@ export type ReadingDeps = {
 	getAuthor: () => string;
 	showComments: () => boolean;
 	showResolved: () => boolean;
+	allowEmptyComments: () => boolean;
 	/** While the sidebar panel is open, the inline column steps aside. */
 	sidebarOpen: () => boolean;
 	/** Reveal a thread in the sidebar — used by a margin card too tall to fit. */
@@ -223,12 +224,15 @@ class ReadingMargin {
 
 	private buildDraftEl(): HTMLElement {
 		const { el } = buildDraftComposer({
+			allowEmpty: this.deps.allowEmptyComments(),
 			onCancel: () => this.clearDraft(),
 			onSubmit: (text) => {
 				const draft = this.draft;
 				const expected = this.draftText;
 				this.clearDraft();
-				if (text && draft) void this.insertComment(draft.from, draft.to, text, expected);
+				if ((text || this.deps.allowEmptyComments()) && draft) {
+					void this.insertComment(draft.from, draft.to, text, expected);
+				}
 			},
 		});
 		return el;

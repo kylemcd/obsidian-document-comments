@@ -55,6 +55,7 @@ export default class DocCommentsPlugin extends Plugin {
 				author: () => this.authorName(),
 				showComments: () => this.settings.showComments,
 				showResolved: () => this.settings.showResolved,
+				allowEmptyComments: () => this.settings.allowEmptyComments,
 				sidebarOpen: () => this.sidebarOpen,
 				openInSidebar: (id) => void this.revealComment(id),
 				isMobile: () => Platform.isMobile,
@@ -75,6 +76,7 @@ export default class DocCommentsPlugin extends Plugin {
 			getAuthor: () => this.authorName(),
 			showComments: () => this.settings.showComments,
 			showResolved: () => this.settings.showResolved,
+			allowEmptyComments: () => this.settings.allowEmptyComments,
 			sidebarOpen: () => this.sidebarOpen,
 			openInSidebar: (id) => void this.revealComment(id),
 			isMobile: () => Platform.isMobile,
@@ -176,12 +178,17 @@ export default class DocCommentsPlugin extends Plugin {
 			// No floating margin composer on mobile — collect the text in a modal,
 			// then write through the same editor path so it's a single undo step.
 			const quote = view.state.doc.sliceString(from, to);
-			new CommentModal(this.app, quote, (text) => {
-				// Pass the captured selection so a doc that shifted while the modal was
-				// open (sync, another pane) is caught instead of mis-anchoring.
-				const result = addComment(view, from, to, text, this.authorName(), quote);
-				if (result.isErr()) new Notice(`Couldn't add the comment: ${result.error}`);
-			}).open();
+			new CommentModal(
+				this.app,
+				quote,
+				(text) => {
+					// Pass the captured selection so a doc that shifted while the modal was
+					// open (sync, another pane) is caught instead of mis-anchoring.
+					const result = addComment(view, from, to, text, this.authorName(), quote);
+					if (result.isErr()) new Notice(`Couldn't add the comment: ${result.error}`);
+				},
+				this.settings.allowEmptyComments,
+			).open();
 			return;
 		}
 		// Show a draft composer card in the margin (Notion-style) instead of a modal.
@@ -224,9 +231,14 @@ export default class DocCommentsPlugin extends Plugin {
 				new Notice("No file is open.");
 				return;
 			}
-			new CommentModal(this.app, selected, (text) => {
-				void this.insertReadingComment(file, from, to, text, selected);
-			}).open();
+			new CommentModal(
+				this.app,
+				selected,
+				(text) => {
+					void this.insertReadingComment(file, from, to, text, selected);
+				},
+				this.settings.allowEmptyComments,
+			).open();
 			return;
 		}
 		// Same inline draft composer as the editor (no modal).

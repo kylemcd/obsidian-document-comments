@@ -13,6 +13,8 @@ export type CommentConfig = {
 	showComments: () => boolean;
 	/** Whether resolved comments still show a card in the margin. */
 	showResolved: () => boolean;
+	/** Whether the new-comment composer accepts an empty comment. */
+	allowEmptyComments: () => boolean;
 	/** Whether the comments sidebar panel is open. While it is, the inline
 	 *  floating cards step aside (comments live in the panel) but the in-text
 	 *  highlights stay. */
@@ -29,6 +31,7 @@ const DEFAULT: CommentConfig = {
 	author: () => "me",
 	showComments: () => true,
 	showResolved: () => true,
+	allowEmptyComments: () => false,
 	sidebarOpen: () => false,
 };
 

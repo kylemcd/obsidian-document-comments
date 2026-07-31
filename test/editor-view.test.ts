@@ -53,6 +53,7 @@ const config = commentConfig.of({
 	author: () => "me",
 	showComments: () => true,
 	showResolved: () => true,
+	allowEmptyComments: () => false,
 	sidebarOpen: () => false,
 });
 
@@ -320,6 +321,17 @@ describe("editor extensions open every note without crashing", () => {
 		expect(withComment).toContain("dc-has"); // a comment reserves the column
 		expect(withComment).toContain("dc-highlights");
 
+		const withHighlight = open(
+			[
+				"Ship on <!--c:hhh-->Friday<!--/c:hhh--> regardless.",
+				'<!--co:hhh by:me at:2026-06-17T00:00:00.000Z status:open quote:"Friday"',
+				"-->",
+				"",
+			].join("\n"),
+		);
+		expect(withHighlight).not.toContain("dc-has"); // a highlight has no margin card
+		expect(withHighlight).toContain("dc-highlights");
+
 		const orphanOnly = open(
 			'Text without an anchor.\n<!--co:orphan status:open quote:"old text"\nme: dangling\n-->',
 		);
@@ -334,6 +346,7 @@ describe("editor extensions open every note without crashing", () => {
 			author: () => "me",
 			showComments: () => true,
 			showResolved: () => false,
+			allowEmptyComments: () => false,
 			sidebarOpen: () => false,
 		});
 		const openWith = (doc: string, cfg: typeof hideResolved): string => {

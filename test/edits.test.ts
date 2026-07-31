@@ -42,6 +42,23 @@ describe("computeAddComment", () => {
 		expect(out).toContain("QA timeline.\n<!--co:k3f9");
 	});
 
+	it("creates a highlight when the comment text is empty", () => {
+		const out = applyChanges(
+			DOC,
+			computeAddComment(DOC, FROM, TO, {
+				id: "h1",
+				createdAt: "2026-06-17T10:00:00.000Z",
+				author: "kyle",
+				text: "",
+			}).unwrap(),
+		);
+		const comment = parseComments(out)[0];
+
+		expect(comment.thread).toEqual([]);
+		expect(out.slice(anchorRange(comment)!.from, anchorRange(comment)!.to)).toBe("ship on Friday");
+		expect(out).toContain('<!--co:h1 by:kyle at:2026-06-17T10:00:00.000Z status:open quote:"ship on Friday"\n-->');
+	});
+
 	it("keeps the prose intact once markup is stripped", () => {
 		const out = add();
 		expect(stripComments(out)).toContain("We should ship on Friday regardless of the QA timeline.");
@@ -146,6 +163,24 @@ describe("computeAddComment in code blocks", () => {
 		});
 		expect(result.isOk()).toBe(true);
 		expect(parseComments(applyChanges(doc, result.unwrap()))[0]!.codeLines).toBeUndefined();
+	});
+
+	it("creates a code highlight when the comment text is empty", () => {
+		const doc = "```js\nconst spinner = 1;\n```";
+		const from = doc.indexOf("const spinner");
+		const out = applyChanges(
+			doc,
+			computeAddComment(doc, from, from + "const spinner = 1;".length, {
+				id: "h2",
+				createdAt: "t",
+				author: "a",
+				text: "",
+			}).unwrap(),
+		);
+		const comment = parseComments(out)[0];
+
+		expect(comment.thread).toEqual([]);
+		expect(comment.codeLines).toEqual({ from: 0, to: 0 });
 	});
 });
 

@@ -81,7 +81,7 @@ def analyze(doc):
     for rid, m in scan(CLOSE_LOOSE, "close"):
         closes.setdefault(rid, m.start())
     for rid, m in scan(BODY_LOOSE, "body"):
-        bodies.setdefault(rid, (m.group(2) or "", m.start()))
+        bodies.setdefault(rid, (m.group(2) or "", m.group(3) or "", m.start()))
 
     ids = []
     for i in list(opens) + list(closes) + list(bodies):
@@ -94,7 +94,7 @@ def analyze(doc):
         has_body = cid in bodies
         anchored = has_open and has_close and opens[cid] <= closes[cid]
         if anchored and has_body:
-            state = "ANCHORED"
+            state = "HIGHLIGHT" if not bodies[cid][1].strip() else "ANCHORED"
         elif has_body:
             state = "ORPHAN"
         else:

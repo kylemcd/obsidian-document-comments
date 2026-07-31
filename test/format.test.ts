@@ -1,5 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { parseComments, anchorRange, isAnchored, isOrphan, existingIds, hasMarginAnchor } from "../src/format/parse";
+import {
+	parseComments,
+	anchorRange,
+	isAnchored,
+	isHighlight,
+	isOrphan,
+	existingIds,
+	hasCommentThread,
+	hasMarginAnchor,
+} from "../src/format/parse";
 import { serializeBody, openMarker, closeMarker } from "../src/format/serialize";
 import { generateId } from "../src/format/ids";
 import { CommentData } from "../src/format/types";
@@ -58,6 +67,16 @@ describe("parseComments", () => {
 		const markerOnly = parseComments(openMarker("missing") + "text" + closeMarker("missing"))[0];
 		expect(hasMarginAnchor(anchored)).toBe(true);
 		expect(hasMarginAnchor(markerOnly)).toBe(false);
+	});
+
+	it("treats an anchored body without a thread as a highlight", () => {
+		const body = serializeBody("h1", { status: "open", quote: "text", thread: [] });
+		const comment = parseComments(openMarker("h1") + "text" + closeMarker("h1") + "\n" + body)[0];
+
+		expect(isAnchored(comment)).toBe(true);
+		expect(isHighlight(comment)).toBe(true);
+		expect(hasCommentThread(comment)).toBe(false);
+		expect(hasMarginAnchor(comment)).toBe(false);
 	});
 
 	it("handles multiple and overlapping comments", () => {
