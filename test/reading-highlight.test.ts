@@ -65,6 +65,38 @@ describe("reading-view highlight post-processor", () => {
 		expect(span?.hasAttribute("title")).toBe(false);
 	});
 
+	test("wraps an empty inline-code comment inside the rendered code element", () => {
+		const doc = [
+			"Use <!--c:i1-->`Spinner`<!--/c:i1--> here.",
+			'<!--co:i1 by:me at:2026-01-01T00:00:00.000Z status:open quote:"`Spinner`"',
+			"-->",
+			"",
+		].join("\n");
+		const el = document.createElement("p");
+		el.innerHTML = "Use <code>Spinner</code> here.";
+
+		highlightPostProcessor(el, ctxFor(doc, 0, 0));
+		const span = el.querySelector("code > .doc-comment-span[data-cid='i1']");
+
+		expect(span?.textContent).toBe("Spinner");
+		expect(span?.hasAttribute("title")).toBe(false);
+	});
+
+	test("supports a multi-backtick inline-code highlight", () => {
+		const doc = [
+			"Use <!--c:i2-->``Spinner ` icon``<!--/c:i2--> here.",
+			'<!--co:i2 by:me at:2026-01-01T00:00:00.000Z status:open quote:"``Spinner ` icon``"',
+			"-->",
+			"",
+		].join("\n");
+		const el = document.createElement("p");
+		el.innerHTML = "Use <code>Spinner ` icon</code> here.";
+
+		highlightPostProcessor(el, ctxFor(doc, 0, 0));
+
+		expect(el.querySelector("code > .doc-comment-span[data-cid='i2']")?.textContent).toBe("Spinner ` icon");
+	});
+
 	test("wraps a comment anchor that lands inside a table cell", () => {
 		const doc = [
 			"| Day | Note |",

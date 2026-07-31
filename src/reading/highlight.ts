@@ -82,8 +82,30 @@ export const highlightPostProcessor = (el: HTMLElement, ctx: MarkdownPostProcess
 		// Only act on comments whose anchor starts within this rendered section.
 		if (range.from < sectionFrom || range.from >= sectionTo) continue;
 		const quote = text.slice(range.from, range.to);
-		if (quote.trim()) wrapFirstMatch(el, quote, c.id, c.status === "resolved", commentPreview(c));
+		if (!quote.trim()) continue;
+		const preview = commentPreview(c);
+		const codeText = inlineCodeText(quote);
+		if (codeText !== null) {
+			for (const code of el.querySelectorAll<HTMLElement>("code")) {
+				if (code.closest("pre")) continue;
+				if (wrapFirstMatch(code, codeText, c.id, c.status === "resolved", preview)) break;
+			}
+			continue;
+		}
+		wrapFirstMatch(el, quote, c.id, c.status === "resolved", preview);
 	}
+};
+
+/** Convert one complete Markdown code span to the text that Reading view renders. */
+const inlineCodeText = (source: string): string | null => {
+	const delimiter = /^`+/.exec(source)?.[0];
+	if (!delimiter || source.length <= delimiter.length * 2 || !source.endsWith(delimiter)) return null;
+	let content = source.slice(delimiter.length, -delimiter.length).replace(/\r?\n/g, " ");
+	// A matching delimiter inside the content means this is not one complete span.
+	if ([...content.matchAll(/`+/g)].some((match) => match[0].length === delimiter.length)) return null;
+	// CommonMark removes one boundary space when the content is not all spaces.
+	if (content.startsWith(" ") && content.endsWith(" ") && content.trim()) content = content.slice(1, -1);
+	return content;
 };
 
 const offsetOfLine = (lines: string[], lineNo: number): number => {
