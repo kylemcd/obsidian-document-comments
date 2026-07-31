@@ -273,15 +273,18 @@ body {
 	box-shadow: none;
 	color: var(--text-faint);
 	font: inherit;
+	font-style: italic;
 	line-height: inherit;
 	text-align: left;
 	cursor: text;
 }
 .dc-entry__text--empty:hover,
-.dc-entry__text--empty:focus-visible {
+.dc-entry__text--empty:focus,
+.dc-entry__text--empty:focus-visible,
+.dc-entry__text--empty:active {
 	background: transparent;
 	box-shadow: none;
-	color: var(--text-muted);
+	color: var(--text-faint);
 }
 /* Comment text is Markdown-rendered: tighten block spacing so a one-line comment
    reads like plain text, and keep code / lists / quotes legible inside the card. */

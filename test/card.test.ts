@@ -82,7 +82,7 @@ describe("empty comment card", () => {
 	test("shows an Empty placeholder and saves its first text as a reply", () => {
 		const cb = callbacks();
 		const card = new Card(emptyComment(), cb, { sourcePath: () => "note.md" });
-		const placeholder = card.el.querySelector<HTMLButtonElement>(".dc-entry__text--empty");
+		const placeholder = card.el.querySelector<HTMLElement>(".dc-entry__text--empty");
 
 		expect(placeholder?.textContent).toBe("Empty");
 		expect(card.el.querySelector(".dc-entry__author")?.textContent).toBe("kyle");
@@ -98,12 +98,18 @@ describe("empty comment card", () => {
 		card.destroy();
 	});
 
-	test("uses a comment composer before the first thread entry exists", () => {
+	test("opens and focuses the editor when the empty card is clicked", async () => {
 		const card = new Card(emptyComment(), callbacks(), { sourcePath: () => "note.md" });
+		document.body.appendChild(card.el);
 		card.el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
 
-		expect(card.el.querySelector(".dc-field--composer textarea")?.getAttribute("placeholder")).toBe("Comment…");
+		const editor = card.el.querySelector<HTMLTextAreaElement>(".dc-field--edit textarea");
+		expect(editor).not.toBeNull();
+		expect(card.el.querySelector(".dc-field--composer")).toBeNull();
+		await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+		expect(document.activeElement).toBe(editor);
 		card.destroy();
+		card.el.remove();
 	});
 
 	test("hides the comment composer while the Empty placeholder is edited", () => {

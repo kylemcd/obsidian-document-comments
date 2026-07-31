@@ -78,6 +78,10 @@ export class Card {
 			const target = e.target as HTMLElement;
 			if (target.closest("button, textarea, a, .dc-foot-btn, .dc-reaction, .dc-pop")) return;
 			this.cb.onClickAnchor(this.id);
+			if (this.comment.thread.length === 0) {
+				this.startEdit(0);
+				return;
+			}
 			// A thread too tall for the margin opens in the sidebar instead of expanding
 			// into a full-height card whose bottom you can't scroll to.
 			if (this.tooTall && this.cb.openInSidebar) this.cb.openInSidebar(this.id);
@@ -268,14 +272,21 @@ export class Card {
 		if (this.editingIndex === i) {
 			this.renderEditor(row, i);
 		} else if (entry.empty) {
-			const placeholder = row.createEl("button", {
+			const placeholder = row.createSpan({
 				cls: "dc-entry__text dc-entry__text--empty",
 				text: entry.text,
-				attr: { "aria-label": "Edit empty comment" },
+				attr: { "aria-label": "Edit empty comment", role: "button", tabindex: "0" },
 			});
-			placeholder.addEventListener("click", (event) => {
+			const edit = (event: Event) => {
 				event.stopPropagation();
 				this.startEdit(i);
+			};
+			placeholder.addEventListener("click", edit);
+			placeholder.addEventListener("keydown", (event) => {
+				if (event.key === "Enter" || event.key === " ") {
+					event.preventDefault();
+					edit(event);
+				}
 			});
 		} else {
 			this.renderText(row.createDiv("dc-entry__text"), entry.text);
