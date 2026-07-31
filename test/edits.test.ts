@@ -72,7 +72,7 @@ describe("computeAddComment", () => {
 		expect(applyChanges(DOC, changes)).toBe(DOC);
 	});
 
-	it("converts an existing highlight into a comment without nesting markers", () => {
+	it("keeps and converts an existing empty comment when new empty comments are disabled", () => {
 		const highlighted = applyChanges(
 			DOC,
 			computeAddComment(DOC, FROM, TO, {

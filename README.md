@@ -128,6 +128,7 @@ Select **Empty** to add the first comment text. Use the card menu to delete the 
 You can also select all the highlighted text and run **Add comment** again. Write text to add the first comment. Submit the empty field to delete it.
 
 When **Allow empty comments** is off, an empty field closes without a change.
+Existing empty comments remain available. You can add text or delete them.
 
 ### Add the command to the right-click menu
 

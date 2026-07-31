@@ -59,7 +59,7 @@ const SETTING_META: ReadonlyArray<{
 	{
 		key: "allowEmptyComments",
 		name: "Allow empty comments",
-		desc: "Save an empty comment and highlight its selected text.",
+		desc: "Allow new comments without text. Existing empty comments remain available when this setting is off.",
 		aliases: ["empty comments", "comment-free highlights"],
 		control: { type: "toggle" },
 	},
