@@ -13,9 +13,11 @@ import {
 	computeEditEntry,
 	computeSetResolved,
 	computeToggleReaction,
+	findHighlightAtSelection,
 } from "./edits";
 
-/** Wrap the range with anchor markers and append a body block; ok carries the new id. */
+/** Create a comment/highlight, or update an exact matching highlight. Ok carries
+ *  the affected id, or an empty string when a disabled blank submit writes nothing. */
 export const addComment = (
 	view: EditorView,
 	from: number,
@@ -23,12 +25,23 @@ export const addComment = (
 	text: string,
 	author: string,
 	expected?: string,
+	allowEmpty = true,
+	targetHighlightId?: string,
 ): Result<string, string> => {
 	const doc = view.state.doc.toString();
-	const id = generateId(existingIds(doc));
-	return computeAddComment(doc, from, to, { id, createdAt: now(), author, text, expected }).map((changes) => {
-		view.dispatch({ changes, scrollIntoView: false });
-		return id;
+	const highlight = findHighlightAtSelection(doc, from, to);
+	const id = targetHighlightId ?? highlight?.id ?? generateId(existingIds(doc));
+	return computeAddComment(doc, from, to, {
+		id,
+		createdAt: now(),
+		author,
+		text,
+		expected,
+		allowEmpty,
+		targetHighlightId,
+	}).map((changes) => {
+		if (changes.length > 0) view.dispatch({ changes, scrollIntoView: false });
+		return changes.length > 0 ? id : "";
 	});
 };
 
@@ -98,9 +111,8 @@ export const processFileEdit = async (
 	return computeError ? Result.err(computeError) : io;
 };
 
-/** Write a brand-new comment straight to a file on disk — for surfaces with no
- *  live CodeMirror view (reading view, and mobile where the margin composer is
- *  off). Ok carries the new id; Err carries a reason (I/O failure or empty range). */
+/** Create or manage a comment straight in a file for surfaces without a live
+ *  CodeMirror view. Ok carries the affected id, or an empty string for a no-op. */
 export const insertCommentInFile = async (
 	app: App,
 	file: TFile,
@@ -109,18 +121,29 @@ export const insertCommentInFile = async (
 	text: string,
 	author: string,
 	expected?: string,
+	allowEmpty = true,
+	targetHighlightId?: string,
 ): Promise<Result<string, string>> => {
 	let computed: Result<string, string> = Result.err("No change was written.");
 	const io = await Result.tryPromise({
 		try: () =>
 			app.vault.process(file, (data) => {
-				const id = generateId(existingIds(data));
-				const result = computeAddComment(data, from, to, { id, createdAt: now(), author, text, expected });
+				const highlight = findHighlightAtSelection(data, from, to);
+				const id = targetHighlightId ?? highlight?.id ?? generateId(existingIds(data));
+				const result = computeAddComment(data, from, to, {
+					id,
+					createdAt: now(),
+					author,
+					text,
+					expected,
+					allowEmpty,
+					targetHighlightId,
+				});
 				if (result.isErr()) {
 					computed = Result.err(result.error);
 					return data;
 				}
-				computed = Result.ok(id);
+				computed = Result.ok(result.value.length > 0 ? id : "");
 				return applyChanges(data, result.value);
 			}),
 		catch: errorMessage,

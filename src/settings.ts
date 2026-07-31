@@ -8,12 +8,15 @@ export type DocCommentsSettings = {
 	showComments: boolean;
 	/** Show resolved comments in the margin. */
 	showResolved: boolean;
+	/** Allow a blank comment to persist with an empty comment card. */
+	allowEmptyComments: boolean;
 };
 
 export const DEFAULT_SETTINGS: DocCommentsSettings = {
 	author: "",
 	showComments: true,
 	showResolved: false,
+	allowEmptyComments: false,
 };
 
 type DocCommentsSettingKey = keyof DocCommentsSettings;
@@ -51,6 +54,13 @@ const SETTING_META: ReadonlyArray<{
 		name: "Show resolved comments",
 		desc: "Keep resolved comments visible in the margin.",
 		aliases: ["resolved comments"],
+		control: { type: "toggle" },
+	},
+	{
+		key: "allowEmptyComments",
+		name: "Allow empty comments",
+		desc: "Allow new comments without text. Existing empty comments remain available when this setting is off.",
+		aliases: ["empty comments", "comment-free highlights"],
 		control: { type: "toggle" },
 	},
 ];
@@ -113,6 +123,7 @@ export class DocCommentsSettingTab extends PluginSettingTab {
 		if (key === "author") this.plugin.settings.author = String(value);
 		else if (key === "showComments") this.plugin.settings.showComments = Boolean(value);
 		else if (key === "showResolved") this.plugin.settings.showResolved = Boolean(value);
+		else if (key === "allowEmptyComments") this.plugin.settings.allowEmptyComments = Boolean(value);
 		await this.plugin.saveSettings();
 		if (key !== "author") this.plugin.refreshEditors();
 		if (key === "showComments") this.plugin.updateRibbon();

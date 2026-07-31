@@ -2,8 +2,9 @@ import { StateEffect, StateField } from "@codemirror/state";
 import { Decoration, DecorationSet, EditorView } from "@codemirror/view";
 import type { TextRange } from "../format/types";
 
-/** A pending "new comment" range — same shape as any other text range. */
-export type Draft = TextRange;
+/** A pending comment range. A target id keeps an existing empty comment stable
+ *  if another pane or Sync changes it before submission. */
+export type Draft = TextRange & { targetHighlightId?: string };
 
 export const setDraft = StateEffect.define<Draft>();
 export const clearDraft = StateEffect.define<null>();
@@ -26,13 +27,13 @@ export const draftField = StateField.define<Draft | null>({
 	create: () => null,
 	update(value, tr) {
 		for (const e of tr.effects) {
-			if (e.is(setDraft)) return { from: e.value.from, to: e.value.to };
+			if (e.is(setDraft)) return { ...e.value };
 			if (e.is(clearDraft)) return null;
 		}
 		if (value && tr.docChanged) {
 			const from = tr.changes.mapPos(value.from, 1);
 			const to = tr.changes.mapPos(value.to, -1);
-			return to > from ? { from, to } : null;
+			return to > from ? { ...value, from, to } : null;
 		}
 		return value;
 	},

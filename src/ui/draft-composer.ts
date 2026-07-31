@@ -1,9 +1,18 @@
 import { setIcon } from "obsidian";
+import {
+	draftPlaceholder,
+	DraftSubmitHandler,
+	EmptySubmitAction,
+	emptySubmitLabel,
+	submitDraft,
+} from "./draft-behavior";
 
 export type DraftComposerHandlers = {
 	/** Called with the trimmed text on Enter or the confirm button. */
-	onSubmit: (text: string) => void;
+	onSubmit: DraftSubmitHandler;
 	onCancel: () => void;
+	/** What an empty confirmation does. The caller applies the action. */
+	emptyAction?: EmptySubmitAction;
 };
 
 /**
@@ -13,15 +22,31 @@ export type DraftComposerHandlers = {
  */
 export const buildDraftComposer = (
 	handlers: DraftComposerHandlers,
-): { el: HTMLElement; textarea: HTMLTextAreaElement } => {
+): { el: HTMLElement; textarea: HTMLTextAreaElement; setEmptyAction: (action: EmptySubmitAction) => void } => {
 	const el = createDiv("doc-comment-card is-draft");
 	const box = el.createDiv("dc-field dc-field--composer");
+	const initialEmptyAction = handlers.emptyAction ?? "none";
+	let emptyLabel = emptySubmitLabel(initialEmptyAction);
+	let saving = false;
 	const textarea = box.createEl("textarea", {
 		cls: "dc-field__input",
-		attr: { placeholder: "Write a comment…", rows: "2" },
+		attr: { placeholder: draftPlaceholder(initialEmptyAction), rows: "2" },
 	});
 	const actions = box.createDiv("dc-field__actions");
-	const submit = () => handlers.onSubmit(textarea.value.trim());
+	const setSaving = (value: boolean): void => {
+		saving = value;
+		textarea.disabled = value;
+		actions.querySelectorAll<HTMLButtonElement>("button").forEach((button) => (button.disabled = value));
+	};
+	const submit = async (): Promise<void> => {
+		if (saving) return;
+		setSaving(true);
+		const result = await submitDraft(textarea.value, handlers.onSubmit);
+		if (result.isErr()) {
+			setSaving(false);
+			textarea.focus({ preventScroll: true });
+		}
+	};
 
 	const cancelBtn = actions.createEl("button", {
 		cls: "dc-round dc-round--cancel",
@@ -35,12 +60,15 @@ export const buildDraftComposer = (
 
 	const confirmBtn = actions.createEl("button", {
 		cls: "dc-round dc-round--confirm",
-		attr: { "aria-label": "Comment" },
+		attr: { "aria-label": emptyLabel },
 	});
 	setIcon(confirmBtn, "check");
 	confirmBtn.addEventListener("click", (e) => {
 		e.stopPropagation();
-		submit();
+		void submit();
+	});
+	textarea.addEventListener("input", () => {
+		confirmBtn.setAttribute("aria-label", textarea.value.trim() ? "Comment" : emptyLabel);
 	});
 
 	textarea.addEventListener("keydown", (e) => {
@@ -49,8 +77,13 @@ export const buildDraftComposer = (
 			handlers.onCancel();
 		} else if (e.key === "Enter" && !e.shiftKey) {
 			e.preventDefault();
-			submit();
+			void submit();
 		}
 	});
-	return { el, textarea };
+	const setEmptyAction = (action: EmptySubmitAction): void => {
+		emptyLabel = emptySubmitLabel(action);
+		textarea.setAttribute("placeholder", draftPlaceholder(action));
+		confirmBtn.setAttribute("aria-label", textarea.value.trim() ? "Comment" : emptyLabel);
+	};
+	return { el, textarea, setEmptyAction };
 };

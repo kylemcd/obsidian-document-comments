@@ -3,6 +3,10 @@
 All notable changes to **Document Comments**. The release workflow uses the section
 matching the pushed tag as that GitHub release's notes, so add an entry here before tagging.
 
+## Unreleased
+
+- Added an **Allow empty comments** setting. An empty comment highlights its selected text and shows an editable **Empty** card. Run **Add comment** on the same text to add text or delete the comment ([#52](https://github.com/kylemcd/obsidian-document-comments/issues/52)).
+
 ## 0.1.11
 - **Comments on code blocks** — select one or more lines inside a fenced code block and comment on them. The lines are highlighted in Live Preview and Reading view, and a commented code block lays out exactly like an uncommented one, with no added gap above or below it.
 - Fixed a forward-delete (the Del / Fn+Delete key) at the end of a commented line silently destroying the entire comment thread, with nothing appearing to change in the note.

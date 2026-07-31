@@ -1,7 +1,7 @@
 import { Result } from "better-result";
 import { CommentData, ParsedComment, Reaction } from "../format/types";
-import { isInFencedCode, parseComments } from "../format/parse";
-import { codeSelectionTarget } from "../format/code-anchor";
+import { anchorRange, isAnchored, isHighlight, isInFencedCode, parseComments } from "../format/parse";
+import { codeSelectionTarget, isCodeComment, resolveCodeAnchor } from "../format/code-anchor";
 import { closeMarker, openMarker, serializeBody } from "../format/serialize";
 
 /** A document edit in original coordinates (matches CodeMirror's ChangeSpec shape). */
@@ -16,6 +16,12 @@ export type NewCommentInput = {
 	createdAt: string;
 	author: string;
 	text: string;
+	/** Empty comment selected when the composer opened. Resolve this id against
+	 *  fresh content instead of rediscovering it from a stale selection. */
+	targetHighlightId?: string;
+	/** Whether a new empty comment can persist as a highlight. Existing highlights
+	 *  can still be removed when this is false. Defaults to true for format callers. */
+	allowEmpty?: boolean;
 	/** The text the user selected, captured when the composer opened. When the
 	 *  document shifted underneath (sync, another pane) before the write lands,
 	 *  the offsets no longer point at it and creation is refused rather than
@@ -32,10 +38,38 @@ export const computeAddComment = (
 	input: NewCommentInput,
 ): Result<Change[], string> => {
 	if (to < from) [from, to] = [to, from];
+	if (input.targetHighlightId) {
+		const target = parseComments(doc).find((comment) => comment.id === input.targetHighlightId);
+		if (!target?.body || !isAnchored(target)) {
+			return Result.err("The empty comment no longer exists.");
+		}
+		if (input.text) {
+			return computeAppendReply(doc, target.id, {
+				createdAt: input.createdAt,
+				author: input.author,
+				text: input.text,
+			});
+		}
+		if (target.thread.length > 0) {
+			return Result.err("The empty comment now has text. Open the comment to make changes.");
+		}
+		return computeDeleteComment(doc, target.id);
+	}
 	if (to === from) return Result.err("Select some text to comment on.");
 	if (input.expected !== undefined && doc.slice(from, to) !== input.expected) {
 		return Result.err("The selection moved — try adding the comment again.");
 	}
+	const highlight = findHighlightAtSelection(doc, from, to);
+	if (highlight) {
+		return input.text
+			? computeAppendReply(doc, highlight.id, {
+					createdAt: input.createdAt,
+					author: input.author,
+					text: input.text,
+				})
+			: computeDeleteComment(doc, highlight.id);
+	}
+	if (!input.text && input.allowEmpty === false) return Result.ok([]);
 	// Markers can't live inside a fence (they'd render literally and the parser
 	// masks them), so a code selection anchors the whole block with a line target.
 	if (isInFencedCode(doc, from) || isInFencedCode(doc, to - 1)) {
@@ -49,7 +83,7 @@ export const computeAddComment = (
 		createdAt: input.createdAt,
 		status: "open",
 		quote,
-		thread: [{ author: input.author, timestamp: input.createdAt, text: input.text }],
+		thread: input.text ? [{ author: input.author, timestamp: input.createdAt, text: input.text }] : [],
 		reactions: [],
 	};
 	const paraEnd = blockEnd(doc, to);
@@ -58,6 +92,34 @@ export const computeAddComment = (
 		{ from: to, to, insert: closeMarker(input.id) },
 		{ from: paraEnd, to: paraEnd, insert: "\n" + serializeBody(input.id, data) },
 	]);
+};
+
+/** Find an empty-thread highlight whose complete target matches the selection. */
+export const findHighlightAtSelection = (doc: string, from: number, to: number): ParsedComment | null => {
+	if (to < from) [from, to] = [to, from];
+	if (to === from) return null;
+	const comments = parseComments(doc).filter(isHighlight);
+
+	if (isInFencedCode(doc, from) || isInFencedCode(doc, to - 1)) {
+		const target = codeSelectionTarget(doc, from, to);
+		if (!target) return null;
+		return (
+			comments.find((comment) => {
+				if (!isCodeComment(comment)) return false;
+				const range = resolveCodeAnchor(doc, comment);
+				return !!range && range.from === target.range.from && range.to === target.range.to;
+			}) ?? null
+		);
+	}
+
+	({ from, to } = expandInlineCodeSelection(doc, from, to));
+	return (
+		comments.find((comment) => {
+			if (isCodeComment(comment)) return false;
+			const range = anchorRange(comment);
+			return !!range && range.from === from && range.to === to;
+		}) ?? null
+	);
 };
 
 /** Anchor a code selection: wrap the whole fenced block with own-line markers and
@@ -76,7 +138,7 @@ const computeAddCodeComment = (
 		status: "open",
 		quote: target.quote,
 		codeLines: target.codeLines,
-		thread: [{ author: input.author, timestamp: input.createdAt, text: input.text }],
+		thread: input.text ? [{ author: input.author, timestamp: input.createdAt, text: input.text }] : [],
 		reactions: [],
 	};
 	return Result.ok([

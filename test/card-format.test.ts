@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { cardSignature, formatRelativeTime } from "../src/ui/card-format";
+import { cardEntries, cardSignature, formatRelativeTime } from "../src/ui/card-format";
 import { ParsedComment } from "../src/format/types";
 
 const comment = (over: Partial<ParsedComment>): ParsedComment => ({
@@ -27,6 +27,25 @@ describe("cardSignature", () => {
 		const a = cardSignature(comment({ open: { from: 0, to: 5 }, close: { from: 10, to: 15 } }));
 		const b = cardSignature(comment({ open: { from: 100, to: 105 }, close: { from: 110, to: 115 } }));
 		expect(a).toBe(b);
+	});
+});
+
+describe("cardEntries", () => {
+	test("creates a display-only placeholder for an empty comment", () => {
+		const entries = cardEntries(comment({ author: "kyle", createdAt: "2026-07-31T12:00:00.000Z", thread: [] }));
+
+		expect(entries).toEqual([
+			{
+				author: "kyle",
+				timestamp: "2026-07-31T12:00:00.000Z",
+				text: "Empty",
+				empty: true,
+			},
+		]);
+	});
+
+	test("marks stored thread entries as nonempty", () => {
+		expect(cardEntries(comment({}))).toEqual([{ author: "me", text: "hi", empty: false }]);
 	});
 });
 

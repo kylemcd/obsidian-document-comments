@@ -1,6 +1,26 @@
 import { ParsedComment } from "../format/types";
 import { isAnchored } from "../format/parse";
 
+export type CardEntry = {
+	author: string;
+	timestamp?: string;
+	text: string;
+	empty: boolean;
+};
+
+/** Give an empty comment one visible placeholder entry without changing its data. */
+export const cardEntries = (comment: ParsedComment): CardEntry[] => {
+	if (comment.thread.length > 0) return comment.thread.map((entry) => ({ ...entry, empty: false }));
+	return [
+		{
+			author: comment.author ?? "",
+			timestamp: comment.createdAt,
+			text: "Empty",
+			empty: true,
+		},
+	];
+};
+
 /**
  * Content signature of a comment, independent of its document position — drives
  * margin/sidebar card diffing (a card re-renders only when this changes). Every

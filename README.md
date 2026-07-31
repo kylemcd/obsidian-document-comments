@@ -14,6 +14,7 @@ The plugin stores each comment inside its Markdown file as an HTML comment. Othe
 
 - Store comments inside Markdown files without a separate database.
 - Add comments to prose, inline code, tables, and selected lines in fenced code blocks.
+- Save an empty comment and highlight its selected text.
 - Reply, resolve, reopen, edit, delete, or react to a comment.
 - Write Markdown in comments, including links, lists, bold text, and code spans.
 - Use the same notes on desktop and mobile.
@@ -42,6 +43,14 @@ The `<!--c:ID-->` and `<!--/c:ID-->` markers identify the selected text. The mat
 Markdown renderers hide these HTML comments. Tools that read the source file can find each comment and its selected text.
 
 Comments on fenced code blocks use the same format. The comment block also stores the selected line range and exact code text.
+
+An empty comment uses the same markers. Its comment block has no thread lines:
+
+```markdown
+We should <!--c:h7k2-->ship on Friday<!--/c:h7k2--> regardless of the QA timeline.
+<!--co:h7k2 by:kyle at:2026-06-17T10:00:00.000Z status:open quote:"ship on Friday"
+-->
+```
 
 ## Install
 
@@ -101,6 +110,25 @@ Then enable **Document Comments** in Community plugins.
 4. Press Enter to save the comment.
 
 Press Shift+Enter to add a line break. On mobile, use the dialog to save the comment.
+
+### Add an empty comment
+
+Document Comments disables empty comments by default.
+
+1. Open **Settings → Document Comments**.
+2. Enable **Allow empty comments**.
+3. Select text and run **Add comment**.
+4. Leave the comment field empty.
+5. Press Enter on desktop, or select **Empty comment** on mobile.
+
+The plugin highlights the selected text and shows a comment card. The card shows **Empty** until you add text.
+
+Select **Empty** to add the first comment text. Use the card menu to delete the empty comment.
+
+You can also select all the highlighted text and run **Add comment** again. Write text to add the first comment. Submit the empty field to delete it.
+
+When **Allow empty comments** is off, an empty field closes without a change.
+Existing empty comments remain available. You can add text or delete them.
 
 ### Add the command to the right-click menu
 
@@ -170,6 +198,10 @@ python3 skills/document-comments/scripts/validate_comments.py path/to/file.md
 ## Privacy
 
 The plugin does not use the network, telemetry, or accounts. It stores all comment data in the note.
+
+## Roadmap
+
+Use the [Document Comments project](https://github.com/users/kylemcd/projects/1) to see the roadmap, current work, and planned work.
 
 ## Known limitations
 

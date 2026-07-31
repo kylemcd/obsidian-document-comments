@@ -39,6 +39,8 @@ export const enclosingFence = (doc: string, pos: number): FenceStructure | null 
 export type CodeSelection = {
 	fenceStart: number;
 	fenceEnd: number;
+	/** Absolute source range of the selected whole code lines. */
+	range: TextRange;
 	quote: string;
 	codeLines: TextRange;
 };
@@ -65,9 +67,13 @@ export const codeSelectionTarget = (doc: string, from: number, to: number): Code
 	}
 
 	const selected = fence.lines.slice(first, last + 1);
+	const firstLine = selected[0];
+	const lastLine = selected[selected.length - 1];
+	if (!firstLine || !lastLine) return null;
 	return {
 		fenceStart: fence.fenceStart,
 		fenceEnd: fence.fenceEnd,
+		range: { from: firstLine.from, to: lastLine.to },
 		quote: selected.map((line) => line.text).join("\n"),
 		codeLines: { from: first, to: last },
 	};

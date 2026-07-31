@@ -43,6 +43,20 @@ describe("commentField decorations", () => {
 		expect(cids).toContain("xoua6");
 	});
 
+	test("still highlights an empty comment", () => {
+		const doc = 'Ship on <!--c:h1-->Friday<!--/c:h1-->.\n<!--co:h1 status:open quote:"Friday"\n-->';
+		const state = EditorState.create({ doc, extensions: [commentField] });
+		const cids: string[] = [];
+		const cursor = state.field(commentField).decorations.iter();
+		while (cursor.value) {
+			const cid = cursor.value.spec?.attributes?.["data-cid"];
+			if (cid) cids.push(cid);
+			cursor.next();
+		}
+
+		expect(cids).toContain("h1");
+	});
+
 	test("space-padded markers borrow only the space outside the anchor", () => {
 		const doc = "some <!--c:x-->text<!--/c:x--> after";
 		const state = EditorState.create({ doc, extensions: [commentField] });

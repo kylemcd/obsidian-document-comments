@@ -18,7 +18,8 @@ import { commentConfig } from "./editor/config";
 import { editorLayoutField } from "./editor/layout";
 import { draftField, setDraft } from "./editor/draft";
 import { addComment, insertCommentInFile } from "./editor/commands";
-import { findSectionRange, highlightPostProcessor } from "./reading/highlight";
+import { findHighlightAtSelection } from "./editor/edits";
+import { findSectionRange, highlightPostProcessor, mapReadingSelection } from "./reading/highlight";
 import { ReadingDeps, ReadingMarginManager } from "./reading/margin";
 import { COMMENTS_VIEW_TYPE, CommentsSidebarView, SidebarDeps } from "./ui/sidebar";
 import { CommentModal } from "./ui/comment-modal";
@@ -55,6 +56,7 @@ export default class DocCommentsPlugin extends Plugin {
 				author: () => this.authorName(),
 				showComments: () => this.settings.showComments,
 				showResolved: () => this.settings.showResolved,
+				allowEmptyComments: () => this.settings.allowEmptyComments,
 				sidebarOpen: () => this.sidebarOpen,
 				openInSidebar: (id) => void this.revealComment(id),
 				isMobile: () => Platform.isMobile,
@@ -75,6 +77,7 @@ export default class DocCommentsPlugin extends Plugin {
 			getAuthor: () => this.authorName(),
 			showComments: () => this.settings.showComments,
 			showResolved: () => this.settings.showResolved,
+			allowEmptyComments: () => this.settings.allowEmptyComments,
 			sidebarOpen: () => this.sidebarOpen,
 			openInSidebar: (id) => void this.revealComment(id),
 			isMobile: () => Platform.isMobile,
@@ -172,28 +175,46 @@ export default class DocCommentsPlugin extends Plugin {
 			new Notice("Select some text to comment on.");
 			return;
 		}
+		const doc = view.state.doc.toString();
+		const targetHighlightId = findHighlightAtSelection(doc, from, to)?.id;
 		if (Platform.isMobile) {
 			// No floating margin composer on mobile — collect the text in a modal,
 			// then write through the same editor path so it's a single undo step.
 			const quote = view.state.doc.sliceString(from, to);
-			new CommentModal(this.app, quote, (text) => {
-				// Pass the captured selection so a doc that shifted while the modal was
-				// open (sync, another pane) is caught instead of mis-anchoring.
-				const result = addComment(view, from, to, text, this.authorName(), quote);
-				if (result.isErr()) new Notice(`Couldn't add the comment: ${result.error}`);
-			}).open();
+			const emptyAction = targetHighlightId ? "remove" : this.settings.allowEmptyComments ? "highlight" : "none";
+			new CommentModal(
+				this.app,
+				quote,
+				(text) => {
+					// Pass the captured selection so a doc that shifted while the modal was
+					// open (sync, another pane) is caught instead of mis-anchoring.
+					const result = addComment(
+						view,
+						from,
+						to,
+						text,
+						this.authorName(),
+						quote,
+						this.settings.allowEmptyComments,
+						targetHighlightId,
+					);
+					if (result.isErr()) new Notice(`Couldn't add the comment: ${result.error}`);
+					return result.map(() => undefined);
+				},
+				emptyAction,
+			).open();
 			return;
 		}
 		// Show a draft composer card in the margin (Notion-style) instead of a modal.
-		view.dispatch({ effects: setDraft.of({ from, to }) });
+		view.dispatch({ effects: setDraft.of({ from, to, targetHighlightId }) });
 	}
 
 	/** Reading view has no editor surface, so map the rendered selection back to
 	 *  source offsets (best-effort) and prompt for the comment text. */
 	private startAddCommentReading(view: MarkdownView): void {
 		const selection = activeWindow.getSelection();
-		const selected = selection?.toString().trim() ?? "";
-		if (!selection || selection.rangeCount === 0 || !selected) {
+		const selected = selection?.toString() ?? "";
+		if (!selection || selection.rangeCount === 0 || !selected.trim()) {
 			new Notice("Select some text to comment on.");
 			return;
 		}
@@ -209,13 +230,15 @@ export default class DocCommentsPlugin extends Plugin {
 			new Notice("Can only comment on this note's own text, not embedded content.");
 			return;
 		}
-		const idx = section.source.indexOf(selected);
-		if (idx < 0) {
+		const data = view.getViewData();
+		const sourceSelection = mapReadingSelection(selection, section, data);
+		if (!sourceSelection) {
 			new Notice("Couldn't map the selection to the Markdown — try plain text without formatting.");
 			return;
 		}
-		const from = section.from + idx;
-		const to = from + selected.length;
+		const { from, to, expected } = sourceSelection;
+		const targetHighlightId = findHighlightAtSelection(data, from, to)?.id;
+		const emptyAction = targetHighlightId ? "remove" : this.settings.allowEmptyComments ? "highlight" : "none";
 		if (Platform.isMobile) {
 			// No margin composer on mobile — write straight to the file from a modal,
 			// then refresh so the new highlight appears in the reading view.
@@ -224,13 +247,24 @@ export default class DocCommentsPlugin extends Plugin {
 				new Notice("No file is open.");
 				return;
 			}
-			new CommentModal(this.app, selected, (text) => {
-				void this.insertReadingComment(file, from, to, text, selected);
-			}).open();
+			new CommentModal(
+				this.app,
+				selected,
+				(text) => this.insertReadingComment(file, from, to, text, expected, targetHighlightId),
+				emptyAction,
+			).open();
 			return;
 		}
 		// Same inline draft composer as the editor (no modal).
-		this.readingManager?.startDraft(view, from, to, selection.getRangeAt(0), selected);
+		this.readingManager?.startDraft(
+			view,
+			from,
+			to,
+			selection.getRangeAt(0),
+			expected,
+			emptyAction,
+			targetHighlightId,
+		);
 	}
 
 	/** Mobile reading-view create: write to the file (no editor surface) and refresh.
@@ -241,11 +275,24 @@ export default class DocCommentsPlugin extends Plugin {
 		to: number,
 		text: string,
 		expected: string,
-	): Promise<void> {
-		(await insertCommentInFile(this.app, file, from, to, text, this.authorName(), expected)).match({
+		targetHighlightId?: string,
+	): Promise<Result<void, string>> {
+		const result = await insertCommentInFile(
+			this.app,
+			file,
+			from,
+			to,
+			text,
+			this.authorName(),
+			expected,
+			this.settings.allowEmptyComments,
+			targetHighlightId,
+		);
+		result.match({
 			ok: () => this.scheduleReadingRefresh(),
 			err: (message) => new Notice(`Couldn't add the comment: ${message}`),
 		});
+		return result.map(() => undefined);
 	}
 
 	private async toggleComments(): Promise<void> {

@@ -53,6 +53,7 @@ const config = commentConfig.of({
 	author: () => "me",
 	showComments: () => true,
 	showResolved: () => true,
+	allowEmptyComments: () => false,
 	sidebarOpen: () => false,
 });
 
@@ -327,6 +328,19 @@ describe("editor extensions open every note without crashing", () => {
 		expect(orphanOnly).toContain("dc-highlights");
 	});
 
+	test("keeps existing empty comments visible when new empty comments are disabled", () => {
+		const withHighlight = open(
+			[
+				"Ship on <!--c:hhh-->Friday<!--/c:hhh--> regardless.",
+				'<!--co:hhh by:me at:2026-06-17T00:00:00.000Z status:open quote:"Friday"',
+				"-->",
+				"",
+			].join("\n"),
+		);
+		expect(withHighlight).toContain("dc-has"); // an empty comment keeps its margin card
+		expect(withHighlight).toContain("dc-highlights");
+	});
+
 	// Regression for issue #30: once every comment is resolved and resolved
 	// comments are hidden, no card renders — so the column must not stay reserved.
 	test("all comments resolved + resolved hidden does not reserve the column", () => {
@@ -334,6 +348,7 @@ describe("editor extensions open every note without crashing", () => {
 			author: () => "me",
 			showComments: () => true,
 			showResolved: () => false,
+			allowEmptyComments: () => false,
 			sidebarOpen: () => false,
 		});
 		const openWith = (doc: string, cfg: typeof hideResolved): string => {
@@ -390,10 +405,13 @@ describe("editor extensions open every note without crashing", () => {
 			}),
 			parent,
 		});
-		view.dispatch({ effects: setDraft.of({ from: 0, to: 4 }) });
+		view.dispatch({ effects: setDraft.of({ from: 0, to: 4, targetHighlightId: "h1" }) });
+		view.dispatch({ changes: { from: 0, insert: "x" } });
 		view.requestMeasure();
 		const className = view.dom.className;
+		const draft = view.state.field(draftField);
 		view.destroy();
+		expect(draft).toMatchObject({ from: 1, to: 5, targetHighlightId: "h1" });
 		expect(className).not.toContain("dc-has"); // draft is a floating overlay, no column reserved
 		expect(className).toContain("dc-highlights"); // highlights still follow the master toggle
 	});

@@ -18,12 +18,14 @@ import { closestSpanId, spanSelector } from "../util/css";
 import { stackTops } from "../ui/stack";
 import { CARD_GAP, FLASH_MS } from "../ui/constants";
 import { buildDraftComposer } from "../ui/draft-composer";
+import { EmptySubmitAction } from "../ui/draft-behavior";
 
 export type ReadingDeps = {
 	app: App;
 	getAuthor: () => string;
 	showComments: () => boolean;
 	showResolved: () => boolean;
+	allowEmptyComments: () => boolean;
 	/** While the sidebar panel is open, the inline column steps aside. */
 	sidebarOpen: () => boolean;
 	/** Reveal a thread in the sidebar — used by a margin card too tall to fit. */
@@ -41,6 +43,8 @@ class ReadingMargin {
 	private activeId: string | null = null;
 	private draft: TextRange | null = null;
 	private draftText = "";
+	private draftEmptyAction: EmptySubmitAction = "none";
+	private draftTargetHighlightId: string | undefined;
 	private draftEl: HTMLElement | null = null;
 	private draftAnchor: HTMLElement | null = null;
 	private cb: CardCallbacks;
@@ -65,7 +69,7 @@ class ReadingMargin {
 			animateLayout: () => this.animateLayout(),
 			revealComposer: (id) => this.revealComposer(id),
 			reply: (id, text) =>
-				void this.edit((doc) =>
+				this.edit((doc) =>
 					computeAppendReply(doc, id, {
 						createdAt: new Date().toISOString(),
 						author: deps.getAuthor(),
@@ -107,15 +111,21 @@ class ReadingMargin {
 		this.position();
 	}
 
-	private async edit(compute: (doc: string) => Result<Change[], string>): Promise<void> {
+	private async edit(compute: (doc: string) => Result<Change[], string>): Promise<Result<void, string>> {
 		const file = this.view.file;
-		if (!file) return;
+		if (!file) {
+			const result = Result.err("No file is open.");
+			new Notice(`Couldn't save the comment: ${result.error}`);
+			return result;
+		}
 		// Route through the open editor when there is one (undo history + unsaved
 		// buffer) instead of a bare disk write that races the editor's autosave.
-		(await applyCommentEdit(this.deps.app, file, compute)).match({
+		const result = await applyCommentEdit(this.deps.app, file, compute);
+		result.match({
 			ok: (newData) => void this.refresh(newData),
 			err: (message) => new Notice(`Couldn't save the comment: ${message}`),
 		});
+		return result.map(() => undefined);
 	}
 
 	private reconcileCards(): void {
@@ -199,7 +209,14 @@ class ReadingMargin {
 
 	/** Show an inline draft composer for a new comment (Reading-view "Add").
 	 *  `expected` is the source text at [from,to], verified when the write lands. */
-	showDraft(from: number, to: number, range: Range, expected: string): void {
+	showDraft(
+		from: number,
+		to: number,
+		range: Range,
+		expected: string,
+		emptyAction: EmptySubmitAction,
+		targetHighlightId?: string,
+	): void {
 		this.clearDraft();
 		const span = this.scroller.createSpan({ cls: "doc-comment-span dc-draft" });
 		span.detach();
@@ -212,6 +229,8 @@ class ReadingMargin {
 		this.draftAnchor = span;
 		this.draft = { from, to };
 		this.draftText = expected;
+		this.draftEmptyAction = emptyAction;
+		this.draftTargetHighlightId = targetHighlightId;
 		this.draftEl = this.buildDraftEl();
 		this.container.appendChild(this.draftEl);
 		this.position();
@@ -223,24 +242,50 @@ class ReadingMargin {
 
 	private buildDraftEl(): HTMLElement {
 		const { el } = buildDraftComposer({
+			emptyAction: this.draftEmptyAction,
 			onCancel: () => this.clearDraft(),
-			onSubmit: (text) => {
+			onSubmit: async (text) => {
 				const draft = this.draft;
 				const expected = this.draftText;
-				this.clearDraft();
-				if (text && draft) void this.insertComment(draft.from, draft.to, text, expected);
+				const targetHighlightId = this.draftTargetHighlightId;
+				if (!draft) return Result.err("The comment draft no longer exists.");
+				const result = await this.insertComment(draft.from, draft.to, text, expected, targetHighlightId);
+				if (result.isOk()) this.clearDraft();
+				return result;
 			},
 		});
 		return el;
 	}
 
-	private async insertComment(from: number, to: number, text: string, expected: string): Promise<void> {
+	private async insertComment(
+		from: number,
+		to: number,
+		text: string,
+		expected: string,
+		targetHighlightId?: string,
+	): Promise<Result<void, string>> {
 		const file = this.view.file;
-		if (!file) return;
-		(await routeInsertComment(this.deps.app, file, from, to, text, this.deps.getAuthor(), expected)).match({
+		if (!file) {
+			const result = Result.err("No file is open.");
+			new Notice(`Couldn't add the comment: ${result.error}`);
+			return result;
+		}
+		const result = await routeInsertComment(
+			this.deps.app,
+			file,
+			from,
+			to,
+			text,
+			this.deps.getAuthor(),
+			expected,
+			this.deps.allowEmptyComments(),
+			targetHighlightId,
+		);
+		result.match({
 			ok: () => void this.refresh(),
 			err: (message) => new Notice(`Couldn't add the comment: ${message}`),
 		});
+		return result.map(() => undefined);
 	}
 
 	private clearDraft(): void {
@@ -258,6 +303,8 @@ class ReadingMargin {
 		this.draftEl = null;
 		this.draft = null;
 		this.draftText = "";
+		this.draftEmptyAction = "none";
+		this.draftTargetHighlightId = undefined;
 		// Re-run layout so the composer's `dc-margin` (and its reserved slot in the
 		// stack) is dropped immediately on cancel — the editor margin gets this for
 		// free via its dispatch cycle; the reading margin has to ask for it.
@@ -400,7 +447,15 @@ export class ReadingMarginManager {
 	}
 
 	/** Show the inline new-comment composer on the active reading view. */
-	startDraft(view: MarkdownView, from: number, to: number, range: Range, expected: string): void {
+	startDraft(
+		view: MarkdownView,
+		from: number,
+		to: number,
+		range: Range,
+		expected: string,
+		emptyAction: EmptySubmitAction,
+		targetHighlightId?: string,
+	): void {
 		const rv = view.containerEl.querySelector(".markdown-reading-view");
 		if (!(rv instanceof HTMLElement)) return;
 		let margin = this.margins.get(rv);
@@ -409,7 +464,7 @@ export class ReadingMarginManager {
 			this.margins.set(rv, margin);
 			void margin.refresh();
 		}
-		margin.showDraft(from, to, range, expected);
+		margin.showDraft(from, to, range, expected, emptyAction, targetHighlightId);
 	}
 
 	destroy(): void {

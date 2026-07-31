@@ -36,8 +36,8 @@ export const applyCommentEdit = async (
 	return processFileEdit(app, file, compute);
 };
 
-/** Insert a brand-new comment, preferring the open editor and falling back to a
- *  disk write. Ok carries the new comment id. `expected` is the originally
+/** Create or manage a comment, preferring the open editor and falling back to a
+ *  disk write. Ok carries the affected id. `expected` is the originally
  *  selected text — the write is refused if the offsets no longer point at it. */
 export const insertComment = async (
 	app: App,
@@ -47,8 +47,10 @@ export const insertComment = async (
 	text: string,
 	author: string,
 	expected?: string,
+	allowEmpty = true,
+	targetHighlightId?: string,
 ): Promise<Result<string, string>> => {
 	const cm = editorViewForFile(app, file);
-	if (cm) return addComment(cm, from, to, text, author, expected);
-	return insertCommentInFile(app, file, from, to, text, author, expected);
+	if (cm) return addComment(cm, from, to, text, author, expected, allowEmpty, targetHighlightId);
+	return insertCommentInFile(app, file, from, to, text, author, expected, allowEmpty, targetHighlightId);
 };

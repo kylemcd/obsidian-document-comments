@@ -1,6 +1,7 @@
 import { App, Component, MarkdownRenderer, Menu, setIcon } from "obsidian";
+import type { Result } from "better-result";
 import { ParsedComment } from "../format/types";
-import { cardSignature, formatRelativeTime } from "./card-format";
+import { CardEntry, cardEntries, cardSignature, formatRelativeTime } from "./card-format";
 
 const QUICK_EMOJI = ["👍", "❤️", "😄", "🎉", "😮", "👀", "🙏"];
 
@@ -18,7 +19,7 @@ export type CardCallbacks = {
 	/** Like onResize, but for an animated height change: track the grow/shrink for a
 	 *  few frames so neighbors follow it smoothly. Falls back to onResize when absent. */
 	animateLayout?: () => void;
-	reply: (id: string, text: string) => void;
+	reply: (id: string, text: string) => Result<void, string> | Promise<Result<void, string>>;
 	setResolved: (id: string, resolved: boolean) => void;
 	remove: (id: string) => void;
 	editEntry: (id: string, index: number, text: string) => void;
@@ -49,10 +50,13 @@ export class Card {
 	private comment: ParsedComment;
 	private open = false;
 	private editingIndex = -1;
+	private addingFirstEntry = false;
 	/** In-progress text of the entry editor, so an external update mid-edit
 	 *  (a synced reply, a reaction toggled elsewhere) doesn't discard it. */
 	private editDraft = "";
 	private draft = "";
+	private savingFirstEntry = false;
+	private savingReply = false;
 	/** Measured: the thread exceeds the clamp height / the whole column. */
 	private overflows = false;
 	private tooTall = false;
@@ -78,6 +82,10 @@ export class Card {
 			const target = e.target as HTMLElement;
 			if (target.closest("button, textarea, a, .dc-foot-btn, .dc-reaction, .dc-pop")) return;
 			this.cb.onClickAnchor(this.id);
+			if (this.comment.thread.length === 0) {
+				this.startEdit(0);
+				return;
+			}
 			// A thread too tall for the margin opens in the sidebar instead of expanding
 			// into a full-height card whose bottom you can't scroll to.
 			if (this.tooTall && this.cb.openInSidebar) this.cb.openInSidebar(this.id);
@@ -99,8 +107,10 @@ export class Card {
 		// Keep an open entry editor across external updates; commit/cancel clear
 		// editingIndex first, so a landed edit still collapses the editor. Only drop
 		// it if the edited entry no longer exists (e.g. deleted elsewhere).
-		if (this.editingIndex >= comment.thread.length) {
+		const editingEmpty = this.editingIndex === 0 && comment.thread.length === 0;
+		if (!editingEmpty && this.editingIndex >= comment.thread.length) {
 			this.editingIndex = -1;
+			this.addingFirstEntry = false;
 			this.editDraft = "";
 		}
 		this.render();
@@ -170,8 +180,8 @@ export class Card {
 		this.clipEl = clip;
 		const thread = clip.createDiv("dc-thread");
 		this.threadEl = thread;
-		c.thread.forEach((entry, i) => this.renderEntry(thread, entry, i));
-		if (this.open) this.renderComposer(clip);
+		cardEntries(c).forEach((entry, i) => this.renderEntry(thread, entry, i));
+		if (this.open && this.editingIndex < 0) this.renderComposer(clip);
 
 		this.footEl = this.el.createDiv("dc-card-foot");
 		this.applyClampState();
@@ -246,11 +256,7 @@ export class Card {
 		});
 	}
 
-	private renderEntry(
-		parent: HTMLElement,
-		entry: { author: string; timestamp?: string; text: string },
-		i: number,
-	): void {
+	private renderEntry(parent: HTMLElement, entry: CardEntry, i: number): void {
 		const row = parent.createDiv("dc-entry");
 
 		const bar = row.createDiv("dc-entry__bar");
@@ -270,6 +276,23 @@ export class Card {
 
 		if (this.editingIndex === i) {
 			this.renderEditor(row, i);
+		} else if (entry.empty) {
+			const placeholder = row.createSpan({
+				cls: "dc-entry__text dc-entry__text--empty",
+				text: entry.text,
+				attr: { "aria-label": "Edit empty comment", role: "button", tabindex: "0" },
+			});
+			const edit = (event: Event) => {
+				event.stopPropagation();
+				this.startEdit(i);
+			};
+			placeholder.addEventListener("click", edit);
+			placeholder.addEventListener("keydown", (event) => {
+				if (event.key === "Enter" || event.key === " ") {
+					event.preventDefault();
+					edit(event);
+				}
+			});
 		} else {
 			this.renderText(row.createDiv("dc-entry__text"), entry.text);
 		}
@@ -316,16 +339,19 @@ export class Card {
 			if (e.key === "Escape") this.cancelEdit();
 			else if (e.key === "Enter" && !e.shiftKey) {
 				e.preventDefault();
-				this.commitEdit(index, ta.value);
+				void this.commitEdit(index, ta.value);
 			}
 		});
 		const actions = box.createDiv("dc-field__actions");
 		this.roundButton(actions, "x", "Cancel", "dc-round--cancel", () => this.cancelEdit());
-		this.roundButton(actions, "check", "Save", "dc-round--confirm", () => this.commitEdit(index, ta.value));
-		window.setTimeout(() => {
-			ta.focus();
-			ta.setSelectionRange(ta.value.length, ta.value.length);
-		}, 0);
+		this.roundButton(actions, "check", "Save", "dc-round--confirm", () => void this.commitEdit(index, ta.value));
+		this.setFieldSaving(box, this.savingFirstEntry);
+		if (!this.savingFirstEntry) {
+			window.setTimeout(() => {
+				ta.focus();
+				ta.setSelectionRange(ta.value.length, ta.value.length);
+			}, 0);
+		}
 	}
 
 	private roundButton(parent: HTMLElement, icon: string, label: string, variant: string, onClick: () => void): void {
@@ -341,7 +367,7 @@ export class Card {
 		const box = parent.createDiv("dc-field dc-field--composer");
 		const ta = box.createEl("textarea", {
 			cls: "dc-field__input",
-			attr: { placeholder: "Reply…", rows: "1" },
+			attr: { placeholder: this.comment.thread.length === 0 ? "Comment…" : "Reply…", rows: "1" },
 		});
 		ta.value = this.draft;
 		autogrow(ta);
@@ -352,39 +378,74 @@ export class Card {
 		ta.addEventListener("keydown", (e) => {
 			if (e.key === "Enter" && !e.shiftKey) {
 				e.preventDefault();
-				this.submitReply();
+				void this.submitReply();
 			}
 		});
 		const actions = box.createDiv("dc-field__actions");
-		this.roundButton(actions, "arrow-up", "Send", "dc-round--confirm", () => this.submitReply());
+		this.roundButton(actions, "arrow-up", "Send", "dc-round--confirm", () => void this.submitReply());
+		this.setFieldSaving(box, this.savingReply);
 	}
 
-	private submitReply(): void {
+	private async submitReply(): Promise<void> {
+		if (this.savingReply) return;
 		const ta = this.el.querySelector(".dc-field--composer .dc-field__input");
 		if (!(ta instanceof HTMLTextAreaElement)) return;
 		const text = ta.value.trim();
 		if (!text) return;
+		this.draft = ta.value;
+		this.savingReply = true;
+		this.setFieldSaving(ta.closest(".dc-field"), true);
+		const result = await this.cb.reply(this.id, text);
+		this.savingReply = false;
+		if (result.isErr()) {
+			this.setFieldSaving(this.el.querySelector(".dc-field--composer"), false);
+			this.focusComposer();
+			return;
+		}
 		this.draft = "";
-		this.cb.reply(this.id, text);
+		this.render();
+		this.cb.onResize();
 	}
 
-	private commitEdit(index: number, value: string): void {
+	private async commitEdit(index: number, value: string): Promise<void> {
 		const text = value.trim();
 		if (!text) {
 			this.cancelEdit();
 			return;
 		}
+		const addsFirstEntry = this.addingFirstEntry;
+		if (addsFirstEntry) {
+			if (this.savingFirstEntry) return;
+			this.editDraft = value;
+			this.savingFirstEntry = true;
+			this.setFieldSaving(this.el.querySelector(".dc-field--edit"), true);
+			const result = await this.cb.reply(this.id, text);
+			this.savingFirstEntry = false;
+			if (result.isErr()) {
+				this.setFieldSaving(this.el.querySelector(".dc-field--edit"), false);
+				this.focusEditor();
+				return;
+			}
+			this.finishEdit();
+			return;
+		}
 		// Collapse the editor before the write lands so the incoming external
 		// update() doesn't reopen it (and doesn't clobber a concurrent edit elsewhere).
+		this.finishEdit();
+		this.cb.editEntry(this.id, index, text);
+	}
+
+	private finishEdit(): void {
 		this.editingIndex = -1;
+		this.addingFirstEntry = false;
 		this.editDraft = "";
 		this.render();
-		this.cb.editEntry(this.id, index, text);
 		this.cb.onResize();
 	}
 
 	private cancelEdit(): void {
 		this.editingIndex = -1;
+		this.addingFirstEntry = false;
 		this.editDraft = "";
 		this.render();
 		this.cb.onResize();
@@ -392,6 +453,7 @@ export class Card {
 
 	private startEdit(index: number): void {
 		this.editingIndex = index;
+		this.addingFirstEntry = index === 0 && this.comment.thread.length === 0;
 		this.editDraft = this.comment.thread[index]?.text ?? "";
 		this.render();
 		this.cb.onResize();
@@ -459,6 +521,19 @@ export class Card {
 			const ta = this.el.querySelector(".dc-field--composer .dc-field__input");
 			if (ta instanceof HTMLTextAreaElement) ta.focus({ preventScroll: true });
 		}, 0);
+	}
+
+	private focusEditor(): void {
+		window.setTimeout(() => {
+			const ta = this.el.querySelector(".dc-field--edit .dc-field__input");
+			if (ta instanceof HTMLTextAreaElement) ta.focus({ preventScroll: true });
+		}, 0);
+	}
+
+	private setFieldSaving(field: Element | null, saving: boolean): void {
+		field
+			?.querySelectorAll<HTMLTextAreaElement | HTMLButtonElement>("textarea, button")
+			.forEach((control) => (control.disabled = saving));
 	}
 }
 

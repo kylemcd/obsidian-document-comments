@@ -12,7 +12,7 @@ create/reply/resolve/delete flow in `SKILL.md`.
 - [Reactions](#reactions)
 - [Escaping: `-->`, newlines, quotes](#escaping)
 - [Placement](#placement)
-- [Anchored vs orphan vs marker-only](#comment-states)
+- [Comment states](#comment-states)
 - [Comments on code blocks](#comments-on-code-blocks)
 - [Parser behavior and gotchas](#parser-behavior)
 
@@ -65,6 +65,8 @@ rewrites the block, so don't rely on custom keys.
 
 Each line between the header and the closing `-->` is one entry. The first entry
 is the original comment; the rest are replies in order.
+
+A body with no thread lines represents an empty comment.
 
 Grammar per line: `author: text` or `author (timestamp): text`.
 
@@ -125,6 +127,8 @@ after the block.
 
 - **Anchored**: both `<!--c:ID-->` and `<!--/c:ID-->` are present and ordered
   (open before close), and a body exists. This is a normal, rendered comment.
+- **Highlight**: both anchor markers and a body exist, but the body has no thread
+  lines. The plugin highlights the text and shows an editable **Empty** card.
 - **Orphan**: a body exists but the anchor markers are missing or out of order —
   usually because the anchored text was edited or deleted. Orphans still hold
   their thread and show up in comment lists, but have nowhere to highlight.
