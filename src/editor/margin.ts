@@ -26,8 +26,9 @@ import { buildDraftComposer } from "../ui/draft-composer";
 
 /** Editor-margin writes go through a live CodeMirror view (no I/O), so the only
  *  failure is a compute error — surface it as a notice rather than swallowing it. */
-const notifyErr = (result: Result<unknown, string>): void => {
+const notifyErr = <T>(result: Result<T, string>): Result<T, string> => {
 	if (result.isErr()) new Notice(`Couldn't save the comment: ${result.error}`);
+	return result;
 };
 /**
  * Renders the floating right-margin column: one card per comment, vertically

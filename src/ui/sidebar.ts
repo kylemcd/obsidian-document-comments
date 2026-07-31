@@ -69,7 +69,7 @@ export class CommentsSidebarView extends ItemView {
 			},
 			revealComposer: (id) => this.revealComposer(id),
 			reply: (id, text) =>
-				void this.edit((doc) =>
+				this.edit((doc) =>
 					computeAppendReply(doc, id, {
 						createdAt: new Date().toISOString(),
 						author: deps.getAuthor(),
@@ -264,13 +264,19 @@ export class CommentsSidebarView extends ItemView {
 	/** Apply a computed change set to the active note. Prefer the open editor
 	 *  (keeps edits in its undo history and in sync with unsaved changes);
 	 *  fall back to a direct file write for notes only shown in reading view. */
-	private async edit(compute: (doc: string) => Result<Change[], string>): Promise<void> {
+	private async edit(compute: (doc: string) => Result<Change[], string>): Promise<Result<void, string>> {
 		const file = this.file;
-		if (!file) return;
-		(await applyCommentEdit(this.app, file, compute)).match({
+		if (!file) {
+			const result = Result.err("No file is open.");
+			new Notice(`Couldn't save the comment: ${result.error}`);
+			return result;
+		}
+		const result = await applyCommentEdit(this.app, file, compute);
+		result.match({
 			ok: (newData) => void this.refresh(newData),
 			err: (message) => new Notice(`Couldn't save the comment: ${message}`),
 		});
+		return result.map(() => undefined);
 	}
 
 	// ── Document interplay ─────────────────────────────────────────────────

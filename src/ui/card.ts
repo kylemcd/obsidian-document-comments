@@ -1,4 +1,5 @@
 import { App, Component, MarkdownRenderer, Menu, setIcon } from "obsidian";
+import type { Result } from "better-result";
 import { ParsedComment } from "../format/types";
 import { CardEntry, cardEntries, cardSignature, formatRelativeTime } from "./card-format";
 
@@ -18,7 +19,7 @@ export type CardCallbacks = {
 	/** Like onResize, but for an animated height change: track the grow/shrink for a
 	 *  few frames so neighbors follow it smoothly. Falls back to onResize when absent. */
 	animateLayout?: () => void;
-	reply: (id: string, text: string) => void;
+	reply: (id: string, text: string) => Result<void, string> | Promise<Result<void, string>>;
 	setResolved: (id: string, resolved: boolean) => void;
 	remove: (id: string) => void;
 	editEntry: (id: string, index: number, text: string) => void;
@@ -53,6 +54,8 @@ export class Card {
 	 *  (a synced reply, a reaction toggled elsewhere) doesn't discard it. */
 	private editDraft = "";
 	private draft = "";
+	private savingFirstEntry = false;
+	private savingReply = false;
 	/** Measured: the thread exceeds the clamp height / the whole column. */
 	private overflows = false;
 	private tooTall = false;
@@ -334,16 +337,19 @@ export class Card {
 			if (e.key === "Escape") this.cancelEdit();
 			else if (e.key === "Enter" && !e.shiftKey) {
 				e.preventDefault();
-				this.commitEdit(index, ta.value);
+				void this.commitEdit(index, ta.value);
 			}
 		});
 		const actions = box.createDiv("dc-field__actions");
 		this.roundButton(actions, "x", "Cancel", "dc-round--cancel", () => this.cancelEdit());
-		this.roundButton(actions, "check", "Save", "dc-round--confirm", () => this.commitEdit(index, ta.value));
-		window.setTimeout(() => {
-			ta.focus();
-			ta.setSelectionRange(ta.value.length, ta.value.length);
-		}, 0);
+		this.roundButton(actions, "check", "Save", "dc-round--confirm", () => void this.commitEdit(index, ta.value));
+		this.setFieldSaving(box, this.savingFirstEntry);
+		if (!this.savingFirstEntry) {
+			window.setTimeout(() => {
+				ta.focus();
+				ta.setSelectionRange(ta.value.length, ta.value.length);
+			}, 0);
+		}
 	}
 
 	private roundButton(parent: HTMLElement, icon: string, label: string, variant: string, onClick: () => void): void {
@@ -370,36 +376,67 @@ export class Card {
 		ta.addEventListener("keydown", (e) => {
 			if (e.key === "Enter" && !e.shiftKey) {
 				e.preventDefault();
-				this.submitReply();
+				void this.submitReply();
 			}
 		});
 		const actions = box.createDiv("dc-field__actions");
-		this.roundButton(actions, "arrow-up", "Send", "dc-round--confirm", () => this.submitReply());
+		this.roundButton(actions, "arrow-up", "Send", "dc-round--confirm", () => void this.submitReply());
+		this.setFieldSaving(box, this.savingReply);
 	}
 
-	private submitReply(): void {
+	private async submitReply(): Promise<void> {
+		if (this.savingReply) return;
 		const ta = this.el.querySelector(".dc-field--composer .dc-field__input");
 		if (!(ta instanceof HTMLTextAreaElement)) return;
 		const text = ta.value.trim();
 		if (!text) return;
+		this.draft = ta.value;
+		this.savingReply = true;
+		this.setFieldSaving(ta.closest(".dc-field"), true);
+		const result = await this.cb.reply(this.id, text);
+		this.savingReply = false;
+		if (result.isErr()) {
+			this.setFieldSaving(this.el.querySelector(".dc-field--composer"), false);
+			this.focusComposer();
+			return;
+		}
 		this.draft = "";
-		this.cb.reply(this.id, text);
+		this.render();
+		this.cb.onResize();
 	}
 
-	private commitEdit(index: number, value: string): void {
+	private async commitEdit(index: number, value: string): Promise<void> {
 		const text = value.trim();
 		if (!text) {
 			this.cancelEdit();
 			return;
 		}
+		const addsFirstEntry = this.comment.thread.length === 0;
+		if (addsFirstEntry) {
+			if (this.savingFirstEntry) return;
+			this.editDraft = value;
+			this.savingFirstEntry = true;
+			this.setFieldSaving(this.el.querySelector(".dc-field--edit"), true);
+			const result = await this.cb.reply(this.id, text);
+			this.savingFirstEntry = false;
+			if (result.isErr()) {
+				this.setFieldSaving(this.el.querySelector(".dc-field--edit"), false);
+				this.focusEditor();
+				return;
+			}
+			this.finishEdit();
+			return;
+		}
 		// Collapse the editor before the write lands so the incoming external
 		// update() doesn't reopen it (and doesn't clobber a concurrent edit elsewhere).
-		const addsFirstEntry = this.comment.thread.length === 0;
+		this.finishEdit();
+		this.cb.editEntry(this.id, index, text);
+	}
+
+	private finishEdit(): void {
 		this.editingIndex = -1;
 		this.editDraft = "";
 		this.render();
-		if (addsFirstEntry) this.cb.reply(this.id, text);
-		else this.cb.editEntry(this.id, index, text);
 		this.cb.onResize();
 	}
 
@@ -479,6 +516,19 @@ export class Card {
 			const ta = this.el.querySelector(".dc-field--composer .dc-field__input");
 			if (ta instanceof HTMLTextAreaElement) ta.focus({ preventScroll: true });
 		}, 0);
+	}
+
+	private focusEditor(): void {
+		window.setTimeout(() => {
+			const ta = this.el.querySelector(".dc-field--edit .dc-field__input");
+			if (ta instanceof HTMLTextAreaElement) ta.focus({ preventScroll: true });
+		}, 0);
+	}
+
+	private setFieldSaving(field: Element | null, saving: boolean): void {
+		field
+			?.querySelectorAll<HTMLTextAreaElement | HTMLButtonElement>("textarea, button")
+			.forEach((control) => (control.disabled = saving));
 	}
 }
 

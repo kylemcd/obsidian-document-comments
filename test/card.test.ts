@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeAll, describe, expect, test, vi } from "vitest";
+import { Result } from "better-result";
 import { ParsedComment } from "../src/format/types";
 import { Card, CardCallbacks } from "../src/ui/card";
 
@@ -65,12 +66,17 @@ const emptyComment = (): ParsedComment => ({
 	reactions: [],
 });
 
+const commentWithText = (): ParsedComment => ({
+	...emptyComment(),
+	thread: [{ author: "kyle", timestamp: "2026-07-31T12:00:00.000Z", text: "Existing comment" }],
+});
+
 const callbacks = (): CardCallbacks => ({
 	getAuthor: () => "kyle",
 	onHover: vi.fn(),
 	onClickAnchor: vi.fn(),
 	onResize: vi.fn(),
-	reply: vi.fn(),
+	reply: vi.fn(() => Result.ok(undefined)),
 	setResolved: vi.fn(),
 	remove: vi.fn(),
 	editEntry: vi.fn(),
@@ -119,6 +125,54 @@ describe("empty comment card", () => {
 
 		expect(card.el.querySelector(".dc-field--edit textarea")).not.toBeNull();
 		expect(card.el.querySelector(".dc-field--composer")).toBeNull();
+		card.destroy();
+	});
+
+	test("keeps the first comment draft when saving fails", async () => {
+		const cb = callbacks();
+		cb.reply = vi.fn(async () => Result.err("write failed"));
+		const card = new Card(emptyComment(), cb, { sourcePath: () => "note.md" });
+		card.el.querySelector<HTMLElement>(".dc-entry__text--empty")?.click();
+
+		const editor = card.el.querySelector<HTMLTextAreaElement>(".dc-field--edit textarea");
+		expect(editor).not.toBeNull();
+		if (editor) {
+			editor.value = "Keep this draft";
+			editor.dispatchEvent(new Event("input"));
+		}
+		card.el.querySelector<HTMLButtonElement>("button[aria-label='Save']")?.click();
+
+		await vi.waitFor(() =>
+			expect(card.el.querySelector<HTMLTextAreaElement>(".dc-field--edit textarea")?.disabled).toBe(false),
+		);
+		card.update(emptyComment());
+		expect(card.el.querySelector<HTMLTextAreaElement>(".dc-field--edit textarea")?.value).toBe("Keep this draft");
+		expect(cb.reply).toHaveBeenCalledWith("h1", "Keep this draft");
+		card.destroy();
+	});
+
+	test("keeps a reply draft when saving fails", async () => {
+		const cb = callbacks();
+		cb.reply = vi.fn(async () => Result.err("write failed"));
+		const card = new Card(commentWithText(), cb, { sourcePath: () => "note.md" });
+		card.el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+
+		const composer = card.el.querySelector<HTMLTextAreaElement>(".dc-field--composer textarea");
+		expect(composer).not.toBeNull();
+		if (composer) {
+			composer.value = "Keep this reply";
+			composer.dispatchEvent(new Event("input"));
+		}
+		card.el.querySelector<HTMLButtonElement>("button[aria-label='Send']")?.click();
+
+		await vi.waitFor(() =>
+			expect(card.el.querySelector<HTMLTextAreaElement>(".dc-field--composer textarea")?.disabled).toBe(false),
+		);
+		card.update(commentWithText());
+		expect(card.el.querySelector<HTMLTextAreaElement>(".dc-field--composer textarea")?.value).toBe(
+			"Keep this reply",
+		);
+		expect(cb.reply).toHaveBeenCalledWith("h1", "Keep this reply");
 		card.destroy();
 	});
 });

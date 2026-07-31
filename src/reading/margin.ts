@@ -68,7 +68,7 @@ class ReadingMargin {
 			animateLayout: () => this.animateLayout(),
 			revealComposer: (id) => this.revealComposer(id),
 			reply: (id, text) =>
-				void this.edit((doc) =>
+				this.edit((doc) =>
 					computeAppendReply(doc, id, {
 						createdAt: new Date().toISOString(),
 						author: deps.getAuthor(),
@@ -110,15 +110,21 @@ class ReadingMargin {
 		this.position();
 	}
 
-	private async edit(compute: (doc: string) => Result<Change[], string>): Promise<void> {
+	private async edit(compute: (doc: string) => Result<Change[], string>): Promise<Result<void, string>> {
 		const file = this.view.file;
-		if (!file) return;
+		if (!file) {
+			const result = Result.err("No file is open.");
+			new Notice(`Couldn't save the comment: ${result.error}`);
+			return result;
+		}
 		// Route through the open editor when there is one (undo history + unsaved
 		// buffer) instead of a bare disk write that races the editor's autosave.
-		(await applyCommentEdit(this.deps.app, file, compute)).match({
+		const result = await applyCommentEdit(this.deps.app, file, compute);
+		result.match({
 			ok: (newData) => void this.refresh(newData),
 			err: (message) => new Notice(`Couldn't save the comment: ${message}`),
 		});
+		return result.map(() => undefined);
 	}
 
 	private reconcileCards(): void {
