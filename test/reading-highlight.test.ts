@@ -136,6 +136,23 @@ describe("reading-view highlight post-processor", () => {
 		el.remove();
 	});
 
+	test("keeps raw HTML code from shifting the Markdown code target", () => {
+		const doc = [
+			"<code>Spinner</code> and <!--c:i4-->`Spinner`<!--/c:i4-->.",
+			'<!--co:i4 by:me at:2026-01-01T00:00:00.000Z status:open quote:"`Spinner`"',
+			"-->",
+			"",
+		].join("\n");
+		const el = document.createElement("p");
+		el.innerHTML = "<code>Spinner</code> and <code>Spinner</code>.";
+
+		highlightPostProcessor(el, ctxFor(doc, 0, 0));
+		const codes = el.querySelectorAll("code");
+
+		expect(codes[0]?.querySelector(".doc-comment-span")).toBeNull();
+		expect(codes[1]?.querySelector(".doc-comment-span[data-cid='i4']")?.textContent).toBe("Spinner");
+	});
+
 	test("preserves boundary whitespace when mapping an existing highlight", () => {
 		const doc = [
 			"Ship on <!--c:w1-->Friday <!--/c:w1-->without delay.",

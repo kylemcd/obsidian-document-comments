@@ -136,7 +136,7 @@ const inlineCodeText = (source: string): string | null => {
 	return content;
 };
 
-type InlineCodeSpan = { from: number; text: string };
+type InlineCodeSpan = { from: number; to: number; text: string };
 
 /** Match a source code span to the same occurrence in rendered DOM. */
 const inlineCodeElement = (
@@ -145,13 +145,14 @@ const inlineCodeElement = (
 	targetFrom: number,
 	targetText: string,
 ): HTMLElement | null => {
-	const occurrence = inlineCodeSpans(sectionSource).filter(
-		(span) => span.from < targetFrom && span.text === targetText,
-	).length;
-	const matches = [...root.querySelectorAll<HTMLElement>("code")].filter(
-		(code) => !code.closest("pre") && code.textContent === targetText,
+	const spans = inlineCodeSpans(sectionSource);
+	const sourceCodeOffsets = [...spans.map((span) => span.from), ...rawInlineCodeOffsets(sectionSource, spans)].sort(
+		(a, b) => a - b,
 	);
-	return matches[occurrence] ?? null;
+	const occurrence = sourceCodeOffsets.filter((offset) => offset < targetFrom).length;
+	const codes = [...root.querySelectorAll<HTMLElement>("code")].filter((code) => !code.closest("pre"));
+	const code = codes[occurrence] ?? null;
+	return code?.textContent === targetText ? code : null;
 };
 
 /** Find rendered Markdown code spans while preserving their source offsets. */
@@ -184,7 +185,7 @@ const inlineCodeSpans = (source: string): InlineCodeSpan[] => {
 			if (closeLength === openLength) {
 				const end = close + closeLength;
 				const text = inlineCodeText(source.slice(open, end));
-				if (text !== null) spans.push({ from: open, text });
+				if (text !== null) spans.push({ from: open, to: end, text });
 				cursor = end;
 				found = true;
 				break;
@@ -195,6 +196,38 @@ const inlineCodeSpans = (source: string): InlineCodeSpan[] => {
 	}
 
 	return spans;
+};
+
+/** Find raw inline `<code>` elements because they share the rendered DOM list
+ *  with Markdown code spans. Raw code inside `<pre>` is excluded on both sides. */
+const rawInlineCodeOffsets = (source: string, spans: InlineCodeSpan[]): number[] => {
+	const offsets: number[] = [];
+	const masked: Array<[number, number]> = [
+		...fencedRanges(source),
+		...spans.map((span): [number, number] => [span.from, span.to]),
+		...[...source.matchAll(/<!--[\s\S]*?-->/g)].flatMap(
+			(match): Array<[number, number]> =>
+				match.index === undefined ? [] : [[match.index, match.index + match[0].length]],
+		),
+	];
+	const tags = /<\/?\s*(pre|code)\b[^>]*>/gi;
+	let preDepth = 0;
+	let match: RegExpExecArray | null;
+
+	while ((match = tags.exec(source))) {
+		if (isMasked(masked, match.index)) continue;
+		const name = match[1]?.toLowerCase();
+		const closing = /^<\s*\//.test(match[0]);
+		const selfClosing = /\/\s*>$/.test(match[0]);
+		if (name === "pre") {
+			if (closing) preDepth = Math.max(0, preDepth - 1);
+			else if (!selfClosing) preDepth++;
+		} else if (name === "code" && !closing && preDepth === 0) {
+			offsets.push(match.index);
+		}
+	}
+
+	return offsets;
 };
 
 const backtickRun = (source: string, from: number): number => {
