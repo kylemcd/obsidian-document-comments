@@ -160,10 +160,8 @@ const inlineCodeSpans = (source: string): InlineCodeSpan[] => {
 	const spans: InlineCodeSpan[] = [];
 	const masked = [
 		...fencedRanges(source),
-		...[...source.matchAll(/<!--[\s\S]*?-->/g)].flatMap(
-			(match): Array<[number, number]> =>
-				match.index === undefined ? [] : [[match.index, match.index + match[0].length]],
-		),
+		...htmlCommentRanges(source),
+		...rawHtmlTags(source).map((tag): [number, number] => [tag.from, tag.to]),
 	];
 	let cursor = 0;
 
@@ -171,7 +169,7 @@ const inlineCodeSpans = (source: string): InlineCodeSpan[] => {
 		const open = source.indexOf("`", cursor);
 		if (open < 0) break;
 		const openLength = backtickRun(source, open);
-		if (isMasked(masked, open) || isEscapedBacktick(source, open)) {
+		if (isMasked(masked, open) || isEscaped(source, open)) {
 			cursor = open + openLength;
 			continue;
 		}
@@ -205,29 +203,94 @@ const rawInlineCodeOffsets = (source: string, spans: InlineCodeSpan[]): number[]
 	const masked: Array<[number, number]> = [
 		...fencedRanges(source),
 		...spans.map((span): [number, number] => [span.from, span.to]),
-		...[...source.matchAll(/<!--[\s\S]*?-->/g)].flatMap(
-			(match): Array<[number, number]> =>
-				match.index === undefined ? [] : [[match.index, match.index + match[0].length]],
-		),
+		...htmlCommentRanges(source),
 	];
-	const tags = /<\/?\s*(pre|code)\b[^>]*>/gi;
 	let preDepth = 0;
-	let match: RegExpExecArray | null;
 
-	while ((match = tags.exec(source))) {
-		if (isMasked(masked, match.index)) continue;
-		const name = match[1]?.toLowerCase();
-		const closing = /^<\s*\//.test(match[0]);
-		const selfClosing = /\/\s*>$/.test(match[0]);
-		if (name === "pre") {
-			if (closing) preDepth = Math.max(0, preDepth - 1);
-			else if (!selfClosing) preDepth++;
-		} else if (name === "code" && !closing && preDepth === 0) {
-			offsets.push(match.index);
+	for (const tag of rawHtmlTags(source)) {
+		if (isMasked(masked, tag.from)) continue;
+		if (tag.name === "pre") {
+			if (tag.closing) preDepth = Math.max(0, preDepth - 1);
+			else if (!tag.selfClosing) preDepth++;
+		} else if (tag.name === "code" && !tag.closing && preDepth === 0) {
+			offsets.push(tag.from);
 		}
 	}
 
 	return offsets;
+};
+
+type RawHtmlTag = {
+	from: number;
+	to: number;
+	name: string;
+	closing: boolean;
+	selfClosing: boolean;
+};
+
+/** Locate raw HTML tags and keep quoted `>` characters inside the tag range. */
+const rawHtmlTags = (source: string): RawHtmlTag[] => {
+	const tags: RawHtmlTag[] = [];
+	let cursor = 0;
+
+	while (cursor < source.length) {
+		const from = source.indexOf("<", cursor);
+		if (from < 0) break;
+		if (isEscaped(source, from)) {
+			cursor = from + 1;
+			continue;
+		}
+		let position = from + 1;
+		const closing = source.charAt(position) === "/";
+		if (closing) position++;
+		if (!/[A-Za-z]/.test(source.charAt(position))) {
+			cursor = from + 1;
+			continue;
+		}
+		const nameFrom = position;
+		while (/[A-Za-z0-9:-]/.test(source.charAt(position))) position++;
+		const nameTo = position;
+		if (position < source.length && !/[\s/>]/.test(source.charAt(position))) {
+			cursor = from + 1;
+			continue;
+		}
+
+		let quote = "";
+		let to = -1;
+		for (; position < source.length; position++) {
+			const char = source.charAt(position);
+			if (quote) {
+				if (char === quote) quote = "";
+			} else if (char === '"' || char === "'") {
+				quote = char;
+			} else if (char === ">") {
+				to = position + 1;
+				break;
+			}
+		}
+		if (to < 0) {
+			cursor = from + 1;
+			continue;
+		}
+		const raw = source.slice(from, to);
+		tags.push({
+			from,
+			to,
+			name: source.slice(nameFrom, nameTo).toLowerCase(),
+			closing,
+			selfClosing: /\/\s*>$/.test(raw),
+		});
+		cursor = to;
+	}
+
+	return tags;
+};
+
+const htmlCommentRanges = (source: string): Array<[number, number]> => {
+	return [...source.matchAll(/<!--[\s\S]*?-->/g)].flatMap(
+		(match): Array<[number, number]> =>
+			match.index === undefined ? [] : [[match.index, match.index + match[0].length]],
+	);
 };
 
 const backtickRun = (source: string, from: number): number => {
@@ -236,7 +299,7 @@ const backtickRun = (source: string, from: number): number => {
 	return to - from;
 };
 
-const isEscapedBacktick = (source: string, position: number): boolean => {
+const isEscaped = (source: string, position: number): boolean => {
 	let slashes = 0;
 	for (let cursor = position - 1; cursor >= 0 && source.charAt(cursor) === "\\"; cursor--) slashes++;
 	return slashes % 2 === 1;

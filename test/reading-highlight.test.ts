@@ -153,6 +153,21 @@ describe("reading-view highlight post-processor", () => {
 		expect(codes[1]?.querySelector(".doc-comment-span[data-cid='i4']")?.textContent).toBe("Spinner");
 	});
 
+	test("ignores backticks inside raw HTML attributes", () => {
+		const doc = [
+			'<span title="`not > code`">x</span> and <!--c:i5-->`Spinner`<!--/c:i5-->.',
+			'<!--co:i5 by:me at:2026-01-01T00:00:00.000Z status:open quote:"`Spinner`"',
+			"-->",
+			"",
+		].join("\n");
+		const el = document.createElement("p");
+		el.innerHTML = '<span title="`not > code`">x</span> and <code>Spinner</code>.';
+
+		highlightPostProcessor(el, ctxFor(doc, 0, 0));
+
+		expect(el.querySelector("code > .doc-comment-span[data-cid='i5']")?.textContent).toBe("Spinner");
+	});
+
 	test("preserves boundary whitespace when mapping an existing highlight", () => {
 		const doc = [
 			"Ship on <!--c:w1-->Friday <!--/c:w1-->without delay.",
