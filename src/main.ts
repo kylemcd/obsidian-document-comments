@@ -199,6 +199,7 @@ export default class DocCommentsPlugin extends Plugin {
 						targetHighlightId,
 					);
 					if (result.isErr()) new Notice(`Couldn't add the comment: ${result.error}`);
+					return result.map(() => undefined);
 				},
 				emptyAction,
 			).open();
@@ -249,9 +250,7 @@ export default class DocCommentsPlugin extends Plugin {
 			new CommentModal(
 				this.app,
 				selected,
-				(text) => {
-					void this.insertReadingComment(file, from, to, text, expected, targetHighlightId);
-				},
+				(text) => this.insertReadingComment(file, from, to, text, expected, targetHighlightId),
 				emptyAction,
 			).open();
 			return;
@@ -277,23 +276,23 @@ export default class DocCommentsPlugin extends Plugin {
 		text: string,
 		expected: string,
 		targetHighlightId?: string,
-	): Promise<void> {
-		(
-			await insertCommentInFile(
-				this.app,
-				file,
-				from,
-				to,
-				text,
-				this.authorName(),
-				expected,
-				this.settings.allowEmptyComments,
-				targetHighlightId,
-			)
-		).match({
+	): Promise<Result<void, string>> {
+		const result = await insertCommentInFile(
+			this.app,
+			file,
+			from,
+			to,
+			text,
+			this.authorName(),
+			expected,
+			this.settings.allowEmptyComments,
+			targetHighlightId,
+		);
+		result.match({
 			ok: () => this.scheduleReadingRefresh(),
 			err: (message) => new Notice(`Couldn't add the comment: ${message}`),
 		});
+		return result.map(() => undefined);
 	}
 
 	private async toggleComments(): Promise<void> {

@@ -1,14 +1,16 @@
 import { describe, expect, test, vi } from "vitest";
+import { Result } from "better-result";
 import { draftPlaceholder, emptySubmitLabel, submitDraft } from "../src/ui/draft-behavior";
 
 describe("draft behavior", () => {
 	test("submits blank text so the caller can dismiss a disabled empty comment", () => {
-		const onSubmit = vi.fn();
+		const onSubmit = vi.fn(() => Result.ok(undefined));
 
-		submitDraft("   ", onSubmit);
+		const result = submitDraft("   ", onSubmit);
 
 		expect(onSubmit).toHaveBeenCalledOnce();
 		expect(onSubmit).toHaveBeenCalledWith("");
+		expect(result).toEqual(Result.ok(undefined));
 	});
 
 	test("describes highlight removal for an empty confirmation", () => {

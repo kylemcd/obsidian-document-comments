@@ -1,5 +1,11 @@
 import { App, Modal, Setting } from "obsidian";
-import { draftPlaceholder, EmptySubmitAction, emptySubmitLabel } from "./draft-behavior";
+import {
+	draftPlaceholder,
+	DraftSubmitHandler,
+	EmptySubmitAction,
+	emptySubmitLabel,
+	submitDraft,
+} from "./draft-behavior";
 
 /**
  * A plain text-entry dialog for composing a new comment. Used where the inline
@@ -9,11 +15,12 @@ import { draftPlaceholder, EmptySubmitAction, emptySubmitLabel } from "./draft-b
  */
 export class CommentModal extends Modal {
 	private value = "";
+	private saving = false;
 
 	constructor(
 		app: App,
 		private quote: string,
-		private onSubmit: (text: string) => void,
+		private onSubmit: DraftSubmitHandler,
 		private emptyAction: EmptySubmitAction = "none",
 	) {
 		super(app);
@@ -41,7 +48,7 @@ export class CommentModal extends Modal {
 		input.addEventListener("keydown", (e) => {
 			if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
 				e.preventDefault();
-				this.submit();
+				void this.submit();
 			}
 		});
 		window.setTimeout(() => input.focus(), 0);
@@ -55,17 +62,31 @@ export class CommentModal extends Modal {
 				};
 				input.addEventListener("input", updateLabel);
 				updateLabel();
-				b.setCta().onClick(() => this.submit());
+				b.setCta().onClick(() => void this.submit());
 			});
 	}
 
-	private submit(): void {
+	private async submit(): Promise<void> {
+		if (this.saving) return;
 		const text = this.value.trim();
-		this.close();
-		if (text || this.emptyAction !== "none") this.onSubmit(text);
+		this.saving = true;
+		this.contentEl
+			.querySelectorAll<HTMLTextAreaElement | HTMLButtonElement>("textarea, button")
+			.forEach((control) => (control.disabled = true));
+		const result = await submitDraft(text, this.onSubmit);
+		if (result.isOk()) {
+			this.close();
+			return;
+		}
+		this.saving = false;
+		this.contentEl
+			.querySelectorAll<HTMLTextAreaElement | HTMLButtonElement>("textarea, button")
+			.forEach((control) => (control.disabled = false));
+		this.contentEl.querySelector<HTMLTextAreaElement>("textarea")?.focus({ preventScroll: true });
 	}
 
 	onClose(): void {
+		this.saving = false;
 		this.contentEl.empty();
 	}
 }

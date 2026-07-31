@@ -244,12 +244,14 @@ class ReadingMargin {
 		const { el } = buildDraftComposer({
 			emptyAction: this.draftEmptyAction,
 			onCancel: () => this.clearDraft(),
-			onSubmit: (text) => {
+			onSubmit: async (text) => {
 				const draft = this.draft;
 				const expected = this.draftText;
 				const targetHighlightId = this.draftTargetHighlightId;
-				this.clearDraft();
-				if (draft) void this.insertComment(draft.from, draft.to, text, expected, targetHighlightId);
+				if (!draft) return Result.err("The comment draft no longer exists.");
+				const result = await this.insertComment(draft.from, draft.to, text, expected, targetHighlightId);
+				if (result.isOk()) this.clearDraft();
+				return result;
 			},
 		});
 		return el;
@@ -261,25 +263,29 @@ class ReadingMargin {
 		text: string,
 		expected: string,
 		targetHighlightId?: string,
-	): Promise<void> {
+	): Promise<Result<void, string>> {
 		const file = this.view.file;
-		if (!file) return;
-		(
-			await routeInsertComment(
-				this.deps.app,
-				file,
-				from,
-				to,
-				text,
-				this.deps.getAuthor(),
-				expected,
-				this.deps.allowEmptyComments(),
-				targetHighlightId,
-			)
-		).match({
+		if (!file) {
+			const result = Result.err("No file is open.");
+			new Notice(`Couldn't add the comment: ${result.error}`);
+			return result;
+		}
+		const result = await routeInsertComment(
+			this.deps.app,
+			file,
+			from,
+			to,
+			text,
+			this.deps.getAuthor(),
+			expected,
+			this.deps.allowEmptyComments(),
+			targetHighlightId,
+		);
+		result.match({
 			ok: () => void this.refresh(),
 			err: (message) => new Notice(`Couldn't add the comment: ${message}`),
 		});
+		return result.map(() => undefined);
 	}
 
 	private clearDraft(): void {

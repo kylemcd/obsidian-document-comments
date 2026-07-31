@@ -22,6 +22,7 @@ import { closestSpanId, spanSelector } from "../util/css";
 import { stackTops } from "../ui/stack";
 import { CARD_GAP, FLASH_MS } from "../ui/constants";
 import { buildDraftComposer } from "../ui/draft-composer";
+import { EmptySubmitAction } from "../ui/draft-behavior";
 
 /** Editor-margin writes go through a live CodeMirror view (no I/O), so the only
  *  failure is a compute error — surface it as a notice rather than swallowing it. */
@@ -38,6 +39,7 @@ class MarginView implements PluginValue {
 	private cards = new Map<string, Card>();
 	private activeId: string | null = null;
 	private draftEl: HTMLElement | null = null;
+	private setDraftEmptyAction: ((action: EmptySubmitAction) => void) | null = null;
 	private draftFocused = false;
 	private draftOutside: ((e: MouseEvent) => void) | null = null;
 	private cb: CardCallbacks;
@@ -100,6 +102,7 @@ class MarginView implements PluginValue {
 		// geometry-dependent reposition for the measure phase. coordsAtPos throws if
 		// called during an update/construction, so positioning MUST go through
 		// requestMeasure. The key also coalesces bursts into one measure per frame.
+		this.syncDraftEl(this.view.state.field(draftField, false) ?? null);
 		this.reconcile();
 		this.requestReposition();
 	}
@@ -240,7 +243,7 @@ class MarginView implements PluginValue {
 			this.draftOutside = (e: MouseEvent) => {
 				if (!this.draftEl || this.draftEl.contains(e.target as Node)) return;
 				const ta = this.draftEl.querySelector("textarea");
-				if (ta instanceof HTMLTextAreaElement && ta.value.trim() === "") {
+				if (ta instanceof HTMLTextAreaElement && !ta.disabled && ta.value.trim() === "") {
 					this.view.dispatch({ effects: clearDraft.of(null) });
 				}
 			};
@@ -248,8 +251,10 @@ class MarginView implements PluginValue {
 		} else if (!draft && this.draftEl) {
 			this.draftEl.remove();
 			this.draftEl = null;
+			this.setDraftEmptyAction = null;
 			this.removeDraftOutside();
 		}
+		if (draft && this.draftEl) this.setDraftEmptyAction?.(this.emptyAction(draft));
 		if (draft && this.draftEl && !this.draftFocused) {
 			this.draftFocused = true;
 			window.setTimeout(() => this.draftEl?.querySelector("textarea")?.focus(), 0);
@@ -268,29 +273,35 @@ class MarginView implements PluginValue {
 		const initialDraft = this.view.state.field(draftField, false);
 		// Editor path: offsets come live from draftField (mapped through every edit),
 		// so no stale-offset verification is needed here.
-		const { el } = buildDraftComposer({
-			emptyAction: initialDraft?.targetHighlightId ? "remove" : cfg.allowEmptyComments() ? "highlight" : "none",
+		const { el, setEmptyAction } = buildDraftComposer({
+			emptyAction: initialDraft ? this.emptyAction(initialDraft) : "none",
 			onCancel: () => this.view.dispatch({ effects: clearDraft.of(null) }),
 			onSubmit: (text) => {
 				const draft = this.view.state.field(draftField, false);
-				if (draft) {
-					notifyErr(
-						addComment(
-							this.view,
-							draft.from,
-							draft.to,
-							text,
-							this.cb.getAuthor(),
-							undefined,
-							cfg.allowEmptyComments(),
-							draft.targetHighlightId,
-						),
-					);
-				}
-				this.view.dispatch({ effects: clearDraft.of(null) });
+				if (!draft) return Result.err("The comment draft no longer exists.");
+				const result = notifyErr(
+					addComment(
+						this.view,
+						draft.from,
+						draft.to,
+						text,
+						this.cb.getAuthor(),
+						undefined,
+						cfg.allowEmptyComments(),
+						draft.targetHighlightId,
+					),
+				);
+				if (result.isOk()) this.view.dispatch({ effects: clearDraft.of(null) });
+				return result.map(() => undefined);
 			},
 		});
+		this.setDraftEmptyAction = setEmptyAction;
 		return el;
+	}
+
+	private emptyAction(draft: Draft): EmptySubmitAction {
+		if (draft.targetHighlightId) return "remove";
+		return this.view.state.facet(commentConfig).allowEmptyComments() ? "highlight" : "none";
 	}
 
 	private setActive(id: string | null): void {

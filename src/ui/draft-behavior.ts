@@ -1,4 +1,7 @@
+import type { Result } from "better-result";
+
 export type EmptySubmitAction = "none" | "highlight" | "remove";
+export type DraftSubmitHandler = (text: string) => Result<void, string> | Promise<Result<void, string>>;
 
 export const emptySubmitLabel = (action: EmptySubmitAction): string => {
 	return action === "highlight" ? "Empty comment" : action === "remove" ? "Remove highlight" : "Comment";
@@ -10,7 +13,10 @@ export const draftPlaceholder = (action: EmptySubmitAction): string => {
 	return "Write a comment…";
 };
 
-/** Submit every inline draft, including a blank one, so its caller can dismiss it. */
-export const submitDraft = (value: string, onSubmit: (text: string) => void): void => {
-	onSubmit(value.trim());
+/** Submit every inline draft, including a blank one, and return the save result. */
+export const submitDraft = (
+	value: string,
+	onSubmit: DraftSubmitHandler,
+): Result<void, string> | Promise<Result<void, string>> => {
+	return onSubmit(value.trim());
 };
