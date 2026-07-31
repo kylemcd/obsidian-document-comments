@@ -27,7 +27,7 @@
 		"esbuild": "^0.28.1",
 		"eslint": "^10.7.0",
 		"eslint-plugin-obsidianmd": "^0.4.1",
-		"happy-dom": "^20.10.6",
+		"happy-dom": "^20.11.1",
 		"obsidian": "^1.5.7",
 		"oxfmt": "^0.59.0",
 		"oxlint": "^1.73.0",
