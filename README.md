@@ -196,6 +196,10 @@ python3 skills/document-comments/scripts/validate_comments.py path/to/file.md
 
 The plugin does not use the network, telemetry, or accounts. It stores all comment data in the note.
 
+## Roadmap
+
+Use the [Document Comments project](https://github.com/users/kylemcd/projects/1) to see the roadmap, current work, and planned work.
+
 ## Known limitations
 
 - Reading view comments work best with plain text inside one paragraph.
