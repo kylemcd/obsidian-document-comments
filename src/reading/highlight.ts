@@ -287,9 +287,8 @@ const rawHtmlTags = (source: string): RawHtmlTag[] => {
 };
 
 const htmlCommentRanges = (source: string): Array<[number, number]> => {
-	return [...source.matchAll(/<!--[\s\S]*?-->/g)].flatMap(
-		(match): Array<[number, number]> =>
-			match.index === undefined ? [] : [[match.index, match.index + match[0].length]],
+	return [...source.matchAll(/<!--[\s\S]*?-->/g)].flatMap((match): Array<[number, number]> =>
+		match.index === undefined ? [] : [[match.index, match.index + match[0].length]],
 	);
 };
 
