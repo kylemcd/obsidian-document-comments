@@ -22,7 +22,7 @@
 	"license": "MIT",
 	"devDependencies": {
 		"@codemirror/state": "^6.7.1",
-		"@codemirror/view": "^6.43.7",
+		"@codemirror/view": "^6.43.8",
 		"@types/node": "^26.1.2",
 		"esbuild": "^0.28.1",
 		"eslint": "^10.8.0",
