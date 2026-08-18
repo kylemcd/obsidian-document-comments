@@ -1,6 +1,7 @@
 import { App, Debouncer, ItemView, MarkdownView, Notice, TFile, WorkspaceLeaf, debounce } from "obsidian";
 import { EditorView } from "@codemirror/view";
 import { Result } from "better-result";
+import type { AuthorColorResolver } from "../author-colors";
 import { ParsedComment } from "../format/types";
 import { anchorRange, hasCommentCard, parseComments } from "../format/parse";
 import { Card, CardCallbacks } from "./card";
@@ -24,6 +25,7 @@ export const COMMENTS_VIEW_TYPE = "document-comments-sidebar";
 export type SidebarDeps = {
 	app: App;
 	getAuthor: () => string;
+	colorForAuthor: AuthorColorResolver;
 };
 
 /** Panel-local status filter — independent of the document's resolved setting. */
@@ -234,7 +236,11 @@ export class CommentsSidebarView extends ItemView {
 				this.cards.delete(id);
 			}
 		}
-		const cardView = { app: this.app, sourcePath: () => this.file?.path ?? "" };
+		const cardView = {
+			app: this.app,
+			sourcePath: () => this.file?.path ?? "",
+			colorForAuthor: this.deps.colorForAuthor,
+		};
 		const desired: HTMLElement[] = [];
 		for (const c of comments) {
 			const existing = this.cards.get(c.id);
@@ -244,6 +250,7 @@ export class CommentsSidebarView extends ItemView {
 				desired.push(card.el);
 			} else {
 				if (existing.signature !== cardSignature(c)) existing.update(c);
+				existing.refreshAuthorColors();
 				desired.push(existing.el);
 			}
 		}

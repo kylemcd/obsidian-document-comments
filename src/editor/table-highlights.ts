@@ -4,6 +4,7 @@ import { anchorRange } from "../format/parse";
 import type { ParsedComment } from "../format/types";
 import { commentConfig, type CommentConfig } from "./config";
 import { getComments } from "./state";
+import { authorColorCss, creatorForComment, type ResolvedAuthorColor } from "../author-colors";
 
 export type TableHighlightTarget = {
 	table: number;
@@ -11,18 +12,36 @@ export type TableHighlightTarget = {
 	column: number;
 	quote: string;
 	resolved: boolean;
+	author: string | null;
 };
 
-type TableRanges = { open: Range[]; resolved: Range[] };
+type TableColorRanges = {
+	color: ResolvedAuthorColor;
+	resolved: boolean;
+	ranges: Range[];
+};
+type TableRanges = Map<string, TableColorRanges>;
 type BrowserWindow = NonNullable<Document["defaultView"]>;
 type SourceTable = { start: number; end: number; from: number; to: number };
 
-const OPEN_HIGHLIGHT = "document-comments-table";
-const RESOLVED_HIGHLIGHT = "document-comments-table-resolved";
 // `CSS.highlights` is a per-DOCUMENT global registry, so every editor view in a
 // window must merge its ranges before we set it. Keyed by document (pop-out
 // windows have their own) → each view's current ranges.
 const rangesByDocument = new WeakMap<Document, Map<EditorView, TableRanges>>();
+const namesByDocument = new WeakMap<Document, Set<string>>();
+const stylesByDocument = new WeakMap<Document, HTMLStyleElement>();
+
+export const tableHighlightName = (color: ResolvedAuthorColor, resolved: boolean): string => {
+	return `document-comments-table-${resolved ? "resolved" : "open"}-${color ? color.slice(1) : "default"}`;
+};
+
+export const tableHighlightRule = (color: ResolvedAuthorColor, resolved: boolean): string => {
+	const name = tableHighlightName(color, resolved);
+	const cssColor = authorColorCss(color);
+	const background = resolved ? "transparent" : `color-mix(in srgb, ${cssColor} 18%, transparent)`;
+	const decoration = resolved ? "dashed" : "solid";
+	return `::highlight(${name}) { background-color: ${background}; text-decoration-line: underline; text-decoration-style: ${decoration}; text-decoration-color: ${cssColor}; }`;
+};
 
 /** Map source comment anchors to the rendered table/cell that owns them. */
 export const tableHighlightTargets = (doc: string, comments: ParsedComment[]): TableHighlightTarget[] => {
@@ -49,6 +68,7 @@ export const tableHighlightTargets = (doc: string, comments: ParsedComment[]): T
 				column: tableColumnAt(line.text, range.from - line.from),
 				quote,
 				resolved: comment.status === "resolved",
+				author: creatorForComment(comment),
 			});
 		}
 	}
@@ -79,7 +99,7 @@ class TableHighlights {
 	destroy(): void {
 		this.generation++;
 		this.observer.disconnect();
-		setViewRanges(this.view, { open: [], resolved: [] }, true);
+		setViewRanges(this.view, new Map(), true);
 	}
 
 	private schedule(): void {
@@ -95,7 +115,7 @@ class TableHighlights {
 		const cfg = this.view.state.facet(commentConfig);
 		const renderMarkdown = cfg.renderMarkdown;
 		if (!cfg.showComments()) {
-			setViewRanges(this.view, { open: [], resolved: [] });
+			setViewRanges(this.view, new Map());
 			return;
 		}
 
@@ -112,7 +132,7 @@ class TableHighlights {
 				return null;
 			}
 		});
-		const ranges: TableRanges = { open: [], resolved: [] };
+		const ranges: TableRanges = new Map();
 		const nextMatch = new WeakMap<Element, number>();
 
 		for (const target of targets) {
@@ -136,7 +156,11 @@ class TableHighlights {
 			if (generation !== this.generation) return;
 			if (!match) continue;
 			nextMatch.set(content, match.next);
-			(target.resolved ? ranges.resolved : ranges.open).push(match.range);
+			const color = (cfg.highlightColorForAuthor ?? cfg.colorForAuthor)(target.author ?? cfg.author());
+			const name = tableHighlightName(color, target.resolved);
+			const entry = ranges.get(name) ?? { color, resolved: target.resolved, ranges: [] };
+			entry.ranges.push(match.range);
+			ranges.set(name, entry);
 		}
 
 		if (generation === this.generation) setViewRanges(this.view, ranges);
@@ -180,15 +204,47 @@ const setViewRanges = (view: EditorView, ranges: TableRanges, remove = false): v
 
 	const scope = doc.defaultView;
 	if (!scope?.CSS?.highlights || typeof scope.Highlight !== "function") return;
-	const allOpen = Array.from(viewRanges.values()).flatMap((entry) => entry.open);
-	const allResolved = Array.from(viewRanges.values()).flatMap((entry) => entry.resolved);
-	setHighlight(scope, OPEN_HIGHLIGHT, allOpen);
-	setHighlight(scope, RESOLVED_HIGHLIGHT, allResolved);
+	const merged = [...viewRanges.values()]
+		.flatMap((entries) => [...entries.entries()])
+		.reduce((all, [name, entry]) => {
+			const existing = all.get(name) ?? { ...entry, ranges: [] };
+			existing.ranges.push(...entry.ranges);
+			all.set(name, existing);
+			return all;
+		}, new Map<string, TableColorRanges>());
+	const previousNames = namesByDocument.get(doc) ?? new Set<string>();
+	previousNames.forEach((name) => {
+		if (!merged.has(name)) scope.CSS.highlights.delete(name);
+	});
+	merged.forEach((entry, name) => setHighlight(scope, name, entry.ranges));
+	namesByDocument.set(doc, new Set(merged.keys()));
+	updateHighlightStyles(doc, merged);
+	if (viewRanges.size > 0) return;
+	rangesByDocument.delete(doc);
 };
 
 const setHighlight = (scope: BrowserWindow, name: string, ranges: Range[]): void => {
 	if (ranges.length === 0) scope.CSS.highlights.delete(name);
 	else scope.CSS.highlights.set(name, new scope.Highlight(...ranges));
+};
+
+const updateHighlightStyles = (doc: Document, ranges: ReadonlyMap<string, TableColorRanges>): void => {
+	if (ranges.size === 0) {
+		stylesByDocument.get(doc)?.remove();
+		stylesByDocument.delete(doc);
+		return;
+	}
+	let style = stylesByDocument.get(doc);
+	if (!style) {
+		// CSS Custom Highlight ranges cannot carry per-range colors, so one scoped
+		// runtime stylesheet per owner document is the only way to color its names.
+		style = (doc.head ?? doc.documentElement).createEl("style");
+		style.dataset.documentCommentsTableHighlights = "true";
+		stylesByDocument.set(doc, style);
+	}
+	style.textContent = [...ranges.entries()]
+		.map(([, entry]) => tableHighlightRule(entry.color, entry.resolved))
+		.join("\n");
 };
 
 export const textRange = (root: HTMLElement, needle: string, from: number): { range: Range; next: number } | null => {

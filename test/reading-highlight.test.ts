@@ -48,6 +48,42 @@ describe("reading-view highlight post-processor", () => {
 		const span = el.querySelector(".doc-comment-span[data-cid='p1']");
 		expect(span?.textContent).toBe("Friday");
 		expect(span?.getAttribute("title")).toBe("me: ok");
+		expect(span?.getAttribute("data-dc-author")).toBe("me");
+	});
+
+	test("applies the original creator's configured color", () => {
+		const doc = [
+			"We ship on <!--c:p2-->Friday<!--/c:p2--> regardless.",
+			'<!--co:p2 by:Alice at:2026-01-01T00:00:00.000Z status:resolved quote:"Friday"',
+			"Alice: ok",
+			"-->",
+		].join("\n");
+		const el = document.createElement("p");
+		el.textContent = "We ship on Friday regardless.";
+
+		highlightPostProcessor(el, ctxFor(doc, 0, 0), () => "#0090ff");
+		const span = el.querySelector<HTMLElement>(".doc-comment-span[data-cid='p2']");
+
+		expect(span?.dataset.dcAuthor).toBe("Alice");
+		expect(span?.style.getPropertyValue("--dc-highlight-color")).toBe("#0090ff");
+		expect(span?.classList.contains("is-resolved")).toBe(true);
+	});
+
+	test("uses the normal theme text color when an author has no mapping", () => {
+		const doc = [
+			"Ship <!--c:p3-->Friday<!--/c:p3-->.",
+			'<!--co:p3 by:Alice status:open quote:"Friday"',
+			"Alice: yes",
+			"-->",
+		].join("\n");
+		const el = document.createElement("p");
+		el.textContent = "Ship Friday.";
+
+		highlightPostProcessor(el, ctxFor(doc, 0, 0), () => null);
+
+		expect(el.querySelector<HTMLElement>(".doc-comment-span")?.style.getPropertyValue("--dc-highlight-color")).toBe(
+			"var(--text-normal)",
+		);
 	});
 
 	test("wraps an empty comment as a highlight without a preview", () => {

@@ -1,5 +1,6 @@
 import { Facet } from "@codemirror/state";
 import type { App } from "obsidian";
+import type { AuthorColorResolver } from "../author-colors";
 
 export type CommentConfig = {
 	/** App handle, so the inline margin can render comment text as Markdown. */
@@ -9,6 +10,11 @@ export type CommentConfig = {
 	renderMarkdown?: (markdown: string, el: HTMLElement) => Promise<void>;
 	/** Current author handle, read live so settings changes take effect. */
 	author: () => string;
+	/** Resolve and, when necessary, persist an original creator's highlight color. */
+	colorForAuthor: AuthorColorResolver;
+	/** Resolve the color painted in the document. This differs from author-name
+	 *  colors when the global toggle restores the legacy yellow highlight. */
+	highlightColorForAuthor?: AuthorColorResolver;
 	/** Whether the margin column is shown at all (Notion-style toggle). */
 	showComments: () => boolean;
 	/** Whether resolved comments still show a card in the margin. */
@@ -29,6 +35,7 @@ export type CommentConfig = {
 
 const DEFAULT: CommentConfig = {
 	author: () => "me",
+	colorForAuthor: () => null,
 	showComments: () => true,
 	showResolved: () => true,
 	allowEmptyComments: () => false,
@@ -36,5 +43,5 @@ const DEFAULT: CommentConfig = {
 };
 
 export const commentConfig = Facet.define<CommentConfig, CommentConfig>({
-	combine: (values) => values[0] ?? DEFAULT,
+	combine: (values) => ({ ...DEFAULT, ...values[0] }),
 });
