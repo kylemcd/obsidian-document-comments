@@ -9,6 +9,24 @@ const createPlugin = (): DocCommentsPlugin => {
 };
 
 describe("plugin settings persistence", () => {
+	test("skips author indexing while colors are off and starts it after enable", async () => {
+		const plugin = createPlugin();
+		const rescan = vi.spyOn(plugin, "rescanAuthors").mockResolvedValue();
+		plugin.settings = {
+			...DEFAULT_SETTINGS,
+			authorColorsEnabled: false,
+			authorColors: {},
+			excludedAuthorColors: [],
+		};
+
+		await plugin.scanAuthorsIfEnabled();
+		expect(rescan).not.toHaveBeenCalled();
+
+		plugin.settings.authorColorsEnabled = true;
+		await plugin.scanAuthorsIfEnabled();
+		expect(rescan).toHaveBeenCalledOnce();
+	});
+
 	test("persists an initial generated assignment and restores it on reload", async () => {
 		const first = createPlugin();
 		let saved: unknown = null;

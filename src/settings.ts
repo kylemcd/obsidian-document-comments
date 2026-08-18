@@ -299,6 +299,9 @@ export class DocCommentsSettingTab extends PluginSettingTab {
 		if (key === "author") this.plugin.ensureCurrentAuthorColor();
 		this.plugin.refreshEditors();
 		if (key === "showComments") this.plugin.updateRibbon();
+		if (key === "authorColorsEnabled" && previous === false && this.plugin.settings.authorColorsEnabled) {
+			await this.plugin.scanAuthorsIfEnabled();
+		}
 		this.refresh();
 	}
 }

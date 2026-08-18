@@ -25,6 +25,7 @@ const plugin = (state: AuthorIndexState) => ({
 	deleteAuthorColor: vi.fn(async () => {}),
 	restoreAuthorColor: vi.fn(async () => {}),
 	rescanAuthors: vi.fn(async () => {}),
+	scanAuthorsIfEnabled: vi.fn(async () => {}),
 	saveSettings: vi.fn(async (): Promise<ResultType<void, string>> => Result.ok(undefined)),
 	settingsError: vi.fn((): string | null => null),
 	ensureCurrentAuthorColor: vi.fn(),
@@ -137,19 +138,36 @@ describe("highlight color settings", () => {
 		expect(fake.settings.authorColors).toEqual(before);
 		expect(fake.saveSettings).toHaveBeenCalledOnce();
 		expect(fake.refreshEditors).toHaveBeenCalled();
+		expect(fake.scanAuthorsIfEnabled).not.toHaveBeenCalled();
+	});
+
+	test("scans existing authors after author colors are successfully enabled", async () => {
+		const fake = plugin({ status: "idle", authors: [] });
+		fake.settings.authorColorsEnabled = false;
+		const before = structuredClone(fake.settings.authorColors);
+		const tab = new DocCommentsSettingTab(new App(), fake as never);
+
+		await tab.setControlValue("authorColorsEnabled", true);
+
+		expect(fake.settings.authorColorsEnabled).toBe(true);
+		expect(fake.settings.authorColors).toEqual(before);
+		expect(fake.saveSettings).toHaveBeenCalledOnce();
+		expect(fake.scanAuthorsIfEnabled).toHaveBeenCalledOnce();
 	});
 
 	test("rolls back a rejected setting write and surfaces the failure inline", async () => {
 		const fake = plugin({ status: "ready", authors: ["Alice"] });
+		fake.settings.authorColorsEnabled = false;
 		fake.saveSettings.mockResolvedValue(Result.err("disk full"));
 		fake.settingsError.mockReturnValue("Couldn't save settings: disk full");
 		const tab = new DocCommentsSettingTab(new App(), fake as never);
 
-		await tab.setControlValue("authorColorsEnabled", false);
+		await tab.setControlValue("authorColorsEnabled", true);
 		tab.display();
 
-		expect(fake.settings.authorColorsEnabled).toBe(true);
+		expect(fake.settings.authorColorsEnabled).toBe(false);
 		expect(fake.refreshEditors).not.toHaveBeenCalled();
+		expect(fake.scanAuthorsIfEnabled).not.toHaveBeenCalled();
 		expect(tab.containerEl.textContent).toContain("Settings error");
 		expect(tab.containerEl.textContent).toContain("Couldn't save settings: disk full");
 	});

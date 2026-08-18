@@ -5,6 +5,10 @@ matching the pushed tag as that GitHub release's notes, so add an entry here bef
 
 ## Unreleased
 
+## 0.1.14
+
+- Author-color indexing no longer scans or reads vault notes while **Use author colors** is off. Enabling the setting starts the local scan, and the README now explicitly documents that note contents never leave the device and only author names and color assignments are retained.
+
 ## 0.1.13
 
 - Added persistent per-author highlight colors. The settings page discovers comment and reply authors across the vault, assigns distinct Radix colors automatically, supports custom colors through Obsidian's built-in picker, colors author names on comment cards, can disable colors without losing assignments, and can delete individual mappings so those authors use the normal theme color. Resolved highlights keep a dashed creator-colored underline ([#67](https://github.com/kylemcd/obsidian-document-comments/issues/67)).

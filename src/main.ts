@@ -154,28 +154,35 @@ export default class DocCommentsPlugin extends Plugin {
 		this.registerEvent(this.app.workspace.on("resize", () => this.syncSidebarOpen()));
 		this.app.workspace.onLayoutReady(() => {
 			// Register after vault startup so Obsidian's initial create-event burst does
-			// not duplicate the bounded full scan.
+			// not duplicate a scan when author colors are enabled.
 			this.registerEvent(
 				this.app.vault.on("create", (file: TAbstractFile) => {
-					if (file instanceof TFile) this.authorIndex?.scheduleRefresh(file);
+					if (this.settings.authorColorsEnabled && file instanceof TFile) {
+						this.authorIndex?.scheduleRefresh(file);
+					}
 				}),
 			);
 			this.registerEvent(
 				this.app.vault.on("modify", (file: TAbstractFile) => {
 					this.scheduleReadingRefresh();
-					if (file instanceof TFile) this.authorIndex?.scheduleRefresh(file);
+					if (this.settings.authorColorsEnabled && file instanceof TFile) {
+						this.authorIndex?.scheduleRefresh(file);
+					}
 				}),
 			);
 			this.registerEvent(
-				this.app.vault.on("delete", (file: TAbstractFile) => this.authorIndex?.remove(file.path)),
+				this.app.vault.on("delete", (file: TAbstractFile) => {
+					if (this.settings.authorColorsEnabled) this.authorIndex?.remove(file.path);
+				}),
 			);
 			this.registerEvent(
 				this.app.vault.on("rename", (file: TAbstractFile, oldPath: string) => {
+					if (!this.settings.authorColorsEnabled) return;
 					if (file instanceof TFile) this.authorIndex?.rename(file, oldPath);
 					else this.authorIndex?.remove(oldPath);
 				}),
 			);
-			void this.rescanAuthors();
+			void this.scanAuthorsIfEnabled();
 		});
 
 		this.addCommand({
@@ -554,6 +561,11 @@ export default class DocCommentsPlugin extends Plugin {
 		});
 		this.authorIndexError = scanned.isErr() ? `Couldn't scan highlight creators: ${scanned.error}` : null;
 		this.settingsTab?.refresh();
+	}
+
+	async scanAuthorsIfEnabled(): Promise<void> {
+		if (!this.settings.authorColorsEnabled) return;
+		await this.rescanAuthors();
 	}
 
 	authorColorView(): {
