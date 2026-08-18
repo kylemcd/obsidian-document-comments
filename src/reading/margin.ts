@@ -19,10 +19,14 @@ import { stackTops } from "../ui/stack";
 import { CARD_GAP, FLASH_MS } from "../ui/constants";
 import { buildDraftComposer } from "../ui/draft-composer";
 import { EmptySubmitAction } from "../ui/draft-behavior";
+import { authorColorCss, type AuthorColorResolver } from "../author-colors";
+import { isHtmlElement } from "../util/dom";
 
 export type ReadingDeps = {
 	app: App;
 	getAuthor: () => string;
+	colorForAuthor: AuthorColorResolver;
+	highlightColorForAuthor: AuthorColorResolver;
 	showComments: () => boolean;
 	showResolved: () => boolean;
 	allowEmptyComments: () => boolean;
@@ -138,15 +142,21 @@ class ReadingMargin {
 				if (this.activeId === id) this.activeId = null;
 			}
 		}
-		const cardView = { app: this.deps.app, sourcePath: () => this.view.file?.path ?? "", collapsible: true };
+		const cardView = {
+			app: this.deps.app,
+			sourcePath: () => this.view.file?.path ?? "",
+			collapsible: true,
+			colorForAuthor: this.deps.colorForAuthor,
+		};
 		for (const c of this.comments) {
 			const existing = this.cards.get(c.id);
 			if (!existing) {
 				const card = new Card(c, this.cb, cardView);
 				this.cards.set(c.id, card);
 				this.container.appendChild(card.el);
-			} else if (existing.signature !== cardSignature(c)) {
-				existing.update(c);
+			} else {
+				if (existing.signature !== cardSignature(c)) existing.update(c);
+				existing.refreshAuthorColors();
 			}
 		}
 		this.readingView.toggleClass("dc-hide-resolved", !this.deps.showResolved());
@@ -154,6 +164,9 @@ class ReadingMargin {
 
 	private position(): void {
 		if (this.destroyed) return;
+		const draftColor = authorColorCss(this.deps.highlightColorForAuthor(this.deps.getAuthor()));
+		this.readingView.style.setProperty("--dc-highlight-color", draftColor);
+		this.readingView.style.setProperty("--dc-draft-highlight-color", draftColor);
 		// State classes live on the reading-view container (Obsidian-owned, safe to
 		// write directly), so the stylesheet caps the text column with plain
 		// descendant selectors instead of :has().
@@ -343,7 +356,7 @@ class ReadingMargin {
 		if (!card) return;
 		window.requestAnimationFrame(() => {
 			const box = card.el.querySelector(".dc-field--composer");
-			if (!(box instanceof HTMLElement)) return;
+			if (!isHtmlElement(box)) return;
 			const c = box.getBoundingClientRect();
 			const s = this.scroller.getBoundingClientRect();
 			let delta = 0;
@@ -420,7 +433,7 @@ export class ReadingMarginManager {
 			const view = leaf.view;
 			if (!(view instanceof MarkdownView) || view.getMode() !== "preview") continue;
 			const rv = view.containerEl.querySelector(".markdown-reading-view");
-			if (!(rv instanceof HTMLElement)) continue;
+			if (!isHtmlElement(rv)) continue;
 			active.add(rv);
 			if (mobile) {
 				// Mobile: no floating cards or reserved column. Just keep the in-text
@@ -429,6 +442,9 @@ export class ReadingMarginManager {
 				rv.toggleClass("dc-highlights", this.deps.showComments());
 				rv.toggleClass("dc-hide-resolved", !this.deps.showResolved());
 				rv.removeClasses(["dc-has", "dc-margin"]);
+				const draftColor = authorColorCss(this.deps.highlightColorForAuthor(this.deps.getAuthor()));
+				rv.style.setProperty("--dc-highlight-color", draftColor);
+				rv.style.setProperty("--dc-draft-highlight-color", draftColor);
 				continue;
 			}
 			let margin = this.margins.get(rv);
@@ -457,7 +473,7 @@ export class ReadingMarginManager {
 		targetHighlightId?: string,
 	): void {
 		const rv = view.containerEl.querySelector(".markdown-reading-view");
-		if (!(rv instanceof HTMLElement)) return;
+		if (!isHtmlElement(rv)) return;
 		let margin = this.margins.get(rv);
 		if (!margin) {
 			margin = new ReadingMargin(rv, view, this.deps);

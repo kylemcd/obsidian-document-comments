@@ -415,4 +415,35 @@ describe("editor extensions open every note without crashing", () => {
 		expect(className).not.toContain("dc-has"); // draft is a floating overlay, no column reserved
 		expect(className).toContain("dc-highlights"); // highlights still follow the master toggle
 	});
+
+	test("publishes a separate current-author color for drafts nested in another author's highlight", () => {
+		const parent = document.createElement("div");
+		document.body.appendChild(parent);
+		const doc = [
+			"Ship on <!--c:aaa-->Friday<!--/c:aaa--> regardless.",
+			'<!--co:aaa by:Alice status:open quote:"Friday"',
+			"Alice: ready",
+			"-->",
+		].join("\n");
+		const colored = commentConfig.of({
+			author: () => "Bob",
+			colorForAuthor: (author) => (author === "Alice" ? "#0090ff" : "#e54d2e"),
+			highlightColorForAuthor: (author) => (author === "Alice" ? "#0090ff" : "#e54d2e"),
+			showComments: () => true,
+			showResolved: () => true,
+			allowEmptyComments: () => false,
+			sidebarOpen: () => false,
+		});
+		const view = new EditorView({
+			state: EditorState.create({ doc, extensions: [commentField, draftField, colored, editorLayoutField] }),
+			parent,
+		});
+		const from = doc.indexOf("Friday");
+
+		view.dispatch({ effects: setDraft.of({ from, to: from + "Friday".length }) });
+
+		expect(view.dom.style.getPropertyValue("--dc-draft-highlight-color")).toBe("#e54d2e");
+		expect(view.contentDOM.querySelector(".dc-draft")).not.toBeNull();
+		view.destroy();
+	});
 });

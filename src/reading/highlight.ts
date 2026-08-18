@@ -3,6 +3,12 @@ import { ParsedComment } from "../format/types";
 import { anchorRange, fencedRanges, isHighlight, parseComments } from "../format/parse";
 import { isCodeComment, resolveCodeAnchor } from "../format/code-anchor";
 import { commentPreview } from "../format/preview";
+import {
+	authorColorCss,
+	creatorForComment,
+	type AuthorColorResolver,
+	type ResolvedAuthorColor,
+} from "../author-colors";
 
 export type SectionRange = {
 	from: number;
@@ -74,7 +80,12 @@ const commentsFor = (text: string): ParsedComment[] => {
  * `.doc-comment-span[data-cid]` so the highlight shows in rendered output.
  * The `<!--c:-->` / `<!--co:-->` markers are HTML comments, already invisible.
  */
-export const highlightPostProcessor = (el: HTMLElement, ctx: MarkdownPostProcessorContext): void => {
+export const highlightPostProcessor = (
+	el: HTMLElement,
+	ctx: MarkdownPostProcessorContext,
+	colorForAuthor?: AuthorColorResolver,
+	currentAuthor = "me",
+): void => {
 	const info = ctx.getSectionInfo(el);
 	if (!info) return;
 	const { text, lineStart, lineEnd } = info;
@@ -94,6 +105,8 @@ export const highlightPostProcessor = (el: HTMLElement, ctx: MarkdownPostProcess
 	if (comments.length === 0) return;
 
 	for (const c of comments) {
+		const author = creatorForComment(c) ?? currentAuthor;
+		const color = colorForAuthor?.(author);
 		// A code comment highlights its resolved target lines within this block's
 		// <pre>. Each line is wrapped separately — a whole-line match sits in one
 		// text node for plain code blocks (syntax-highlighted blocks split it across
@@ -103,7 +116,9 @@ export const highlightPostProcessor = (el: HTMLElement, ctx: MarkdownPostProcess
 			const target = resolveCodeAnchor(text, c);
 			if (!target || target.from < sectionFrom || target.from >= sectionTo) continue;
 			for (const lineText of text.slice(target.from, target.to).split("\n")) {
-				if (lineText.trim()) wrapFirstMatch(el, lineText, c.id, c.status === "resolved", commentPreview(c));
+				if (lineText.trim()) {
+					wrapFirstMatch(el, lineText, c.id, c.status === "resolved", commentPreview(c), author, color);
+				}
 			}
 			continue;
 		}
@@ -117,10 +132,10 @@ export const highlightPostProcessor = (el: HTMLElement, ctx: MarkdownPostProcess
 		const codeText = inlineCodeText(quote);
 		if (codeText !== null) {
 			const code = inlineCodeElement(el, sectionSource, range.from - sectionFrom, codeText);
-			if (code) wrapFirstMatch(code, codeText, c.id, c.status === "resolved", preview);
+			if (code) wrapFirstMatch(code, codeText, c.id, c.status === "resolved", preview, author, color);
 			continue;
 		}
-		wrapFirstMatch(el, quote, c.id, c.status === "resolved", preview);
+		wrapFirstMatch(el, quote, c.id, c.status === "resolved", preview, author, color);
 	}
 };
 
@@ -339,6 +354,8 @@ const wrapFirstMatch = (
 	id: string,
 	resolved: boolean,
 	title: string | null,
+	author: string,
+	color: ResolvedAuthorColor | undefined,
 ): boolean => {
 	const doc = root.ownerDocument;
 	const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -354,6 +371,8 @@ const wrapFirstMatch = (
 			});
 			span.detach();
 			span.setAttribute("data-cid", id);
+			span.setAttribute("data-dc-author", author);
+			if (color !== undefined) span.style.setProperty("--dc-highlight-color", authorColorCss(color));
 			if (title) span.setAttribute("title", title);
 			try {
 				range.surroundContents(span);

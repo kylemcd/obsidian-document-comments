@@ -85,6 +85,39 @@ const callbacks = (): CardCallbacks => ({
 });
 
 describe("empty comment card", () => {
+	test("colors every displayed author name with that author's assignment", () => {
+		const comment = {
+			...commentWithText(),
+			thread: [
+				{ author: "kyle", text: "Original" },
+				{ author: "Cathy", text: "Reply" },
+			],
+		};
+		let changed: "custom" | "deleted" | "initial" = "initial";
+		const card = new Card(comment, callbacks(), {
+			sourcePath: () => "note.md",
+			colorForAuthor: (author) => {
+				if (author === "kyle") return "#0090ff";
+				if (changed === "deleted") return null;
+				return changed === "custom" ? "#6e56cf" : "#e54d2e";
+			},
+		});
+		const authors = [...card.el.querySelectorAll<HTMLElement>(".dc-entry__author")];
+
+		expect(authors.map((author) => author.dataset.dcAuthor)).toEqual(["kyle", "Cathy"]);
+		expect(authors.map((author) => author.style.getPropertyValue("--dc-author-color"))).toEqual([
+			"#0090ff",
+			"#e54d2e",
+		]);
+		changed = "custom";
+		card.refreshAuthorColors();
+		expect(authors[1]?.style.getPropertyValue("--dc-author-color")).toBe("#6e56cf");
+		changed = "deleted";
+		card.refreshAuthorColors();
+		expect(authors[1]?.style.getPropertyValue("--dc-author-color")).toBe("");
+		card.destroy();
+	});
+
 	test("shows an Empty placeholder and saves its first text as a reply", () => {
 		const cb = callbacks();
 		const card = new Card(emptyComment(), cb, { sourcePath: () => "note.md" });

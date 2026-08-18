@@ -3,12 +3,18 @@ import { EditorView } from "@codemirror/view";
 import { commentField } from "./state";
 import { commentConfig } from "./config";
 import { hasMarginAnchor } from "../format/parse";
+import { authorColorCss } from "../author-colors";
 
 // Defined ABOVE editorLayoutField: StateField.define evaluates `provide` EAGERLY
 // at module load, and the provider arrow it builds references this helper. A
 // `const` referenced before its definition line is in the temporal dead zone and
 // throws ReferenceError — which would break every note. (Same trap as draft.ts.)
-const editorLayoutClasses = (state: EditorState): string => {
+type EditorLayoutAttributes = {
+	className: string;
+	style: string;
+};
+
+const editorLayoutAttributes = (state: EditorState): EditorLayoutAttributes => {
 	const cfg = state.facet(commentConfig);
 	const fv = state.field(commentField, false);
 	// `dc-has` mirrors the inline column: present only when persistent cards
@@ -35,7 +41,11 @@ const editorLayoutClasses = (state: EditorState): string => {
 	// panel hosts the cards (dc-has off, dc-highlights on).
 	if (cfg.showComments()) classes.push("dc-highlights");
 	if (!cfg.showResolved()) classes.push("dc-hide-resolved");
-	return classes.join(" ");
+	const draftColor = authorColorCss((cfg.highlightColorForAuthor ?? cfg.colorForAuthor)(cfg.author()));
+	return {
+		className: classes.join(" "),
+		style: `--dc-highlight-color: ${draftColor}; --dc-draft-highlight-color: ${draftColor}`,
+	};
 };
 
 /**
@@ -50,11 +60,11 @@ const editorLayoutClasses = (state: EditorState): string => {
  * The value recomputes on every transaction — including the empty `dispatch({})`
  * the plugin fires when a setting toggles — so the classes always track state.
  */
-export const editorLayoutField = StateField.define<string>({
-	create: editorLayoutClasses,
+export const editorLayoutField = StateField.define<EditorLayoutAttributes>({
+	create: editorLayoutAttributes,
 	update: (value, tr) => {
-		const next = editorLayoutClasses(tr.state);
-		return next === value ? value : next;
+		const next = editorLayoutAttributes(tr.state);
+		return next.className === value.className && next.style === value.style ? value : next;
 	},
-	provide: (f) => EditorView.editorAttributes.from(f, (cls) => ({ class: cls })),
+	provide: (f) => EditorView.editorAttributes.from(f, ({ className, style }) => ({ class: className, style })),
 });

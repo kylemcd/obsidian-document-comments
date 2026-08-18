@@ -6,13 +6,14 @@ import {
 	Notice,
 	Platform,
 	Plugin,
+	TAbstractFile,
 	TFile,
 	WorkspaceLeaf,
 	debounce,
 } from "obsidian";
 import { Result } from "better-result";
 import { EditorView } from "@codemirror/view";
-import { commentField } from "./editor/state";
+import { commentField, refreshCommentColors } from "./editor/state";
 import { marginPlugin } from "./editor/margin";
 import { commentConfig } from "./editor/config";
 import { editorLayoutField } from "./editor/layout";
@@ -25,19 +26,49 @@ import { COMMENTS_VIEW_TYPE, CommentsSidebarView, SidebarDeps } from "./ui/sideb
 import { CommentModal } from "./ui/comment-modal";
 import { DEFAULT_SETTINGS, DocCommentsSettings, DocCommentsSettingTab } from "./settings";
 import { tableHighlightPlugin } from "./editor/table-highlights";
+import {
+	authorColorCss,
+	canonicalAuthorKey,
+	ensureAuthorColor,
+	ensureAuthorColors,
+	effectiveHighlightColor,
+	hydrateAuthorColors,
+	hydrateExcludedAuthors,
+	parseHexColor,
+	resolveAuthorColor,
+	type AuthorColorAssignment,
+	type ResolvedAuthorColor,
+} from "./author-colors";
+import { createAuthorIndex, type AuthorIndex, type AuthorIndexState } from "./author-index";
+import { loadSettingsData, saveSettingsData } from "./settings-storage";
+import { isHtmlElement } from "./util/dom";
+
+type AuthorColorStateSnapshot = {
+	assignment: AuthorColorAssignment | undefined;
+	excluded: boolean;
+};
 
 export default class DocCommentsPlugin extends Plugin {
-	settings: DocCommentsSettings = { ...DEFAULT_SETTINGS };
+	settings: DocCommentsSettings = { ...DEFAULT_SETTINGS, authorColors: {}, excludedAuthorColors: [] };
 	private markdown = new Component();
 	private ribbonIcon: HTMLElement | null = null;
 	private readingManager: ReadingMarginManager | null = null;
 	private scheduleReadingRefresh: () => void = () => {};
+	private authorIndex: AuthorIndex | null = null;
+	private unsubscribeAuthorIndex: (() => void) | null = null;
+	private settingsTab: DocCommentsSettingTab | null = null;
+	private settingsPersistenceError: string | null = null;
+	private authorIndexError: string | null = null;
+	private excludedAuthorColorSet = new Set<string>();
+	private scheduleAuthorColorSave = debounce(() => void this.persistAuthorColors(), 100, true);
 	/** True while the "All discussions" sidebar panel is mounted. */
 	private sidebarOpen = false;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
 		this.addChild(this.markdown);
+		this.authorIndex = createAuthorIndex(this.app.vault);
+		this.unsubscribeAuthorIndex = this.authorIndex.subscribe((state) => this.handleAuthorIndexState(state));
 
 		this.registerEditorExtension([
 			commentField,
@@ -54,6 +85,8 @@ export default class DocCommentsPlugin extends Plugin {
 						this.markdown,
 					),
 				author: () => this.authorName(),
+				colorForAuthor: (author) => this.colorForAuthor(author),
+				highlightColorForAuthor: (author) => this.highlightColorForAuthor(author),
 				showComments: () => this.settings.showComments,
 				showResolved: () => this.settings.showResolved,
 				allowEmptyComments: () => this.settings.allowEmptyComments,
@@ -75,6 +108,8 @@ export default class DocCommentsPlugin extends Plugin {
 		const readingDeps: ReadingDeps = {
 			app: this.app,
 			getAuthor: () => this.authorName(),
+			colorForAuthor: (author) => this.colorForAuthor(author),
+			highlightColorForAuthor: (author) => this.highlightColorForAuthor(author),
 			showComments: () => this.settings.showComments,
 			showResolved: () => this.settings.showResolved,
 			allowEmptyComments: () => this.settings.allowEmptyComments,
@@ -90,11 +125,12 @@ export default class DocCommentsPlugin extends Plugin {
 		const sidebarDeps: SidebarDeps = {
 			app: this.app,
 			getAuthor: () => this.authorName(),
+			colorForAuthor: (author) => this.colorForAuthor(author),
 		};
 		this.registerView(COMMENTS_VIEW_TYPE, (leaf) => new CommentsSidebarView(leaf, sidebarDeps));
 
 		this.registerMarkdownPostProcessor((el, ctx) => {
-			highlightPostProcessor(el, ctx);
+			highlightPostProcessor(el, ctx, (author) => this.highlightColorForAuthor(author), this.authorName());
 			this.scheduleReadingRefresh();
 		});
 		// layout-change / active-leaf-change fire for every way the panel shows or
@@ -116,7 +152,31 @@ export default class DocCommentsPlugin extends Plugin {
 		// resize fires while a dock collapses/expands — catches that case promptly
 		// even if layout-change doesn't.
 		this.registerEvent(this.app.workspace.on("resize", () => this.syncSidebarOpen()));
-		this.registerEvent(this.app.vault.on("modify", () => this.scheduleReadingRefresh()));
+		this.app.workspace.onLayoutReady(() => {
+			// Register after vault startup so Obsidian's initial create-event burst does
+			// not duplicate the bounded full scan.
+			this.registerEvent(
+				this.app.vault.on("create", (file: TAbstractFile) => {
+					if (file instanceof TFile) this.authorIndex?.scheduleRefresh(file);
+				}),
+			);
+			this.registerEvent(
+				this.app.vault.on("modify", (file: TAbstractFile) => {
+					this.scheduleReadingRefresh();
+					if (file instanceof TFile) this.authorIndex?.scheduleRefresh(file);
+				}),
+			);
+			this.registerEvent(
+				this.app.vault.on("delete", (file: TAbstractFile) => this.authorIndex?.remove(file.path)),
+			);
+			this.registerEvent(
+				this.app.vault.on("rename", (file: TAbstractFile, oldPath: string) => {
+					if (file instanceof TFile) this.authorIndex?.rename(file, oldPath);
+					else this.authorIndex?.remove(oldPath);
+				}),
+			);
+			void this.rescanAuthors();
+		});
 
 		this.addCommand({
 			id: "add-comment",
@@ -161,7 +221,8 @@ export default class DocCommentsPlugin extends Plugin {
 		this.updateRibbon();
 		this.addRibbonIcon("messages-square", "Open comments sidebar", () => void this.activateSidebar());
 
-		this.addSettingTab(new DocCommentsSettingTab(this.app, this));
+		this.settingsTab = new DocCommentsSettingTab(this.app, this);
+		this.addSettingTab(this.settingsTab);
 	}
 
 	private startAddComment(editor: Editor): void {
@@ -296,16 +357,28 @@ export default class DocCommentsPlugin extends Plugin {
 	}
 
 	private async toggleComments(): Promise<void> {
-		this.settings.showComments = !this.settings.showComments;
-		await this.saveSettings();
+		const previous = this.settings.showComments;
+		this.settings.showComments = !previous;
+		const saved = await this.saveSettings();
+		if (saved.isErr()) {
+			this.settings.showComments = previous;
+			new Notice(`Couldn't save settings: ${saved.error}`);
+			return;
+		}
 		this.updateRibbon();
 		this.refreshEditors();
 		new Notice(this.settings.showComments ? "Comments shown" : "Comments hidden");
 	}
 
 	private async toggleResolved(): Promise<void> {
-		this.settings.showResolved = !this.settings.showResolved;
-		await this.saveSettings();
+		const previous = this.settings.showResolved;
+		this.settings.showResolved = !previous;
+		const saved = await this.saveSettings();
+		if (saved.isErr()) {
+			this.settings.showResolved = previous;
+			new Notice(`Couldn't save settings: ${saved.error}`);
+			return;
+		}
 		this.refreshEditors();
 		new Notice(this.settings.showResolved ? "Resolved comments shown" : "Resolved comments hidden");
 	}
@@ -322,7 +395,21 @@ export default class DocCommentsPlugin extends Plugin {
 	/** Force open editors + reading views (+ the sidebar) to re-evaluate live config. */
 	refreshEditors(): void {
 		this.app.workspace.getLeavesOfType("markdown").forEach((leaf: WorkspaceLeaf) => {
-			editorViewFromLeaf(leaf)?.dispatch({});
+			editorViewFromLeaf(leaf)?.dispatch({ effects: refreshCommentColors.of(null) });
+			const readingView = leaf.view.containerEl.querySelector(".markdown-reading-view");
+			if (!isHtmlElement(readingView)) return;
+			const draftColor = authorColorCss(this.highlightColorForAuthor(this.authorName()));
+			readingView.style.setProperty("--dc-highlight-color", draftColor);
+			readingView.style.setProperty("--dc-draft-highlight-color", draftColor);
+			readingView.querySelectorAll<HTMLElement>(".doc-comment-span[data-dc-author]").forEach((span) => {
+				const author = span.dataset.dcAuthor;
+				if (author) {
+					span.style.setProperty(
+						"--dc-highlight-color",
+						authorColorCss(this.highlightColorForAuthor(author)),
+					);
+				}
+			});
 		});
 		this.scheduleReadingRefresh();
 		this.sidebarView()?.requestRefresh();
@@ -390,19 +477,172 @@ export default class DocCommentsPlugin extends Plugin {
 
 	onunload(): void {
 		this.readingManager?.destroy();
+		this.unsubscribeAuthorIndex?.();
+		this.authorIndex?.dispose();
 	}
 
 	private authorName(): string {
 		return this.settings.author.trim() || "me";
 	}
 
-	async loadSettings(): Promise<void> {
-		const data = ((await this.loadData()) as Partial<DocCommentsSettings> | null) ?? {};
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
+	colorForAuthor(author: string): ResolvedAuthorColor {
+		const key = canonicalAuthorKey(author) || canonicalAuthorKey(this.authorName());
+		const resolved = resolveAuthorColor(
+			this.settings.authorColors,
+			this.excludedAuthorColorSet,
+			key,
+			this.settings.authorColorsEnabled,
+		);
+		if (resolved.created) this.scheduleAuthorColorSave();
+		return resolved.color;
 	}
 
-	async saveSettings(): Promise<void> {
-		await this.saveData(this.settings);
+	highlightColorForAuthor(author: string): ResolvedAuthorColor {
+		return effectiveHighlightColor(this.colorForAuthor(author), this.settings.authorColorsEnabled);
+	}
+
+	ensureCurrentAuthorColor(): void {
+		this.colorForAuthor(this.authorName());
+	}
+
+	async setAuthorColor(author: string, value: unknown): Promise<void> {
+		const parsed = parseHexColor(value);
+		if (parsed.isErr()) {
+			this.settingsPersistenceError = `Couldn't save ${author}'s color: ${parsed.error}`;
+			this.settingsTab?.refresh();
+			return;
+		}
+		const key = canonicalAuthorKey(author);
+		const previous = this.captureAuthorColorState(key);
+		this.removeAuthorColorExclusion(key);
+		this.settings.authorColors[key] = { color: parsed.value, mode: "custom" };
+		const saved = await this.persistAuthorColors();
+		if (saved.isErr()) this.restoreAuthorColorState(key, previous);
+		this.refreshEditors();
+		this.settingsTab?.refresh();
+	}
+
+	async deleteAuthorColor(author: string): Promise<void> {
+		const key = canonicalAuthorKey(author);
+		if (!key) return;
+		const previous = this.captureAuthorColorState(key);
+		delete this.settings.authorColors[key];
+		this.excludedAuthorColorSet.add(key);
+		this.syncExcludedAuthorColors();
+		const saved = await this.persistAuthorColors();
+		if (saved.isErr()) this.restoreAuthorColorState(key, previous);
+		this.refreshEditors();
+		this.settingsTab?.refresh();
+	}
+
+	async restoreAuthorColor(author: string): Promise<void> {
+		const key = canonicalAuthorKey(author);
+		if (!key) return;
+		const previous = this.captureAuthorColorState(key);
+		this.removeAuthorColorExclusion(key);
+		ensureAuthorColor(this.settings.authorColors, key);
+		const saved = await this.persistAuthorColors();
+		if (saved.isErr()) this.restoreAuthorColorState(key, previous);
+		this.refreshEditors();
+		this.settingsTab?.refresh();
+	}
+
+	async rescanAuthors(): Promise<void> {
+		const scanned = await Result.tryPromise({
+			try: async () => this.authorIndex?.scan(),
+			catch: (error) => (error instanceof Error ? error.message : "Unknown vault scan error"),
+		});
+		this.authorIndexError = scanned.isErr() ? `Couldn't scan highlight creators: ${scanned.error}` : null;
+		this.settingsTab?.refresh();
+	}
+
+	authorColorView(): {
+		state: AuthorIndexState;
+		active: string[];
+		missing: string[];
+		uncolored: string[];
+		saveError: string | null;
+	} {
+		const state = this.authorIndex?.getState() ?? { status: "idle", authors: [] };
+		const discovered = [...new Set([...state.authors, canonicalAuthorKey(this.authorName())])].sort((a, b) =>
+			a.localeCompare(b),
+		);
+		const discoveredSet = new Set(discovered);
+		const active = discovered.filter((author) => this.settings.authorColors[author] !== undefined);
+		const missing = Object.keys(this.settings.authorColors)
+			.filter((author) => !discoveredSet.has(author))
+			.sort((a, b) => a.localeCompare(b));
+		const uncolored = [...this.excludedAuthorColorSet].sort((a, b) => a.localeCompare(b));
+		return { state, active, missing, uncolored, saveError: this.settingsPersistenceError ?? this.authorIndexError };
+	}
+
+	private handleAuthorIndexState(state: AuthorIndexState): void {
+		const created = ensureAuthorColors(this.settings.authorColors, state.authors, this.excludedAuthorColorSet);
+		if (created) this.scheduleAuthorColorSave();
+		this.settingsTab?.refresh();
+		this.refreshEditors();
+	}
+
+	private async writeSettings(errorPrefix: string): Promise<Result<void, string>> {
+		const saved = await saveSettingsData((data) => this.saveData(data), this.settings);
+		this.settingsPersistenceError = saved.isErr() ? `${errorPrefix}: ${saved.error.message}` : null;
+		this.settingsTab?.refresh();
+		return saved.mapError((error) => error.message);
+	}
+
+	private async persistAuthorColors(): Promise<Result<void, string>> {
+		return this.writeSettings("Couldn't persist highlight colors");
+	}
+
+	async loadSettings(): Promise<void> {
+		const loaded = await loadSettingsData(() => this.loadData());
+		this.settingsPersistenceError = loaded.isErr() ? `Couldn't load settings: ${loaded.error.message}` : null;
+		const rawData = loaded.isOk() ? loaded.value : null;
+		const data = rawData && typeof rawData === "object" ? (rawData as Partial<DocCommentsSettings>) : {};
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, data, {
+			authorColors: hydrateAuthorColors(data.authorColors),
+			excludedAuthorColors: hydrateExcludedAuthors(data.excludedAuthorColors),
+		});
+		this.excludedAuthorColorSet = new Set(this.settings.excludedAuthorColors);
+		const resolved = resolveAuthorColor(
+			this.settings.authorColors,
+			this.excludedAuthorColorSet,
+			this.authorName(),
+			this.settings.authorColorsEnabled,
+		);
+		if (loaded.isOk() && resolved.created) await this.persistAuthorColors();
+	}
+
+	private removeAuthorColorExclusion(author: string): void {
+		if (!this.excludedAuthorColorSet.delete(author)) return;
+		this.syncExcludedAuthorColors();
+	}
+
+	private syncExcludedAuthorColors(): void {
+		this.settings.excludedAuthorColors = [...this.excludedAuthorColorSet].sort((a, b) => a.localeCompare(b));
+	}
+
+	private captureAuthorColorState(author: string): AuthorColorStateSnapshot {
+		return {
+			assignment: this.settings.authorColors[author],
+			excluded: this.excludedAuthorColorSet.has(author),
+		};
+	}
+
+	private restoreAuthorColorState(author: string, snapshot: AuthorColorStateSnapshot): void {
+		if (snapshot.assignment) this.settings.authorColors[author] = snapshot.assignment;
+		else delete this.settings.authorColors[author];
+		if (snapshot.excluded) this.excludedAuthorColorSet.add(author);
+		else this.excludedAuthorColorSet.delete(author);
+		this.syncExcludedAuthorColors();
+	}
+
+	settingsError(): string | null {
+		return this.settingsPersistenceError;
+	}
+
+	async saveSettings(): Promise<Result<void, string>> {
+		return this.writeSettings("Couldn't save settings");
 	}
 }
 

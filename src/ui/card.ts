@@ -1,5 +1,6 @@
 import { App, Component, MarkdownRenderer, Menu, setIcon } from "obsidian";
 import type { Result } from "better-result";
+import type { AuthorColorResolver } from "../author-colors";
 import { ParsedComment } from "../format/types";
 import { CardEntry, cardEntries, cardSignature, formatRelativeTime } from "./card-format";
 
@@ -42,6 +43,7 @@ export type CardView = {
 	/** Collapse a tall card to a "Show more" preview. Margin only — the sidebar
 	 *  scrolls its list, so sidebar cards stay full height. */
 	collapsible?: boolean;
+	colorForAuthor?: AuthorColorResolver;
 };
 
 /** A single margin comment card with the full Notion-style interaction set. */
@@ -128,6 +130,18 @@ export class Card {
 		this.el.toggleClass("is-active", active);
 	}
 
+	refreshAuthorColors(): void {
+		const colorForAuthor = this.view.colorForAuthor;
+		if (!colorForAuthor) return;
+		this.el.querySelectorAll<HTMLElement>(".dc-entry__author[data-dc-author]").forEach((authorEl) => {
+			const author = authorEl.dataset.dcAuthor;
+			if (!author) return;
+			const color = colorForAuthor(author);
+			if (color) authorEl.style.setProperty("--dc-author-color", color);
+			else authorEl.style.removeProperty("--dc-author-color");
+		});
+	}
+
 	private setOpen(open: boolean): void {
 		if (this.open === open) return;
 		const fromHeight = this.clipEl?.offsetHeight ?? 0;
@@ -181,6 +195,7 @@ export class Card {
 		const thread = clip.createDiv("dc-thread");
 		this.threadEl = thread;
 		cardEntries(c).forEach((entry, i) => this.renderEntry(thread, entry, i));
+		this.refreshAuthorColors();
 		if (this.open && this.editingIndex < 0) this.renderComposer(clip);
 
 		this.footEl = this.el.createDiv("dc-card-foot");
@@ -270,7 +285,11 @@ export class Card {
 		this.iconButton(bar, "more-horizontal", "More", (e) => this.openMoreMenu(e, i));
 
 		const head = row.createDiv("dc-entry__head");
-		head.createSpan({ cls: "dc-entry__author", text: entry.author || "—" });
+		head.createSpan({
+			cls: "dc-entry__author",
+			text: entry.author || "—",
+			attr: entry.author ? { "data-dc-author": entry.author } : undefined,
+		});
 		const time = formatRelativeTime(entry.timestamp ?? (i === 0 ? this.comment.createdAt : undefined));
 		if (time) head.createSpan({ cls: "dc-entry__time", text: time });
 

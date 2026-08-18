@@ -4,6 +4,7 @@ import {
 	findClusterBreak,
 	Range,
 	RangeSet,
+	StateEffect,
 	StateField,
 	Transaction,
 } from "@codemirror/state";
@@ -12,6 +13,8 @@ import { ParsedComment } from "../format/types";
 import { anchorRange, parseComments } from "../format/parse";
 import { isCodeComment, resolveCodeAnchor } from "../format/code-anchor";
 import { commentPreview } from "../format/preview";
+import { authorColorCss, creatorForComment } from "../author-colors";
+import { commentConfig } from "./config";
 
 export type CommentFieldValue = {
 	comments: ParsedComment[];
@@ -19,6 +22,8 @@ export type CommentFieldValue = {
 	/** Hidden marker/body ranges, exposed as atomic so the caret skips over them. */
 	atomic: RangeSet<Decoration>;
 };
+
+export const refreshCommentColors = StateEffect.define<null>();
 
 const HIDE = Decoration.replace({});
 /** Removes a whole line (its line break included) as a block — used for the
@@ -150,7 +155,11 @@ export const commentField = StateField.define<CommentFieldValue>({
 		// A no-space marker is revealed when the selection reaches it, then hidden
 		// again after the selection leaves. Selection-only transactions therefore
 		// have to rebuild the marker decorations too.
-		return tr.docChanged || tr.selection !== undefined ? compute(tr.state) : value;
+		return tr.docChanged ||
+			tr.selection !== undefined ||
+			tr.effects.some((effect) => effect.is(refreshCommentColors))
+			? compute(tr.state)
+			: value;
 	},
 	provide: (f) => [
 		EditorView.decorations.from(f, (v) => v.decorations),
@@ -168,6 +177,7 @@ export const getComments = (state: EditorState): ParsedComment[] => {
 const compute = (state: EditorState): CommentFieldValue => {
 	const text = state.doc.toString();
 	const comments = parseComments(text);
+	const config = state.facet(commentConfig);
 
 	const decoRanges: Range<Decoration>[] = [];
 	const hideRanges: Range<Decoration>[] = [];
@@ -274,7 +284,13 @@ const compute = (state: EditorState): CommentFieldValue => {
 			// a Live-Preview table (.cm-table-widget, a self-contained nested editor):
 			// the underlying text is hidden, so the highlight can't render there.
 			const cls = c.status === "resolved" ? "doc-comment-span is-resolved" : "doc-comment-span";
-			const attributes: Record<string, string> = { "data-cid": c.id };
+			const author = creatorForComment(c) ?? config.author();
+			const color = (config.highlightColorForAuthor ?? config.colorForAuthor)(author);
+			const attributes: Record<string, string> = {
+				"data-cid": c.id,
+				"data-dc-author": author,
+				style: `--dc-highlight-color: ${authorColorCss(color)}`,
+			};
 			const preview = commentPreview(c);
 			if (preview) attributes.title = preview;
 			decoRanges.push(Decoration.mark({ class: cls, attributes }).range(r.from, r.to));

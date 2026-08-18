@@ -173,6 +173,16 @@ Open **Settings → Document Comments**. Set **Author** to the name that the plu
 
 The plugin uses `me` when the Author setting is empty.
 
+### Set highlight colors
+
+Enable **Use author colors** in **Settings → Document Comments** to reveal the **Highlight colors** section and see every person whose name appears in a comment thread. The setting is off by default, and the color section stays hidden while it is off. Use Obsidian's color picker to choose a custom color. The same color identifies each person in document highlights and beside their comments and replies. Turn the setting off to restore the original yellow document highlights and render names with the normal theme color without deleting any saved assignments.
+
+Document Comments assigns colors during its initial vault scan even while author colors are off, so enabling them works immediately for existing comments. It uses a 12-color Radix palette without repeating a color until every palette color is in use. Generated and custom assignments are stored locally in the plugin's `data.json`; they do not change the Markdown comment format and do not need to be shared with collaborators.
+
+Resolved highlights keep the creator's color as a dashed underline. Creators whose highlights are no longer present remain listed under **Not currently found**, so their color returns if their comments reappear.
+
+Use the trash-can button beside a person to remove their assignment. Deleted mappings are not automatically recreated; those people use the normal theme color and appear under **Uncolored**, where **Assign color** creates a new automatically generated color.
+
 ## Desktop and mobile behavior
 
 Desktop views show cards in a margin beside the note. The cards align with their selected text and avoid overlaps.

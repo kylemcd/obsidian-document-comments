@@ -175,8 +175,9 @@ class MarginView implements PluginValue {
 				const card = new Card(c, this.cb, cardView);
 				this.cards.set(c.id, card);
 				this.container.appendChild(card.el);
-			} else if (existing.signature !== cardSignature(c)) {
-				existing.update(c);
+			} else {
+				if (existing.signature !== cardSignature(c)) existing.update(c);
+				existing.refreshAuthorColors();
 			}
 		}
 	}
@@ -189,6 +190,7 @@ class MarginView implements PluginValue {
 			app: cfg.app,
 			sourcePath: () => this.view.state.field(editorInfoField, false)?.file?.path ?? "",
 			collapsible: true,
+			colorForAuthor: cfg.colorForAuthor,
 		};
 	}
 
