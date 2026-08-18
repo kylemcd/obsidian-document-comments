@@ -22,7 +22,7 @@
 	"license": "MIT",
 	"devDependencies": {
 		"@codemirror/state": "^6.7.1",
-		"@codemirror/view": "^6.43.7",
+		"@codemirror/view": "^6.43.8",
 		"@types/node": "^26.1.2",
 		"esbuild": "^0.28.1",
 		"eslint": "^10.8.0",
@@ -30,13 +30,13 @@
 		"happy-dom": "^20.11.1",
 		"obsidian": "^1.5.7",
 		"oxfmt": "^0.62.0",
-		"oxlint": "^1.76.0",
+		"oxlint": "^1.77.0",
 		"typescript": "^6.0.3",
 		"typescript-7": "npm:typescript@^7.0.2",
-		"typescript-eslint": "^8.65.0",
+		"typescript-eslint": "^8.66.0",
 		"vitest": "^4.1.10"
 	},
 	"dependencies": {
-		"better-result": "^2.10.0"
+		"better-result": "^3.0.0"
 	}
 }
