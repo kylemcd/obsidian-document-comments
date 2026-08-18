@@ -1,8 +1,20 @@
 import { describe, expect, test } from "vitest";
 import { EditorState } from "@codemirror/state";
-import { commentField } from "../src/editor/state";
+import { commentField, refreshCommentColors } from "../src/editor/state";
+import { commentConfig } from "../src/editor/config";
 import { parseComments } from "../src/format/parse";
 import { applyChanges, computeAddComment } from "../src/editor/edits";
+import type { ResolvedAuthorColor } from "../src/author-colors";
+
+const decorationAttributes = (state: EditorState): Array<Record<string, string>> => {
+	const attributes: Array<Record<string, string>> = [];
+	const cursor = state.field(commentField).decorations.iter();
+	while (cursor.value) {
+		if (cursor.value.spec?.attributes) attributes.push(cursor.value.spec.attributes);
+		cursor.next();
+	}
+	return attributes;
+};
 
 // Two comments anchored on overlapping text — `xoua6` sits nested inside `zz1q`,
 // both covering "resolved". This is the shape that crashed CodeMirror's
@@ -18,6 +30,69 @@ const NESTED = [
 ].join("\n");
 
 describe("commentField decorations", () => {
+	test("carries the original creator and live configured color", () => {
+		let color: ResolvedAuthorColor = "#0090ff";
+		const doc = [
+			"Ship <!--c:c1-->Friday<!--/c:c1-->.",
+			'<!--co:c1 by:Alice status:open quote:"Friday"',
+			"Alice: yes",
+			"-->",
+		].join("\n");
+		const extensions = [
+			commentConfig.of({
+				author: () => "me",
+				colorForAuthor: () => color,
+				showComments: () => true,
+				showResolved: () => true,
+				allowEmptyComments: () => false,
+				sidebarOpen: () => false,
+			}),
+			commentField,
+		];
+		const state = EditorState.create({ doc, extensions });
+		const first = [...decorationAttributes(state)].find((attributes) => attributes["data-cid"] === "c1");
+		expect(first).toMatchObject({
+			"data-dc-author": "Alice",
+			style: "--dc-highlight-color: #0090ff",
+		});
+
+		color = "#e54d2e";
+		const refreshed = state.update({ effects: refreshCommentColors.of(null) }).state;
+		const second = [...decorationAttributes(refreshed)].find((attributes) => attributes["data-cid"] === "c1");
+		expect(second?.style).toBe("--dc-highlight-color: #e54d2e");
+
+		color = null;
+		const uncolored = refreshed.update({ effects: refreshCommentColors.of(null) }).state;
+		const third = [...decorationAttributes(uncolored)].find((attributes) => attributes["data-cid"] === "c1");
+		expect(third?.style).toBe("--dc-highlight-color: var(--text-normal)");
+	});
+
+	test("uses a separate legacy-yellow resolver when author colors are disabled", () => {
+		const doc = [
+			"Ship <!--c:c1-->Friday<!--/c:c1-->.",
+			'<!--co:c1 by:Alice status:open quote:"Friday"',
+			"Alice: yes",
+			"-->",
+		].join("\n");
+		const state = EditorState.create({
+			doc,
+			extensions: [
+				commentConfig.of({
+					author: () => "me",
+					colorForAuthor: () => null,
+					highlightColorForAuthor: () => "#f2b90d",
+					showComments: () => true,
+					showResolved: () => true,
+					allowEmptyComments: () => false,
+					sidebarOpen: () => false,
+				}),
+				commentField,
+			],
+		});
+
+		const highlight = [...decorationAttributes(state)].find((attributes) => attributes["data-cid"] === "c1");
+		expect(highlight?.style).toBe("--dc-highlight-color: #f2b90d");
+	});
 	test("overlapping/nested comment anchors build and map without crashing", () => {
 		// EditorState.create runs compute(); .map() is what CodeMirror does to the
 		// decoration set on setViewData — both must survive overlapping anchors.

@@ -5,6 +5,12 @@ matching the pushed tag as that GitHub release's notes, so add an entry here bef
 
 ## Unreleased
 
+- Added persistent per-author highlight colors. The settings page discovers comment and reply authors across the vault, assigns distinct Radix colors automatically, supports custom colors through Obsidian's built-in picker, colors author names on comment cards, can disable colors without losing assignments, and can delete individual mappings so those authors use the normal theme color. Resolved highlights keep a dashed creator-colored underline ([#67](https://github.com/kylemcd/obsidian-document-comments/issues/67)).
+- Removed the per-author Reset icon. Color rows now expose only the picker and a trash-can action; an uncolored author can receive a new automatic assignment from the Uncolored section.
+- Turning off **Use author colors** now restores the original yellow document highlights while keeping author names neutral and preserving saved color assignments.
+- **Use author colors** now defaults to off. The initial vault scan still generates and persists mappings for existing comment authors, so enabling it later applies colors immediately.
+- The **Highlight colors** settings section is hidden while **Use author colors** is off; saved mappings remain intact and reappear when it is enabled.
+
 ## 0.1.12
 
 - Added an **Allow empty comments** setting. An empty comment highlights its selected text and shows an editable **Empty** card. Run **Add comment** on the same text to add text or delete the comment ([#52](https://github.com/kylemcd/obsidian-document-comments/issues/52)).

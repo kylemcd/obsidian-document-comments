@@ -6,9 +6,15 @@ body {
 	--dc-margin-width: 320px;
 	--dc-card-pad: 16px;
 	--dc-card-gap: 8px;
-	--dc-highlight-bg: hsla(45, 90%, 50%, 0.18);
-	--dc-highlight-bg-active: hsla(45, 90%, 50%, 0.38);
-	--dc-highlight-border: hsla(45, 90%, 45%, 0.7);
+	--dc-highlight-color: var(--text-normal);
+	--dc-highlight-bg: color-mix(in srgb, var(--dc-highlight-color) 18%, transparent);
+	--dc-highlight-bg-active: color-mix(in srgb, var(--dc-highlight-color) 38%, transparent);
+	--dc-highlight-border: color-mix(in srgb, var(--dc-highlight-color) 70%, transparent);
+}
+
+.dc-author-color-setting {
+	align-items: center;
+	padding-block: 10px;
 }
 
 /* Layout is keyed on a `dc-has` class set on the editor / reading-view container.
@@ -52,6 +58,9 @@ body {
 
 /* The highlighted span in the text. */
 .doc-comment-span {
+	--dc-highlight-bg: color-mix(in srgb, var(--dc-highlight-color) 18%, transparent);
+	--dc-highlight-bg-active: color-mix(in srgb, var(--dc-highlight-color) 38%, transparent);
+	--dc-highlight-border: color-mix(in srgb, var(--dc-highlight-color) 70%, transparent);
 	background-color: var(--dc-highlight-bg);
 	border-bottom: 2px solid var(--dc-highlight-border);
 	border-radius: 2px;
@@ -82,19 +91,10 @@ body {
 }
 .doc-comment-span.is-resolved {
 	background-color: transparent;
-	border-bottom: 1px dashed var(--text-faint);
+	border-bottom: 1px dashed var(--dc-highlight-border);
 }
-/* Obsidian renders Live Preview tables as nested editor widgets, outside the
-   parent CodeMirror decoration tree. The table view plugin maps comment anchors
-   into those cells and exposes non-mutating CSS Custom Highlight ranges. */
-::highlight(document-comments-table) {
-	background-color: hsla(45, 90%, 50%, 0.18);
-	text-decoration: underline;
-}
-::highlight(document-comments-table-resolved) {
-	background-color: hsla(0, 0%, 50%, 0.12);
-	text-decoration: underline;
-}
+/* Live Preview table rules are generated per owner document because CSS Custom
+   Highlight ranges cannot carry per-range custom properties. */
 /* A selected no-space marker needs distinct caret endpoints, but the raw HTML
    comment must never become visible or take layout width (especially in tables). */
 .dc-comment-marker {
@@ -250,7 +250,10 @@ body {
 }
 .dc-entry__author {
 	font-weight: var(--font-semibold);
-	color: var(--text-normal);
+	color: color-mix(in srgb, var(--dc-author-color, var(--text-normal)) 40%, var(--text-normal));
+}
+.theme-dark .dc-entry__author {
+	color: color-mix(in srgb, var(--dc-author-color, var(--text-normal)) 70%, var(--text-normal));
 }
 .dc-entry__time {
 	color: var(--text-muted);
@@ -513,8 +516,9 @@ body {
 }
 /* The text being commented on, highlighted while the draft is open. */
 .doc-comment-span.dc-draft {
+	--dc-highlight-color: var(--dc-draft-highlight-color, var(--text-normal));
 	background-color: var(--dc-highlight-bg-active);
-	border-bottom-color: var(--interactive-accent);
+	border-bottom-color: var(--dc-highlight-border);
 }
 
 /* ── "All discussions" sidebar panel ───────────────────────────────────── */

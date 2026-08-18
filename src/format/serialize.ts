@@ -1,5 +1,6 @@
 import { CommentData, ThreadEntry } from "./types";
 import { encodeCodeQuote, escapeReactionAuthor, escapeText } from "./escape";
+import { canonicalAuthorKey } from "../author-colors";
 
 export const openMarker = (id: string): string => {
 	return `<!--c:${id}-->`;
@@ -12,7 +13,7 @@ export const closeMarker = (id: string): string => {
 /** Serialize a comment body block: `<!--co:ID header\n thread\n-->`. */
 export const serializeBody = (id: string, data: CommentData): string => {
 	const head: string[] = [`co:${id}`];
-	if (data.author) head.push(`by:${sanitizeToken(data.author)}`);
+	if (data.author) head.push(`by:${canonicalAuthorKey(data.author)}`);
 	if (data.createdAt) head.push(`at:${sanitizeToken(data.createdAt)}`);
 	head.push(`status:${data.status}`);
 	// A code quote must round-trip exactly (it re-anchors to the code); a prose
