@@ -3,6 +3,7 @@ import { Result } from "better-result";
 import { EditorView } from "@codemirror/view";
 import { existingIds } from "../format/parse";
 import { generateId } from "../format/ids";
+import type { ReactionTarget } from "../format/types";
 import {
 	Change,
 	applyChanges,
@@ -75,8 +76,19 @@ export const deleteEntry = (view: EditorView, id: string, index: number): Result
 	});
 };
 
-export const toggleReaction = (view: EditorView, id: string, emoji: string, author: string): Result<void, string> => {
-	return computeToggleReaction(view.state.doc.toString(), id, emoji, author).map((changes) => {
+export type ToggleReactionCommandInput = ReactionTarget & {
+	view: EditorView;
+	author: string;
+};
+
+export const toggleReaction = ({
+	view,
+	id,
+	entry,
+	emoji,
+	author,
+}: ToggleReactionCommandInput): Result<void, string> => {
+	return computeToggleReaction({ doc: view.state.doc.toString(), id, entry, emoji, author }).map((changes) => {
 		view.dispatch({ changes });
 	});
 };

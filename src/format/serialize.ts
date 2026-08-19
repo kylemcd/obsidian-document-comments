@@ -30,7 +30,10 @@ export const serializeBody = (id: string, data: CommentData): string => {
 	const lines = data.thread.map(serializeEntry);
 	const reactionLines = (data.reactions ?? [])
 		.filter((r) => r.authors.length > 0)
-		.map((r) => `+${r.emoji} ${r.authors.map(escapeReactionAuthor).join(", ")}`);
+		.map((r) => {
+			const target = r.entry !== undefined && r.entry > 0 ? `@${r.entry} ` : "";
+			return `+${target}${r.emoji} ${r.authors.map(escapeReactionAuthor).join(", ")}`;
+		});
 	const body = [...lines, ...reactionLines];
 	const block = body.length ? body.join("\n") + "\n" : "";
 	return `<!--${head.join(" ")}\n${block}-->`;

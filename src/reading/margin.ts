@@ -84,8 +84,8 @@ class ReadingMargin {
 			remove: (id) => void this.edit((doc) => computeDeleteComment(doc, id)),
 			editEntry: (id, index, text) => void this.edit((doc) => computeEditEntry(doc, id, index, text)),
 			deleteEntry: (id, index) => void this.edit((doc) => computeDeleteEntry(doc, id, index)),
-			toggleReaction: (id, emoji) =>
-				void this.edit((doc) => computeToggleReaction(doc, id, emoji, deps.getAuthor())),
+			toggleReaction: ({ id, entry, emoji }) =>
+				void this.edit((doc) => computeToggleReaction({ doc, id, entry, emoji, author: deps.getAuthor() })),
 			openInSidebar: (id) => deps.openInSidebar?.(id),
 		};
 

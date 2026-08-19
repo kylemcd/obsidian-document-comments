@@ -1,5 +1,5 @@
 import { Result } from "better-result";
-import { CommentData, ParsedComment, Reaction } from "../format/types";
+import { CommentData, ParsedComment, Reaction, ReactionTarget } from "../format/types";
 import { anchorRange, isAnchored, isHighlight, isInFencedCode, parseComments } from "../format/parse";
 import { codeSelectionTarget, isCodeComment, resolveCodeAnchor } from "../format/code-anchor";
 import { closeMarker, openMarker, serializeBody } from "../format/serialize";
@@ -27,6 +27,11 @@ export type NewCommentInput = {
 	 *  the offsets no longer point at it and creation is refused rather than
 	 *  anchoring the wrong text. */
 	expected?: string;
+};
+
+export type ToggleReactionInput = ReactionTarget & {
+	doc: string;
+	author: string;
 };
 
 /** Wrap [from,to] with anchor markers and append a body block after the block.
@@ -221,18 +226,27 @@ export const computeEditEntry = (doc: string, id: string, index: number, text: s
 export const computeDeleteEntry = (doc: string, id: string, index: number): Result<Change[], string> => {
 	return replaceBody(doc, id, (c) => {
 		if (index < 0 || index >= c.thread.length) return null;
-		return { ...toData(c), thread: c.thread.filter((_, i) => i !== index) };
+		return {
+			...toData(c),
+			thread: c.thread.filter((_, i) => i !== index),
+			reactions: reactionsAfterEntryDelete(c.reactions, index),
+		};
 	});
 };
 
 /** Add/remove the author from an emoji reaction. */
-export const computeToggleReaction = (
-	doc: string,
-	id: string,
-	emoji: string,
-	author: string,
-): Result<Change[], string> => {
-	return replaceBody(doc, id, (c) => ({ ...toData(c), reactions: toggleReactions(c.reactions, emoji, author) }));
+export const computeToggleReaction = ({
+	doc,
+	id,
+	entry,
+	emoji,
+	author,
+}: ToggleReactionInput): Result<Change[], string> => {
+	return replaceBody(doc, id, (c) => {
+		const entryCount = Math.max(1, c.thread.length);
+		if (!Number.isSafeInteger(entry) || entry < 0 || entry >= entryCount) return null;
+		return { ...toData(c), reactions: toggleReactions(c.reactions, entry, emoji, author) };
+	});
 };
 
 const replaceBody = (
@@ -260,17 +274,27 @@ const toData = (c: ParsedComment): CommentData => {
 	};
 };
 
-const toggleReactions = (reactions: Reaction[], emoji: string, author: string): Reaction[] => {
-	const out = reactions.map((r) => ({ emoji: r.emoji, authors: [...r.authors] }));
-	const existing = out.find((r) => r.emoji === emoji);
+const toggleReactions = (reactions: Reaction[], entry: number, emoji: string, author: string): Reaction[] => {
+	const out = reactions.map((reaction) => ({ ...reaction, authors: [...reaction.authors] }));
+	const existing = out.find((reaction) => (reaction.entry ?? 0) === entry && reaction.emoji === emoji);
 	if (existing) {
 		const idx = existing.authors.indexOf(author);
 		if (idx >= 0) existing.authors.splice(idx, 1);
 		else existing.authors.push(author);
 	} else {
-		out.push({ emoji, authors: [author] });
+		out.push(entry === 0 ? { emoji, authors: [author] } : { emoji, authors: [author], entry });
 	}
 	return out.filter((r) => r.authors.length > 0);
+};
+
+const reactionsAfterEntryDelete = (reactions: Reaction[], deletedEntry: number): Reaction[] => {
+	return reactions.flatMap((reaction) => {
+		const entry = reaction.entry ?? 0;
+		if (entry === deletedEntry) return [];
+		const nextEntry = entry > deletedEntry ? entry - 1 : entry;
+		const copied = { emoji: reaction.emoji, authors: [...reaction.authors] };
+		return [nextEntry === 0 ? copied : { ...copied, entry: nextEntry }];
+	});
 };
 
 export const computeDeleteComment = (doc: string, id: string): Result<Change[], string> => {

@@ -7,9 +7,17 @@ export type ThreadEntry = {
 	text: string;
 };
 
+export type ReactionTarget = {
+	id: string;
+	entry: number;
+	emoji: string;
+};
+
 export type Reaction = {
 	emoji: string;
 	authors: string[];
+	/** Zero-based thread entry. Missing targets the first entry for legacy comments. */
+	entry?: number;
 };
 
 /** The content of a comment, independent of where it sits in the document. */

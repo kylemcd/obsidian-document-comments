@@ -202,6 +202,45 @@ describe("empty comment card", () => {
 		card.destroy();
 	});
 
+	test("targets the reply whose reaction button was used", () => {
+		const cb = callbacks();
+		const comment = {
+			...commentWithText(),
+			thread: [
+				{ author: "kyle", text: "Original" },
+				{ author: "Cathy", text: "Reply" },
+			],
+		};
+		const card = new Card(comment, cb, { sourcePath: () => "note.md" });
+		const reactButtons = card.el.querySelectorAll<HTMLButtonElement>('button[aria-label="React"]');
+
+		reactButtons[1]?.click();
+		document.body.querySelector<HTMLButtonElement>(".dc-pop__emoji")?.click();
+
+		expect(cb.toggleReaction).toHaveBeenCalledWith({ id: "h1", entry: 1, emoji: "👍" });
+		card.destroy();
+	});
+
+	test("renders and toggles an existing reaction on its reply", () => {
+		const cb = callbacks();
+		const comment = {
+			...commentWithText(),
+			thread: [
+				{ author: "kyle", text: "Original" },
+				{ author: "Cathy", text: "Reply" },
+			],
+			reactions: [{ emoji: "👀", authors: ["kyle"], entry: 1 }],
+		};
+		const card = new Card(comment, cb, { sourcePath: () => "note.md" });
+		const entries = card.el.querySelectorAll<HTMLElement>(".dc-entry");
+
+		expect(entries[0]?.querySelector(".dc-reaction")).toBeNull();
+		expect(entries[1]?.querySelector(".dc-reaction__emoji")?.textContent).toBe("👀");
+		entries[1]?.querySelector<HTMLButtonElement>(".dc-reaction")?.click();
+		expect(cb.toggleReaction).toHaveBeenCalledWith({ id: "h1", entry: 1, emoji: "👀" });
+		card.destroy();
+	});
+
 	test("keeps a reply draft when saving fails", async () => {
 		const cb = callbacks();
 		cb.reply = vi.fn(async () => Result.err("write failed"));

@@ -82,7 +82,8 @@ class MarginView implements PluginValue {
 			remove: (id) => notifyErr(deleteComment(view, id)),
 			editEntry: (id, index, text) => notifyErr(editEntry(view, id, index, text)),
 			deleteEntry: (id, index) => notifyErr(deleteEntry(view, id, index)),
-			toggleReaction: (id, emoji) => notifyErr(toggleReaction(view, id, emoji, this.cb.getAuthor())),
+			toggleReaction: ({ id, entry, emoji }) =>
+				notifyErr(toggleReaction({ view, id, entry, emoji, author: this.cb.getAuthor() })),
 			openInSidebar: (id) => view.state.facet(commentConfig).openInSidebar?.(id),
 		};
 

@@ -197,7 +197,7 @@ const isInside = (ranges: Array<[number, number]>, index: number): boolean => {
 	return ranges.some(([from, to]) => index >= from && index < to);
 };
 
-const REACTION_LINE_RE = /^\+\s*(\S+)\s+(.+)$/;
+const REACTION_LINE_RE = /^\+\s*(?:@(\d+)\s+)?(\S+)\s+(.+)$/;
 
 const parseBody = (block: string): { thread: ThreadEntry[]; reactions: Reaction[] } => {
 	const thread: ThreadEntry[] = [];
@@ -209,8 +209,10 @@ const parseBody = (block: string): { thread: ThreadEntry[]; reactions: Reaction[
 		if (line.trim() === "") continue;
 
 		const rx = REACTION_LINE_RE.exec(line);
-		if (rx && rx[1] !== undefined && rx[2] !== undefined) {
-			reactions.push({ emoji: rx[1], authors: splitReactionAuthors(rx[2]) });
+		if (rx && rx[2] !== undefined && rx[3] !== undefined) {
+			const entry = rx[1] === undefined ? undefined : Number(rx[1]);
+			const reaction = { emoji: rx[2], authors: splitReactionAuthors(rx[3]) };
+			reactions.push(entry === undefined ? reaction : { ...reaction, entry });
 			continue;
 		}
 

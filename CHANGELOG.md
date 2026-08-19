@@ -5,6 +5,10 @@ matching the pushed tag as that GitHub release's notes, so add an entry here bef
 
 ## Unreleased
 
+## 0.1.15
+
+- Fixed emoji reactions added to a reply being attached to the first comment in the thread. Reply reactions now remain with the thread entry where they were added, while existing reaction data remains compatible.
+
 ## 0.1.14
 
 - Author-color indexing no longer scans or reads vault notes while **Use author colors** is off. Enabling the setting starts the local scan, and the README now explicitly documents that note contents never leave the device and only author names and color assignments are retained.

@@ -20,6 +20,7 @@ const DATA: CommentData = {
 	reactions: [
 		{ emoji: "👍", authors: ["kyle", "sam"] },
 		{ emoji: "🎉", authors: ["mike"] },
+		{ emoji: "👀", authors: ["kyle"], entry: 1 },
 	],
 };
 
@@ -34,6 +35,7 @@ describe("reactions format", () => {
 		const body = serializeBody("r1", DATA);
 		expect(body).toContain("+👍 kyle, sam");
 		expect(body).toContain("+🎉 mike");
+		expect(body).toContain("+@1 👀 kyle");
 	});
 });
 
@@ -55,15 +57,67 @@ describe("entry + reaction edits", () => {
 	});
 
 	it("toggles a reaction on and off", () => {
-		const on = applyChanges(base, computeToggleReaction(base, "r1", "👍", "kyle").unwrap());
+		const on = applyChanges(
+			base,
+			computeToggleReaction({ doc: base, id: "r1", entry: 0, emoji: "👍", author: "kyle" }).unwrap(),
+		);
 		expect(parseComments(on)[0].reactions).toEqual([{ emoji: "👍", authors: ["kyle"] }]);
-		const off = applyChanges(on, computeToggleReaction(on, "r1", "👍", "kyle").unwrap());
+		const off = applyChanges(
+			on,
+			computeToggleReaction({ doc: on, id: "r1", entry: 0, emoji: "👍", author: "kyle" }).unwrap(),
+		);
 		expect(parseComments(off)[0].reactions).toEqual([]);
 	});
 
 	it("adds a second author to an existing reaction", () => {
-		const a = applyChanges(base, computeToggleReaction(base, "r1", "❤️", "kyle").unwrap());
-		const b = applyChanges(a, computeToggleReaction(a, "r1", "❤️", "sam").unwrap());
+		const a = applyChanges(
+			base,
+			computeToggleReaction({ doc: base, id: "r1", entry: 0, emoji: "❤️", author: "kyle" }).unwrap(),
+		);
+		const b = applyChanges(
+			a,
+			computeToggleReaction({ doc: a, id: "r1", entry: 0, emoji: "❤️", author: "sam" }).unwrap(),
+		);
 		expect(parseComments(b)[0].reactions).toEqual([{ emoji: "❤️", authors: ["kyle", "sam"] }]);
+	});
+
+	it("stores a reply reaction separately from the first entry", () => {
+		const out = applyChanges(
+			base,
+			computeToggleReaction({ doc: base, id: "r1", entry: 1, emoji: "👀", author: "kyle" }).unwrap(),
+		);
+		const comment = parseComments(out)[0];
+
+		expect(comment.thread.map((entry) => entry.text)).toEqual(["first", "second"]);
+		expect(comment.reactions).toEqual([{ emoji: "👀", authors: ["kyle"], entry: 1 }]);
+		expect(out).toContain("+@1 👀 kyle");
+	});
+
+	it("rejects invalid reaction entry targets", () => {
+		[-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, 2].forEach((entry) => {
+			const result = computeToggleReaction({ doc: base, id: "r1", entry, emoji: "👀", author: "kyle" });
+			expect(result.isErr()).toBe(true);
+		});
+	});
+
+	it("removes deleted-entry reactions and shifts later reply targets", () => {
+		const doc = wrap(
+			"r1",
+			serializeBody("r1", {
+				...DATA,
+				thread: [...DATA.thread, { author: "mike", text: "third" }],
+				reactions: [
+					{ emoji: "👍", authors: ["sam"] },
+					{ emoji: "👀", authors: ["kyle"], entry: 1 },
+					{ emoji: "🎉", authors: ["mike"], entry: 2 },
+				],
+			}),
+		);
+		const out = applyChanges(doc, computeDeleteEntry(doc, "r1", 1).unwrap());
+
+		expect(parseComments(out)[0].reactions).toEqual([
+			{ emoji: "👍", authors: ["sam"] },
+			{ emoji: "🎉", authors: ["mike"], entry: 1 },
+		]);
 	});
 });

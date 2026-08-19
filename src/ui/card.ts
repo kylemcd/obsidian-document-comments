@@ -1,7 +1,7 @@
 import { App, Component, MarkdownRenderer, Menu, setIcon } from "obsidian";
 import type { Result } from "better-result";
 import type { AuthorColorResolver } from "../author-colors";
-import { ParsedComment } from "../format/types";
+import { ParsedComment, ReactionTarget } from "../format/types";
 import { CardEntry, cardEntries, cardSignature, formatRelativeTime } from "./card-format";
 
 const QUICK_EMOJI = ["👍", "❤️", "😄", "🎉", "😮", "👀", "🙏"];
@@ -25,7 +25,7 @@ export type CardCallbacks = {
 	remove: (id: string) => void;
 	editEntry: (id: string, index: number, text: string) => void;
 	deleteEntry: (id: string, index: number) => void;
-	toggleReaction: (id: string, emoji: string) => void;
+	toggleReaction: (target: ReactionTarget) => void;
 	/** Bring a just-opened reply composer fully into view (the margin scrolls the
 	 *  editor minimally; the sidebar scrolls its own list). */
 	revealComposer?: (id: string) => void;
@@ -275,7 +275,7 @@ export class Card {
 		const row = parent.createDiv("dc-entry");
 
 		const bar = row.createDiv("dc-entry__bar");
-		this.iconButton(bar, "smile-plus", "React", (e) => this.openReactionPicker(e.currentTarget as HTMLElement));
+		this.iconButton(bar, "smile-plus", "React", (e) => this.openReactionPicker(e.currentTarget as HTMLElement, i));
 		if (i === 0) {
 			const resolved = this.comment.status === "resolved";
 			this.iconButton(bar, resolved ? "rotate-ccw" : "check", resolved ? "Reopen" : "Resolve", () =>
@@ -316,7 +316,8 @@ export class Card {
 			this.renderText(row.createDiv("dc-entry__text"), entry.text);
 		}
 
-		if (i === 0 && this.comment.reactions.length > 0) this.renderReactions(row);
+		const reactions = this.comment.reactions.filter((reaction) => (reaction.entry ?? 0) === i);
+		if (reactions.length > 0) this.renderReactions(row, i, reactions);
 	}
 
 	/** Render comment text as Markdown (code spans, links, lists, …). Falls back to
@@ -329,10 +330,10 @@ export class Card {
 		}
 	}
 
-	private renderReactions(parent: HTMLElement): void {
+	private renderReactions(parent: HTMLElement, entry: number, reactions: ParsedComment["reactions"]): void {
 		const me = this.cb.getAuthor();
 		const wrap = parent.createDiv("dc-entry__reactions");
-		for (const r of this.comment.reactions) {
+		reactions.forEach((r) => {
 			const chip = wrap.createEl("button", { cls: "dc-reaction" });
 			chip.toggleClass("is-mine", r.authors.includes(me));
 			chip.createSpan({ cls: "dc-reaction__emoji", text: r.emoji });
@@ -340,9 +341,9 @@ export class Card {
 			chip.setAttribute("aria-label", r.authors.join(", "));
 			chip.addEventListener("click", (e) => {
 				e.stopPropagation();
-				this.cb.toggleReaction(this.id, r.emoji);
+				this.cb.toggleReaction({ id: this.id, entry, emoji: r.emoji });
 			});
-		}
+		});
 	}
 
 	private renderEditor(row: HTMLElement, index: number): void {
@@ -495,7 +496,7 @@ export class Card {
 		menu.showAtMouseEvent(e);
 	}
 
-	private openReactionPicker(anchor: HTMLElement): void {
+	private openReactionPicker(anchor: HTMLElement, entry: number): void {
 		const doc = this.el.ownerDocument;
 		doc.querySelectorAll(".dc-pop").forEach((p) => p.remove());
 		const pop = doc.body.createDiv("dc-pop");
@@ -510,7 +511,7 @@ export class Card {
 		const pick = (emoji: string) => {
 			pop.remove();
 			doc.removeEventListener("mousedown", close, true);
-			this.cb.toggleReaction(this.id, emoji);
+			this.cb.toggleReaction({ id: this.id, entry, emoji });
 		};
 		for (const emoji of QUICK_EMOJI) {
 			const btn = pop.createEl("button", { cls: "dc-pop__emoji", text: emoji });

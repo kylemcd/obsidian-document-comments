@@ -40,6 +40,8 @@ sam (2026-06-17T10:05:00.000Z): Thursday is better for QA.
 
 The `<!--c:ID-->` and `<!--/c:ID-->` markers identify the selected text. The matching `<!--co:ID ...-->` block stores the comment thread.
 
+Reactions to the first comment use a line such as `+👍 kyle`. Reactions to replies include the reply's zero-based thread index, such as `+@1 👀 sam` for the first reply.
+
 Markdown renderers hide these HTML comments. Tools that read the source file can find each comment and its selected text.
 
 Comments on fenced code blocks use the same format. The comment block also stores the selected line range and exact code text.
