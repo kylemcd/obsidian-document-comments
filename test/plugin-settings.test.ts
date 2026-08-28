@@ -27,13 +27,13 @@ describe("plugin settings persistence", () => {
 		expect(rescan).toHaveBeenCalledOnce();
 	});
 
-	test("persists an initial generated assignment and restores it on reload", async () => {
+	test("restores saved color assignments without auto-generating new ones on reload", async () => {
 		const first = createPlugin();
 		let saved: unknown = null;
 		vi.spyOn(first, "loadData").mockResolvedValue({
 			author: "Alice",
 			authorColorsEnabled: true,
-			authorColors: {},
+			authorColors: { Alice: { color: "#0090ff", mode: "generated" } },
 			excludedAuthorColors: [],
 		});
 		vi.spyOn(first, "saveData").mockImplementation(async (data) => {
@@ -44,10 +44,15 @@ describe("plugin settings persistence", () => {
 		const assignment = first.settings.authorColors.Alice;
 
 		expect(assignment).toBeDefined();
-		expect(saved).not.toBeNull();
+		expect(saved).toBeNull();
 
 		const reloaded = createPlugin();
-		vi.spyOn(reloaded, "loadData").mockResolvedValue(saved);
+		vi.spyOn(reloaded, "loadData").mockResolvedValue({
+			author: "Alice",
+			authorColorsEnabled: true,
+			authorColors: { Alice: { color: "#0090ff", mode: "generated" } },
+			excludedAuthorColors: [],
+		});
 		const reloadSave = vi.spyOn(reloaded, "saveData").mockResolvedValue();
 		await reloaded.loadSettings();
 

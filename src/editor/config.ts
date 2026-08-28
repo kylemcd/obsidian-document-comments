@@ -10,6 +10,8 @@ export type CommentConfig = {
 	renderMarkdown?: (markdown: string, el: HTMLElement) => Promise<void>;
 	/** Current author handle, read live so settings changes take effect. */
 	author: () => string;
+	/** Configured identities available to comment composers. */
+	authors?: () => string[];
 	/** Resolve and, when necessary, persist an original creator's highlight color. */
 	colorForAuthor: AuthorColorResolver;
 	/** Resolve the color painted in the document. This differs from author-name
@@ -19,6 +21,10 @@ export type CommentConfig = {
 	showComments: () => boolean;
 	/** Whether resolved comments still show a card in the margin. */
 	showResolved: () => boolean;
+	/** Whether the in-text highlight underlines are shown at all. */
+	showHighlights: () => boolean;
+	/** Clicking a highlight when comments are hidden opens the sidebar panel. */
+	highlightsOpenSidebar: () => boolean;
 	/** Whether the new-comment composer accepts an empty comment. */
 	allowEmptyComments: () => boolean;
 	/** Whether the comments sidebar panel is open. While it is, the inline
@@ -38,6 +44,8 @@ const DEFAULT: CommentConfig = {
 	colorForAuthor: () => null,
 	showComments: () => true,
 	showResolved: () => true,
+	showHighlights: () => true,
+	highlightsOpenSidebar: () => true,
 	allowEmptyComments: () => false,
 	sidebarOpen: () => false,
 };

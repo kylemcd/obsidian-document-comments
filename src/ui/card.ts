@@ -13,6 +13,7 @@ const CLAMP_HEIGHT = 220;
 
 export type CardCallbacks = {
 	getAuthor: () => string;
+	getAuthors?: () => string[];
 	onHover: (id: string, active: boolean) => void;
 	onClickAnchor: (id: string) => void;
 	/** The card changed height (open/close, edit, react, expand) — re-run stacking. */
@@ -20,7 +21,7 @@ export type CardCallbacks = {
 	/** Like onResize, but for an animated height change: track the grow/shrink for a
 	 *  few frames so neighbors follow it smoothly. Falls back to onResize when absent. */
 	animateLayout?: () => void;
-	reply: (id: string, text: string) => Result<void, string> | Promise<Result<void, string>>;
+	reply: (id: string, text: string, author?: string) => Result<void, string> | Promise<Result<void, string>>;
 	setResolved: (id: string, resolved: boolean) => void;
 	remove: (id: string) => void;
 	editEntry: (id: string, index: number, text: string) => void;
@@ -57,6 +58,8 @@ export class Card {
 	 *  (a synced reply, a reaction toggled elsewhere) doesn't discard it. */
 	private editDraft = "";
 	private draft = "";
+	private selectedAuthor = "";
+	private canChooseAuthor = false;
 	private savingFirstEntry = false;
 	private savingReply = false;
 	/** Measured: the thread exceeds the clamp height / the whole column. */
@@ -65,6 +68,8 @@ export class Card {
 	private clipEl: HTMLElement | null = null;
 	private threadEl: HTMLElement | null = null;
 	private footEl: HTMLElement | null = null;
+	/** Tracks the currently open more-menu so repeated clicks close it. */
+	private moreMenu: Menu | null = null;
 	/** Owns the child components MarkdownRenderer attaches (link/embed handlers). */
 	private md = new Component();
 	/** Re-measures overflow when the (async-rendered) content settles or changes. */
@@ -188,6 +193,10 @@ export class Card {
 		this.el.toggleClass("is-resolved", c.status === "resolved");
 		this.el.toggleClass("is-open", this.open);
 
+		// Float the main entry's action bar at the card's top-right corner so it
+		// overlaps the edge rather than sitting inset inside the entry.
+		this.renderActionBar(this.el, 0);
+
 		// The thread lives in a clip wrapper that gets a max-height when a tall card is
 		// collapsed; the footer (Show more / Open in sidebar) sits outside the clip.
 		const clip = this.el.createDiv("dc-card-clip");
@@ -196,6 +205,7 @@ export class Card {
 		this.threadEl = thread;
 		cardEntries(c).forEach((entry, i) => this.renderEntry(thread, entry, i));
 		this.refreshAuthorColors();
+
 		if (this.open && this.editingIndex < 0) this.renderComposer(clip);
 
 		this.footEl = this.el.createDiv("dc-card-foot");
@@ -274,15 +284,9 @@ export class Card {
 	private renderEntry(parent: HTMLElement, entry: CardEntry, i: number): void {
 		const row = parent.createDiv("dc-entry");
 
-		const bar = row.createDiv("dc-entry__bar");
-		this.iconButton(bar, "smile-plus", "React", (e) => this.openReactionPicker(e.currentTarget as HTMLElement, i));
-		if (i === 0) {
-			const resolved = this.comment.status === "resolved";
-			this.iconButton(bar, resolved ? "rotate-ccw" : "check", resolved ? "Reopen" : "Resolve", () =>
-				this.cb.setResolved(this.id, !resolved),
-			);
-		}
-		this.iconButton(bar, "more-horizontal", "More", (e) => this.openMoreMenu(e, i));
+		// The first entry's action bar is rendered at the card root so it can
+		// overlap the top-right corner of the card instead of sitting inset.
+		if (i !== 0) this.renderActionBar(row, i);
 
 		const head = row.createDiv("dc-entry__head");
 		head.createSpan({
@@ -318,6 +322,18 @@ export class Card {
 
 		const reactions = this.comment.reactions.filter((reaction) => (reaction.entry ?? 0) === i);
 		if (reactions.length > 0) this.renderReactions(row, i, reactions);
+	}
+
+	private renderActionBar(parent: HTMLElement, i: number): void {
+		const bar = parent.createDiv("dc-entry__bar");
+		this.iconButton(bar, "smile-plus", "React", (e) => this.openReactionPicker(e.currentTarget as HTMLElement, i));
+		if (i === 0) {
+			const resolved = this.comment.status === "resolved";
+			this.iconButton(bar, resolved ? "rotate-ccw" : "check", resolved ? "Reopen" : "Resolve", () =>
+				this.cb.setResolved(this.id, !resolved),
+			);
+		}
+		this.iconButton(bar, "more-horizontal", "More", (e) => this.openMoreMenu(e, i));
 	}
 
 	/** Render comment text as Markdown (code spans, links, lists, …). Falls back to
@@ -385,6 +401,23 @@ export class Card {
 
 	private renderComposer(parent: HTMLElement): void {
 		const box = parent.createDiv("dc-field dc-field--composer");
+		const authors = [
+			...new Set(
+				(this.cb.getAuthors?.() ?? [this.cb.getAuthor()]).map((author) => author.trim()).filter(Boolean),
+			),
+		];
+		this.selectedAuthor = this.selectedAuthor || this.cb.getAuthor();
+		if (!authors.includes(this.selectedAuthor)) authors.unshift(this.selectedAuthor);
+		this.canChooseAuthor = authors.length > 1;
+		if (this.canChooseAuthor) {
+			const author = box.createEl("select", {
+				cls: "dc-field__author",
+				attr: { "aria-label": "Comment author" },
+			});
+			authors.forEach((name) => author.createEl("option", { text: name, attr: { value: name } }));
+			author.value = this.selectedAuthor;
+			author.addEventListener("change", () => (this.selectedAuthor = author.value));
+		}
 		const ta = box.createEl("textarea", {
 			cls: "dc-field__input",
 			attr: { placeholder: this.comment.thread.length === 0 ? "Comment…" : "Reply…", rows: "1" },
@@ -415,7 +448,9 @@ export class Card {
 		this.draft = ta.value;
 		this.savingReply = true;
 		this.setFieldSaving(ta.closest(".dc-field"), true);
-		const result = await this.cb.reply(this.id, text);
+		const result = this.canChooseAuthor
+			? await this.cb.reply(this.id, text, this.selectedAuthor)
+			: await this.cb.reply(this.id, text);
 		this.savingReply = false;
 		if (result.isErr()) {
 			this.setFieldSaving(this.el.querySelector(".dc-field--composer"), false);
@@ -480,6 +515,14 @@ export class Card {
 	}
 
 	private openMoreMenu(e: MouseEvent, index: number): void {
+		// If the same menu is already open, close it so repeated three-dots clicks
+		// toggle instead of stacking multiple menus.
+		if (this.moreMenu) {
+			this.moreMenu.hide();
+			this.moreMenu = null;
+			return;
+		}
+
 		const menu = new Menu();
 		menu.addItem((item) =>
 			item
@@ -493,6 +536,10 @@ export class Card {
 				.setIcon("trash")
 				.onClick(() => (index === 0 ? this.cb.remove(this.id) : this.cb.deleteEntry(this.id, index))),
 		);
+		menu.onHide(() => {
+			if (this.moreMenu === menu) this.moreMenu = null;
+		});
+		this.moreMenu = menu;
 		menu.showAtMouseEvent(e);
 	}
 

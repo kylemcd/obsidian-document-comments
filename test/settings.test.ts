@@ -9,6 +9,8 @@ const settings = (): DocCommentsSettings => ({
 	author: "Alice",
 	showComments: true,
 	showResolved: false,
+	showHighlights: true,
+	highlightsOpenSidebar: true,
 	allowEmptyComments: false,
 	authorColorsEnabled: true,
 	authorColors: {
@@ -24,11 +26,11 @@ const plugin = (state: AuthorIndexState) => ({
 	setAuthorColor: vi.fn(async () => {}),
 	deleteAuthorColor: vi.fn(async () => {}),
 	restoreAuthorColor: vi.fn(async () => {}),
+	removeAuthorColor: vi.fn(async () => {}),
 	rescanAuthors: vi.fn(async () => {}),
 	scanAuthorsIfEnabled: vi.fn(async () => {}),
 	saveSettings: vi.fn(async (): Promise<ResultType<void, string>> => Result.ok(undefined)),
 	settingsError: vi.fn((): string | null => null),
-	ensureCurrentAuthorColor: vi.fn(),
 	refreshEditors: vi.fn(),
 	updateRibbon: vi.fn(),
 });
@@ -127,6 +129,22 @@ describe("highlight color settings", () => {
 		expect(fake.restoreAuthorColor).toHaveBeenCalledWith("Bob");
 	});
 
+	test("uncolored author row exposes delete to remove the author from colors", () => {
+		const fake = plugin({ status: "ready", authors: ["Alice"] });
+		fake.settings.excludedAuthorColors = ["Bob"];
+		const tab = new DocCommentsSettingTab(new App(), fake as never);
+		tab.display();
+
+		const uncoloredSection = [...tab.containerEl.querySelectorAll<HTMLElement>(".dc-author-color-setting")].find(
+			(el) => el.textContent?.includes("Bob"),
+		);
+		const deleteButton = uncoloredSection?.querySelector<HTMLButtonElement>('button[data-icon="trash-2"]');
+		expect(deleteButton).not.toBeNull();
+		deleteButton?.click();
+
+		expect(fake.removeAuthorColor).toHaveBeenCalledWith("Bob");
+	});
+
 	test("global author color toggle persists without changing saved assignments", async () => {
 		const fake = plugin({ status: "ready", authors: ["Alice"] });
 		const before = structuredClone(fake.settings.authorColors);
@@ -138,10 +156,9 @@ describe("highlight color settings", () => {
 		expect(fake.settings.authorColors).toEqual(before);
 		expect(fake.saveSettings).toHaveBeenCalledOnce();
 		expect(fake.refreshEditors).toHaveBeenCalled();
-		expect(fake.scanAuthorsIfEnabled).not.toHaveBeenCalled();
 	});
 
-	test("scans existing authors after author colors are successfully enabled", async () => {
+	test("enabling author colors does not auto-scan", async () => {
 		const fake = plugin({ status: "idle", authors: [] });
 		fake.settings.authorColorsEnabled = false;
 		const before = structuredClone(fake.settings.authorColors);
@@ -152,7 +169,7 @@ describe("highlight color settings", () => {
 		expect(fake.settings.authorColorsEnabled).toBe(true);
 		expect(fake.settings.authorColors).toEqual(before);
 		expect(fake.saveSettings).toHaveBeenCalledOnce();
-		expect(fake.scanAuthorsIfEnabled).toHaveBeenCalledOnce();
+		expect(fake.scanAuthorsIfEnabled).not.toHaveBeenCalled();
 	});
 
 	test("rolls back a rejected setting write and surfaces the failure inline", async () => {
@@ -170,5 +187,49 @@ describe("highlight color settings", () => {
 		expect(fake.scanAuthorsIfEnabled).not.toHaveBeenCalled();
 		expect(tab.containerEl.textContent).toContain("Settings error");
 		expect(tab.containerEl.textContent).toContain("Couldn't save settings: disk full");
+	});
+
+	test("declarative authors control uses the current saved list as its default", () => {
+		const fake = plugin({ status: "ready", authors: ["Alice"] });
+		fake.settings.authors = ["Alice", "Bob", "Carol"];
+		const tab = new DocCommentsSettingTab(new App(), fake as never);
+		const definitions = tab.getSettingDefinitions();
+		const authors = definitions.find((definition) => "control" in definition && definition.control?.key === "authors");
+		expect(authors && "control" in authors && authors.control?.type === "text" ? authors.control.defaultValue : "").toBe("Alice, Bob, Carol");
+	});
+
+	test("declarative authors control falls back to empty when no authors are saved", () => {
+		const fake = plugin({ status: "ready", authors: ["Alice"] });
+		fake.settings.authors = [];
+		const tab = new DocCommentsSettingTab(new App(), fake as never);
+		const definitions = tab.getSettingDefinitions();
+		const authors = definitions.find((definition) => "control" in definition && definition.control?.key === "authors");
+		expect(authors && "control" in authors && authors.control?.type === "text" ? authors.control.defaultValue : "unexpected").toBe("");
+	});
+	test("declarative authors control reads back as a comma-separated string", () => {
+		const fake = plugin({ status: "ready", authors: ["Alice"] });
+		fake.settings.authors = ["Alice", "Bob", "Carol"];
+		const tab = new DocCommentsSettingTab(new App(), fake as never);
+		expect(tab.getControlValue("authors")).toBe("Alice, Bob, Carol");
+	});
+
+	test("declarative author control reads back the current single author", () => {
+		const fake = plugin({ status: "ready", authors: ["Alice"] });
+		fake.settings.author = "Alice";
+		const tab = new DocCommentsSettingTab(new App(), fake as never);
+		expect(tab.getControlValue("author")).toBe("Alice");
+	});
+
+	test("changing author or authors does not auto-generate colors", async () => {
+		const fake = plugin({ status: "ready", authors: ["Alice"] });
+		const before = structuredClone(fake.settings.authorColors);
+		const tab = new DocCommentsSettingTab(new App(), fake as never);
+
+		await tab.setControlValue("author", "Alice");
+		await tab.setControlValue("authors", "Alice, Bob");
+
+		expect(fake.settings.author).toBe("Alice");
+		expect(fake.settings.authors).toEqual(["Alice", "Bob"]);
+		expect(fake.settings.authorColors).toEqual(before);
 	});
 });

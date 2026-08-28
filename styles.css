@@ -179,6 +179,16 @@ body {
 	transform: translateX(-2px);
 	z-index: 2;
 }
+.doc-comment-card:hover .dc-act,
+.doc-comment-card.is-active .dc-act,
+.doc-comment-card.is-open .dc-act {
+	background-color: var(--background-modifier-form-field);
+}
+.doc-comment-card:hover .dc-act:hover,
+.doc-comment-card.is-active .dc-act:hover,
+.doc-comment-card.is-open .dc-act:hover {
+	background-color: var(--background-modifier-hover);
+}
 .doc-comment-card.is-resolved {
 	opacity: 0.65;
 }
@@ -319,11 +329,9 @@ body {
 /* ── Hover action bar ──────────────────────────────────────────────────── */
 .dc-entry__bar {
 	position: absolute;
-	top: -4px;
-	right: 0;
 	display: flex;
 	gap: 2px;
-	padding: 2px;
+	padding: 3px 5px;
 	background-color: var(--background-primary);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m, 8px);
@@ -331,8 +339,25 @@ body {
 	opacity: 0;
 	pointer-events: none;
 	transition: opacity 100ms ease;
+	z-index: 3;
 }
-.dc-entry:hover .dc-entry__bar {
+/* Main comment action bar: overlap the top-right corner of the card. */
+.doc-comment-card > .dc-entry__bar {
+	top: -15px;
+	right: 10px;
+}
+.doc-comment-card:hover > .dc-entry__bar,
+.doc-comment-card.is-active > .dc-entry__bar,
+.doc-comment-card.is-open > .dc-entry__bar {
+	opacity: 1;
+	pointer-events: auto;
+}
+/* Reply action bar: keep it tucked at the top-right of the reply row. */
+.dc-entry > .dc-entry__bar {
+	top: -4px;
+	right: 0;
+}
+.dc-entry:hover > .dc-entry__bar {
 	opacity: 1;
 	pointer-events: auto;
 }
@@ -347,7 +372,7 @@ body {
 	/* Concentric with the bar: inner radius = outer radius − bar padding (2px). */
 	border-radius: calc(var(--radius-m, 8px) - 2px);
 	background: transparent;
-	color: var(--text-muted);
+	color: var(--text-normal);
 	box-shadow: none;
 	cursor: pointer;
 }
@@ -501,7 +526,7 @@ body {
 
 /* ── New-comment draft (the inline composer that replaces the modal) ────── */
 .doc-comment-card.is-draft {
-	border-color: var(--interactive-accent);
+	border-color: var(--dc-composer-border-color, var(--interactive-accent));
 	box-shadow: var(--shadow-l);
 	z-index: 3;
 }
@@ -510,6 +535,24 @@ body {
 	padding: 0;
 	border: none;
 	background: transparent;
+}
+.doc-comment-card.is-draft .dc-field__author {
+	width: 100%;
+	max-width: 200px;
+	margin-bottom: 8px;
+	padding: 6px 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s, 6px);
+	background-color: var(--background-modifier-form-field);
+	color: var(--text-normal);
+	font-family: inherit;
+	font-size: var(--font-ui-small);
+	cursor: pointer;
+}
+.doc-comment-card.is-draft .dc-field__author:focus {
+	border-color: var(--interactive-accent);
+	box-shadow: none;
+	outline: none;
 }
 .doc-comment-card.is-draft .dc-field__input {
 	min-height: 48px;

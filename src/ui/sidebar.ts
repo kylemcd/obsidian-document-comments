@@ -25,6 +25,7 @@ export const COMMENTS_VIEW_TYPE = "document-comments-sidebar";
 export type SidebarDeps = {
 	app: App;
 	getAuthor: () => string;
+	getAuthors?: () => string[];
 	colorForAuthor: AuthorColorResolver;
 };
 
@@ -64,17 +65,18 @@ export class CommentsSidebarView extends ItemView {
 		this.scheduleRefresh = debounce(() => void this.refresh(), 60, true);
 		this.cb = {
 			getAuthor: () => deps.getAuthor(),
+			getAuthors: () => deps.getAuthors?.() ?? [deps.getAuthor()],
 			onHover: (id, active) => this.markDocHighlight(id, active),
 			onClickAnchor: (id) => this.scheduleRevealAnchor(id),
 			onResize: () => {
 				/* the panel uses normal flow — cards reflow on their own */
 			},
 			revealComposer: (id) => this.revealComposer(id),
-			reply: (id, text) =>
+			reply: (id, text, author) =>
 				this.edit((doc) =>
 					computeAppendReply(doc, id, {
 						createdAt: new Date().toISOString(),
-						author: deps.getAuthor(),
+						author: author ?? deps.getAuthor(),
 						text,
 					}),
 				),
