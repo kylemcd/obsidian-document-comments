@@ -25,11 +25,12 @@ import { isHtmlElement } from "../util/dom";
 export type ReadingDeps = {
 	app: App;
 	getAuthor: () => string;
+	getAuthors?: () => string[];
 	colorForAuthor: AuthorColorResolver;
 	highlightColorForAuthor: AuthorColorResolver;
 	showComments: () => boolean;
-	showResolved: () => boolean;
-	allowEmptyComments: () => boolean;
+	showResolved: () => boolean;	showHighlights: () => boolean;
+	highlightsOpenSidebar: () => boolean;	allowEmptyComments: () => boolean;
 	/** While the sidebar panel is open, the inline column steps aside. */
 	sidebarOpen: () => boolean;
 	/** Reveal a thread in the sidebar — used by a margin card too tall to fit. */
@@ -72,11 +73,11 @@ class ReadingMargin {
 			onResize: () => this.position(),
 			animateLayout: () => this.animateLayout(),
 			revealComposer: (id) => this.revealComposer(id),
-			reply: (id, text) =>
+			reply: (id, text, author) =>
 				this.edit((doc) =>
 					computeAppendReply(doc, id, {
 						createdAt: new Date().toISOString(),
-						author: deps.getAuthor(),
+						author: author ?? deps.getAuthor(),
 						text,
 					}),
 				),
@@ -186,9 +187,10 @@ class ReadingMargin {
 		const hasCards = this.comments.some((c) => this.deps.showResolved() || c.status !== "resolved");
 		this.readingView.toggleClass("dc-has", hasCards);
 		this.readingView.toggleClass("dc-margin", hasCards || !!this.draft);
-		// Highlights follow the master toggle alone, so they persist while the
-		// sidebar panel hosts the cards (dc-has is off, dc-highlights stays on).
-		this.readingView.toggleClass("dc-highlights", this.deps.showComments());
+		// Highlights follow their own toggle, so they can stay on while the inline
+		// comment column is hidden. They persist while the sidebar panel hosts the
+		// cards (dc-has off, dc-highlights still on if the setting says so).
+		this.readingView.toggleClass("dc-highlights", this.deps.showHighlights());
 		const topRef = this.readingView.getBoundingClientRect().top;
 		// Gather geometry (reads) first, then write every top in one pass — cards are
 		// absolutely positioned, so a top write can't change any height.
@@ -256,13 +258,23 @@ class ReadingMargin {
 	private buildDraftEl(): HTMLElement {
 		const { el } = buildDraftComposer({
 			emptyAction: this.draftEmptyAction,
+			authors: this.deps.getAuthors,
+			getAuthor: this.deps.getAuthor,
+			colorForAuthor: (author) => this.deps.colorForAuthor(author),
 			onCancel: () => this.clearDraft(),
-			onSubmit: async (text) => {
+			onSubmit: async (text, author) => {
 				const draft = this.draft;
 				const expected = this.draftText;
 				const targetHighlightId = this.draftTargetHighlightId;
 				if (!draft) return Result.err("The comment draft no longer exists.");
-				const result = await this.insertComment(draft.from, draft.to, text, expected, targetHighlightId);
+				const result = await this.insertComment(
+					draft.from,
+					draft.to,
+					text,
+					expected,
+					targetHighlightId,
+					author,
+				);
 				if (result.isOk()) this.clearDraft();
 				return result;
 			},
@@ -276,6 +288,7 @@ class ReadingMargin {
 		text: string,
 		expected: string,
 		targetHighlightId?: string,
+		author?: string,
 	): Promise<Result<void, string>> {
 		const file = this.view.file;
 		if (!file) {
@@ -289,7 +302,7 @@ class ReadingMargin {
 			from,
 			to,
 			text,
-			this.deps.getAuthor(),
+			author ?? this.deps.getAuthor(),
 			expected,
 			this.deps.allowEmptyComments(),
 			targetHighlightId,
@@ -399,7 +412,13 @@ class ReadingMargin {
 
 	private onMouseDown = (e: MouseEvent): void => {
 		const id = closestSpanId(e.target);
-		if (id) this.setActive(id);
+		if (!id) return;
+		this.setActive(id);
+		// When comments are hidden, clicking a highlight opens the sidebar panel
+		// while still letting the reading view handle focus.
+		if (!this.deps.showComments() && this.deps.highlightsOpenSidebar()) {
+			this.deps.openInSidebar?.(id);
+		}
 	};
 
 	destroy(): void {
@@ -439,7 +458,7 @@ export class ReadingMarginManager {
 				// Mobile: no floating cards or reserved column. Just keep the in-text
 				// highlights' visibility in sync with the toggles (no `dc-has`, so the
 				// text keeps full width). Comments are read/created via the sidebar.
-				rv.toggleClass("dc-highlights", this.deps.showComments());
+			rv.toggleClass("dc-highlights", this.deps.showHighlights());
 				rv.toggleClass("dc-hide-resolved", !this.deps.showResolved());
 				rv.removeClasses(["dc-has", "dc-margin"]);
 				const draftColor = authorColorCss(this.deps.highlightColorForAuthor(this.deps.getAuthor()));

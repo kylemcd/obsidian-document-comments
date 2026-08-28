@@ -11,6 +11,10 @@ export type DraftComposerHandlers = {
 	/** Called with the trimmed text on Enter or the confirm button. */
 	onSubmit: DraftSubmitHandler;
 	onCancel: () => void;
+	authors?: () => string[];
+	getAuthor?: () => string;
+	/** Resolve the border color for the currently selected author. */
+	colorForAuthor?: (author: string) => string | null;
 	/** What an empty confirmation does. The caller applies the action. */
 	emptyAction?: EmptySubmitAction;
 };
@@ -28,6 +32,26 @@ export const buildDraftComposer = (
 	const initialEmptyAction = handlers.emptyAction ?? "none";
 	let emptyLabel = emptySubmitLabel(initialEmptyAction);
 	let saving = false;
+	let selectedAuthor = handlers.getAuthor?.() ?? "me";
+	const authors = [...new Set((handlers.authors?.() ?? []).map((author) => author.trim()).filter(Boolean))];
+	if (!authors.includes(selectedAuthor)) authors.unshift(selectedAuthor);
+	const canChooseAuthor = authors.length > 1;
+
+	const applyAuthorColor = (author: string): void => {
+		const color = handlers.colorForAuthor?.(author) ?? null;
+		el.style.setProperty("--dc-composer-border-color", color ?? "var(--interactive-accent)");
+	};
+	applyAuthorColor(selectedAuthor);
+
+	if (canChooseAuthor) {
+		const author = box.createEl("select", { cls: "dc-field__author", attr: { "aria-label": "Comment author" } });
+		authors.forEach((name) => author.createEl("option", { text: name, attr: { value: name } }));
+		author.value = selectedAuthor;
+		author.addEventListener("change", () => {
+			selectedAuthor = author.value;
+			applyAuthorColor(selectedAuthor);
+		});
+	}
 	const textarea = box.createEl("textarea", {
 		cls: "dc-field__input",
 		attr: { placeholder: draftPlaceholder(initialEmptyAction), rows: "2" },
@@ -41,7 +65,9 @@ export const buildDraftComposer = (
 	const submit = async (): Promise<void> => {
 		if (saving) return;
 		setSaving(true);
-		const result = await submitDraft(textarea.value, handlers.onSubmit);
+		const result = await submitDraft(textarea.value, (text) =>
+			canChooseAuthor ? handlers.onSubmit(text, selectedAuthor) : handlers.onSubmit(text),
+		);
 		if (result.isErr()) {
 			setSaving(false);
 			textarea.focus({ preventScroll: true });

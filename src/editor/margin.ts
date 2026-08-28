@@ -77,7 +77,7 @@ class MarginView implements PluginValue {
 			onResize: () => this.reposition(),
 			animateLayout: () => this.animateLayout(),
 			revealComposer: (id) => this.revealComposer(id),
-			reply: (id, text) => notifyErr(appendReply(view, id, text, this.cb.getAuthor())),
+			reply: (id, text, author) => notifyErr(appendReply(view, id, text, author ?? this.cb.getAuthor())),
 			setResolved: (id, resolved) => notifyErr(setResolved(view, id, resolved)),
 			remove: (id) => notifyErr(deleteComment(view, id)),
 			editEntry: (id, index, text) => notifyErr(editEntry(view, id, index, text)),
@@ -279,7 +279,7 @@ class MarginView implements PluginValue {
 		const { el, setEmptyAction } = buildDraftComposer({
 			emptyAction: initialDraft ? this.emptyAction(initialDraft) : "none",
 			onCancel: () => this.view.dispatch({ effects: clearDraft.of(null) }),
-			onSubmit: (text) => {
+			onSubmit: (text, author) => {
 				const draft = this.view.state.field(draftField, false);
 				if (!draft) return Result.err("The comment draft no longer exists.");
 				const result = notifyErr(
@@ -288,7 +288,7 @@ class MarginView implements PluginValue {
 						draft.from,
 						draft.to,
 						text,
-						this.cb.getAuthor(),
+						author ?? this.cb.getAuthor(),
 						undefined,
 						cfg.allowEmptyComments(),
 						draft.targetHighlightId,
@@ -297,6 +297,9 @@ class MarginView implements PluginValue {
 				if (result.isOk()) this.view.dispatch({ effects: clearDraft.of(null) });
 				return result.map(() => undefined);
 			},
+			authors: () => cfg.authors?.() ?? [this.cb.getAuthor()],
+			getAuthor: () => this.cb.getAuthor(),
+			colorForAuthor: (author) => cfg.colorForAuthor(author),
 		});
 		this.setDraftEmptyAction = setEmptyAction;
 		return el;
@@ -358,7 +361,14 @@ class MarginView implements PluginValue {
 
 	private onContentMouseDown = (e: MouseEvent): void => {
 		const id = closestSpanId(e.target);
-		if (id) this.setActive(id);
+		if (!id) return;
+		this.setActive(id);
+		const cfg = this.view.state.facet(commentConfig);
+		// When comments are hidden, clicking a highlight opens the sidebar panel
+		// (if the setting is on) while still letting the editor place the caret.
+		if (!cfg.showComments() && cfg.highlightsOpenSidebar() && cfg.openInSidebar) {
+			cfg.openInSidebar(id);
+		}
 	};
 
 	private onContentMouseOver = (e: MouseEvent): void => {

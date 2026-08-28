@@ -134,7 +134,7 @@ Existing empty comments remain available. You can add text or delete them.
 
 ### Add the command to the right-click menu
 
-The optional [Commander plugin](https://community.obsidian.md/plugins/cmdr) can add commands to the editor menu.
+The optional [Commander plugin](https://community.obsidian.md/plugins/cmdr) can add commands to the editor menu. Document Comments also adds an **Add comment** item to the editor right-click menu when text is selected.
 
 #### Install Commander
 
@@ -167,7 +167,9 @@ Select a card to open its reply field. Hover over an entry to show its reaction,
 
 Use the **Open comments sidebar** command or ribbon icon to show all comments in the active note.
 
-Use **Toggle comments** to show or hide all cards and highlights. Use **Toggle resolved comments** to show or hide resolved comments.
+Use **Toggle comments** to show or hide the comment cards. Use **Toggle resolved comments** to show or hide resolved comments.
+
+Use **Show highlights** in **Settings → Document Comments** to show or hide the colored underlines in the text independently from the cards. When **Highlights open sidebar** is on and the comment cards are hidden, clicking a highlighted comment range opens that comment in the sidebar.
 
 ### Set the author
 
@@ -175,21 +177,23 @@ Open **Settings → Document Comments**. Set **Author** to the name that the plu
 
 The plugin uses `me` when the Author setting is empty.
 
+To use more than one identity from the same vault, enter comma-separated names in **Available authors**. When multiple names are configured, new comments and replies show an author selector; **Author** remains the default selection.
+
+Use the **Rescan** button in **Highlight colors** to rebuild the author list from the current vault, the **Author** field, and **Available authors**. Scanning happens only when you press **Rescan**.
+
 ### Set highlight colors
 
 Enable **Use author colors** in **Settings → Document Comments** to reveal the **Highlight colors** section and see every person whose name appears in a comment thread. The setting is off by default, and the color section stays hidden while it is off. Use Obsidian's color picker to choose a custom color. The same color identifies each person in document highlights and beside their comments and replies. Turn the setting off to restore the original yellow document highlights and render names with the normal theme color without deleting any saved assignments.
 
-Document Comments does not scan the vault for authors while **Use author colors** is off. Enabling it starts a local scan and assigns colors to existing comment authors; saved mappings apply immediately, and newly discovered authors appear as the scan completes. It uses a 12-color Radix palette without repeating a color until every palette color is in use. Generated and custom assignments are stored locally in the plugin's `data.json`; they do not change the Markdown comment format and do not need to be shared with collaborators.
+Document Comments does not scan the vault for authors while **Use author colors** is off. Enabling it reveals the existing color assignments; newly discovered authors appear after you press **Rescan** in **Highlight colors**. It uses a 12-color Radix palette without repeating a color until every palette color is in use. Generated and custom assignments are stored locally in the plugin's `data.json`; they do not change the Markdown comment format and do not need to be shared with collaborators.
 
 Document Comments locally scans Markdown files for its comment markers to build the author-color list. Note contents never leave the device, and only author names and color assignments are stored in plugin data.
 
-Resolved highlights keep the creator's color as a dashed underline. Creators whose highlights are no longer present remain listed under **Not currently found**, so their color returns if their comments reappear.
-
-Use the trash-can button beside a person to remove their assignment. Deleted mappings are not automatically recreated; those people use the normal theme color and appear under **Uncolored**, where **Assign color** creates a new automatically generated color.
+Use the trash-can button beside a person to remove their assignment. Removed people are listed under **Uncolored**, where **Assign color** creates a new automatically generated color or **Remove** deletes them from the list entirely.
 
 ## Desktop and mobile behavior
 
-Desktop views show cards in a margin beside the note. The cards align with their selected text and avoid overlaps.
+Desktop views show cards in a margin beside the note. The cards align with their selected text and avoid overlaps. Hover over a comment card to show its action bar at the top-right corner.
 
 Mobile views show the highlights without a margin. Use the sidebar to read and manage comments.
 

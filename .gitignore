@@ -16,3 +16,6 @@ skills/*.skill
 
 # obsidian local test vault symlinks
 /test-vault/.obsidian/plugins/document-comments/main.js
+
+# ignore vault settings
+data.json

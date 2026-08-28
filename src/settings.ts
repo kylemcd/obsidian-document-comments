@@ -5,10 +5,16 @@ import type { AuthorColorAssignments } from "./author-colors";
 export type DocCommentsSettings = {
 	/** Author handle attached to comments you create. Empty falls back to "me". */
 	author: string;
+	/** Author handles available when composing comments and replies. */
+	authors: string[];
 	/** Master toggle for the margin column. */
 	showComments: boolean;
 	/** Show resolved comments in the margin. */
 	showResolved: boolean;
+	/** Show the in-text highlight underlines even when the comment column is hidden. */
+	showHighlights: boolean;
+	/** Clicking a highlight when the comment column is hidden opens the sidebar panel. */
+	highlightsOpenSidebar: boolean;
 	/** Allow a blank comment to persist with an empty comment card. */
 	allowEmptyComments: boolean;
 	/** Apply stored per-author colors to highlights and author names. */
@@ -21,8 +27,11 @@ export type DocCommentsSettings = {
 
 export const DEFAULT_SETTINGS: DocCommentsSettings = {
 	author: "",
+	authors: [],
 	showComments: true,
 	showResolved: false,
+	showHighlights: true,
+	highlightsOpenSidebar: true,
 	allowEmptyComments: false,
 	authorColorsEnabled: false,
 	authorColors: {},
@@ -30,6 +39,16 @@ export const DEFAULT_SETTINGS: DocCommentsSettings = {
 };
 
 type DocCommentsSettingKey = Exclude<keyof DocCommentsSettings, "authorColors" | "excludedAuthorColors">;
+
+const isBooleanKey = (key: DocCommentsSettingKey): boolean =>
+	[
+		"showComments",
+		"showResolved",
+		"showHighlights",
+		"highlightsOpenSidebar",
+		"allowEmptyComments",
+		"authorColorsEnabled",
+	].includes(key);
 
 type TextControl = { type: "text"; placeholder: string };
 type ToggleControl = { type: "toggle" };
@@ -53,6 +72,13 @@ const SETTING_META: ReadonlyArray<{
 		control: { type: "text", placeholder: "Me" },
 	},
 	{
+		key: "authors",
+		name: "Available authors",
+		desc: "Comma-separated names you can choose when writing comments. The current Author is always included.",
+		aliases: ["people", "identities", "comment authors"],
+		control: { type: "text", placeholder: "Alice, Bob" },
+	},
+	{
 		key: "showComments",
 		name: "Show comments",
 		desc: "Show the comment column. You can also toggle this from the ribbon or the command palette.",
@@ -64,6 +90,20 @@ const SETTING_META: ReadonlyArray<{
 		name: "Show resolved comments",
 		desc: "Keep resolved comments visible in the margin.",
 		aliases: ["resolved comments"],
+		control: { type: "toggle" },
+	},
+	{
+		key: "showHighlights",
+		name: "Show highlights",
+		desc: "Show the colored underlines in the text even when the comment column is hidden.",
+		aliases: ["text highlights", "underlines"],
+		control: { type: "toggle" },
+	},
+	{
+		key: "highlightsOpenSidebar",
+		name: "Highlights open sidebar",
+		desc: "Clicking a highlighted comment range opens the sidebar panel when the comment column is hidden.",
+		aliases: ["highlight click", "open sidebar"],
 		control: { type: "toggle" },
 	},
 	{
@@ -83,6 +123,8 @@ const SETTING_META: ReadonlyArray<{
 ];
 
 export class DocCommentsSettingTab extends PluginSettingTab {
+
+
 	constructor(
 		app: App,
 		private plugin: DocCommentsPlugin,
@@ -100,15 +142,23 @@ export class DocCommentsSettingTab extends PluginSettingTab {
 					? {
 							type: "text",
 							key: meta.key,
-							defaultValue: DEFAULT_SETTINGS[meta.key] as string,
+							defaultValue:
+								meta.key === "authors"
+									? (this.plugin.settings.authors ?? DEFAULT_SETTINGS.authors).join(", ")
+									: String(this.plugin.settings[meta.key] ?? DEFAULT_SETTINGS[meta.key]),
 							placeholder: meta.control.placeholder,
 						}
-					: { type: "toggle", key: meta.key, defaultValue: DEFAULT_SETTINGS[meta.key] as boolean },
+					: { type: "toggle", key: meta.key, defaultValue: this.plugin.settings[meta.key] as boolean },
 		}));
 		const settingsError = this.plugin.settingsError();
 		if (settingsError) base.push(this.settingsErrorDefinition(settingsError));
 		if (!this.plugin.settings.authorColorsEnabled) return base;
 		return [...base, this.authorColorGroup()];
+	}
+
+	getControlValue(key: string): unknown {
+		if (key === "authors") return (this.plugin.settings.authors ?? []).join(", ");
+		return this.plugin.settings[key as DocCommentsSettingKey];
 	}
 
 	async setControlValue(key: string, value: unknown): Promise<void> {
@@ -129,7 +179,11 @@ export class DocCommentsSettingTab extends PluginSettingTab {
 				setting.addText((text) =>
 					text
 						.setPlaceholder(placeholder)
-						.setValue(String(this.plugin.settings[meta.key]))
+						.setValue(
+							meta.key === "authors"
+								? (this.plugin.settings.authors ?? []).join(", ")
+								: String(this.plugin.settings[meta.key]),
+						)
 						.onChange((value) => void this.applySetting(meta.key, value)),
 				);
 			} else {
@@ -263,6 +317,12 @@ export class DocCommentsSettingTab extends PluginSettingTab {
 			.setDesc("No color assigned. Uses the normal theme text color.")
 			.addButton((button) =>
 				button.setButtonText("Assign color").onClick(() => void this.plugin.restoreAuthorColor(author)),
+			)
+			.addExtraButton((button) =>
+				button
+					.setIcon("trash-2")
+					.setTooltip("Remove this author from colors")
+					.onClick(() => void this.plugin.removeAuthorColor(author)),
 			);
 	}
 
@@ -279,9 +339,14 @@ export class DocCommentsSettingTab extends PluginSettingTab {
 
 	private assignSetting(key: DocCommentsSettingKey, value: unknown): void {
 		if (key === "author") this.plugin.settings.author = String(value);
-		else if (key === "showComments") this.plugin.settings.showComments = Boolean(value);
-		else if (key === "showResolved") this.plugin.settings.showResolved = Boolean(value);
-		else if (key === "allowEmptyComments") this.plugin.settings.allowEmptyComments = Boolean(value);
+		else if (key === "authors") {
+			this.plugin.settings.authors = String(value)
+				.split(",")
+				.map((author) => author.trim())
+				.filter((author, index, authors) => author.length > 0 && authors.indexOf(author) === index);
+		} else if (key === "showComments") this.plugin.settings.showComments = Boolean(value);
+		else if (key === "showResolved") this.plugin.settings.showResolved = Boolean(value);		else if (key === "showHighlights") this.plugin.settings.showHighlights = Boolean(value);
+		else if (key === "highlightsOpenSidebar") this.plugin.settings.highlightsOpenSidebar = Boolean(value);		else if (key === "allowEmptyComments") this.plugin.settings.allowEmptyComments = Boolean(value);
 		else if (key === "authorColorsEnabled") this.plugin.settings.authorColorsEnabled = Boolean(value);
 	}
 
@@ -296,12 +361,8 @@ export class DocCommentsSettingTab extends PluginSettingTab {
 			this.refresh();
 			return;
 		}
-		if (key === "author") this.plugin.ensureCurrentAuthorColor();
 		this.plugin.refreshEditors();
 		if (key === "showComments") this.plugin.updateRibbon();
-		if (key === "authorColorsEnabled" && previous === false && this.plugin.settings.authorColorsEnabled) {
-			await this.plugin.scanAuthorsIfEnabled();
-		}
 		this.refresh();
 	}
 }

@@ -1,7 +1,10 @@
 import type { Result } from "better-result";
 
 export type EmptySubmitAction = "none" | "highlight" | "remove";
-export type DraftSubmitHandler = (text: string) => Result<void, string> | Promise<Result<void, string>>;
+export type DraftSubmitHandler = (
+	text: string,
+	author?: string,
+) => Result<void, string> | Promise<Result<void, string>>;
 
 export const emptySubmitLabel = (action: EmptySubmitAction): string => {
 	return action === "highlight" ? "Empty comment" : action === "remove" ? "Remove highlight" : "Comment";

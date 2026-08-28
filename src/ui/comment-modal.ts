@@ -15,6 +15,8 @@ import {
  */
 export class CommentModal extends Modal {
 	private value = "";
+	private selectedAuthor = "me";
+	private canChooseAuthor = false;
 	private saving = false;
 
 	constructor(
@@ -22,6 +24,8 @@ export class CommentModal extends Modal {
 		private quote: string,
 		private onSubmit: DraftSubmitHandler,
 		private emptyAction: EmptySubmitAction = "none",
+		private authors: () => string[] = () => [],
+		private getAuthor: () => string = () => "me",
 	) {
 		super(app);
 	}
@@ -32,6 +36,25 @@ export class CommentModal extends Modal {
 
 		const quote = this.quote.trim();
 		if (quote) contentEl.createDiv({ cls: "dc-modal-quote", text: quote });
+		this.selectedAuthor = this.getAuthor();
+		const authors = [
+			...new Set(
+				this.authors()
+					.map((author) => author.trim())
+					.filter(Boolean),
+			),
+		];
+		if (!authors.includes(this.selectedAuthor)) authors.unshift(this.selectedAuthor);
+		this.canChooseAuthor = authors.length > 1;
+		if (this.canChooseAuthor) {
+			const author = contentEl.createEl("select", {
+				cls: "dc-modal-author",
+				attr: { "aria-label": "Comment author" },
+			});
+			authors.forEach((name) => author.createEl("option", { text: name, attr: { value: name } }));
+			author.value = this.selectedAuthor;
+			author.addEventListener("change", () => (this.selectedAuthor = author.value));
+		}
 
 		const input = contentEl.createEl("textarea", {
 			cls: "dc-modal-input",
@@ -73,7 +96,9 @@ export class CommentModal extends Modal {
 		this.contentEl
 			.querySelectorAll<HTMLTextAreaElement | HTMLButtonElement>("textarea, button")
 			.forEach((control) => (control.disabled = true));
-		const result = await submitDraft(text, this.onSubmit);
+		const result = await submitDraft(text, (value) =>
+			this.canChooseAuthor ? this.onSubmit(value, this.selectedAuthor) : this.onSubmit(value),
+		);
 		if (result.isOk()) {
 			this.close();
 			return;
