@@ -77,7 +77,7 @@ describe("plugin settings persistence", () => {
 		expect(saveData).not.toHaveBeenCalled();
 	});
 
-	test("assigns the settled author a color once, without saving each prefix", async () => {
+	test("assigns only the settled author name a color, not each typed prefix", async () => {
 		const plugin = createPlugin();
 		vi.spyOn(plugin, "loadData").mockResolvedValue({
 			author: "",
@@ -85,16 +85,50 @@ describe("plugin settings persistence", () => {
 			authorColors: {},
 			excludedAuthorColors: [],
 		});
-		vi.spyOn(plugin, "saveData").mockResolvedValue();
+		const saveData = vi.spyOn(plugin, "saveData").mockResolvedValue();
 		vi.spyOn(plugin, "refreshEditors").mockImplementation(() => {});
 		await plugin.loadSettings();
+		saveData.mockClear();
 
-		plugin.settings.author = "Alice";
-		plugin.ensureCurrentAuthorColor();
-		plugin.ensureCurrentAuthorColor();
+		vi.useFakeTimers();
+		try {
+			// Type the name a character at a time, never pausing long enough for the
+			// debounce to fire — this is what the settings field does on every key.
+			for (const prefix of ["A", "Al", "Ali", "Alic", "Alice"]) {
+				plugin.settings.author = prefix;
+				plugin.scheduleCurrentAuthorColor();
+				vi.advanceTimersByTime(100);
+			}
+			vi.advanceTimersByTime(1000);
 
-		expect(plugin.settings.authorColors.Alice).toBeDefined();
-		expect(Object.keys(plugin.settings.authorColors)).toEqual(["me", "Alice"]);
+			expect(Object.keys(plugin.settings.authorColors).sort()).toEqual(["Alice", "me"]);
+			expect(saveData).toHaveBeenCalledOnce();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	// Hiding the comments used to hide the highlights too. A saved showComments:false
+	// from that version means "hide both", so it must not turn every highlight on.
+	test("carries a hidden comment column over to the new highlight setting", async () => {
+		const upgraded = createPlugin();
+		vi.spyOn(upgraded, "loadData").mockResolvedValue({ author: "Alice", showComments: false });
+		vi.spyOn(upgraded, "saveData").mockResolvedValue();
+		await upgraded.loadSettings();
+		expect(upgraded.settings.showHighlights).toBe(false);
+
+		const untouched = createPlugin();
+		vi.spyOn(untouched, "loadData").mockResolvedValue({ author: "Alice" });
+		vi.spyOn(untouched, "saveData").mockResolvedValue();
+		await untouched.loadSettings();
+		expect(untouched.settings.showHighlights).toBe(true);
+
+		// Once the setting exists in saved data it wins outright, in both directions.
+		const explicit = createPlugin();
+		vi.spyOn(explicit, "loadData").mockResolvedValue({ showComments: false, showHighlights: true });
+		vi.spyOn(explicit, "saveData").mockResolvedValue();
+		await explicit.loadSettings();
+		expect(explicit.settings.showHighlights).toBe(true);
 	});
 
 	test("falls back without overwriting data when plugin settings fail to load", async () => {

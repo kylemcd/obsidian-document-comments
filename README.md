@@ -24,7 +24,7 @@ The plugin stores each comment inside its Markdown file as an HTML comment. Othe
 - Show comment cards in Live Preview, Source view, and Reading view.
 - Open long comments in the sidebar.
 - Filter the sidebar by open, resolved, or all comments.
-- Hide all comments or hide resolved comments.
+- Hide the comment cards, the highlights, or the resolved comments, each on its own.
 
 ## Comment format
 
@@ -140,6 +140,8 @@ Select text in the editor and right-click it. **Add comment** appears in the men
 
 The optional [Commander plugin](https://community.obsidian.md/plugins/cmdr) can add any of the plugin's other commands to the editor menu.
 
+If you already mapped **Add comment** to the editor menu with Commander, remove that mapping. The plugin adds the item itself now, so the menu shows it twice.
+
 #### Install Commander
 
 1. Install **Commander**.
@@ -173,7 +175,7 @@ Use the **Open comments sidebar** command or ribbon icon to show all comments in
 
 Use **Toggle comments** to show or hide the comment cards. Use **Toggle resolved comments** to show or hide resolved comments.
 
-Highlights have their own switch. Turn off **Show highlights** in **Settings → Document Comments** to hide the highlighted text and keep the cards. Turn off **Toggle comments** to hide the cards and keep the highlights. Read and manage the hidden cards in the sidebar.
+Highlights have their own switch. Use **Toggle highlights**, or **Show highlights** in **Settings → Document Comments**, to hide the highlighted text and keep the cards. Turn off **Toggle comments** to hide the cards and keep the highlights. Read and manage the hidden cards in the sidebar.
 
 ### Set the author
 

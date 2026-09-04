@@ -218,6 +218,12 @@ export default class DocCommentsPlugin extends Plugin {
 		});
 
 		this.addCommand({
+			id: "toggle-highlights",
+			name: "Toggle highlights",
+			callback: () => void this.toggleHighlights(),
+		});
+
+		this.addCommand({
 			id: "toggle-resolved",
 			name: "Toggle resolved comments",
 			callback: () => void this.toggleResolved(),
@@ -397,6 +403,19 @@ export default class DocCommentsPlugin extends Plugin {
 		new Notice(this.settings.showComments ? "Comments shown" : "Comments hidden");
 	}
 
+	private async toggleHighlights(): Promise<void> {
+		const previous = this.settings.showHighlights;
+		this.settings.showHighlights = !previous;
+		const saved = await this.saveSettings();
+		if (saved.isErr()) {
+			this.settings.showHighlights = previous;
+			new Notice(`Couldn't save settings: ${saved.error}`);
+			return;
+		}
+		this.refreshEditors();
+		new Notice(this.settings.showHighlights ? "Highlights shown" : "Highlights hidden");
+	}
+
 	private async toggleResolved(): Promise<void> {
 		const previous = this.settings.showResolved;
 		this.settings.showResolved = !previous;
@@ -503,9 +522,11 @@ export default class DocCommentsPlugin extends Plugin {
 	}
 
 	onunload(): void {
-		// Drop a pending assignment rather than firing it against a torn-down
-		// workspace. loadSettings assigns the current author's color on next load.
+		// Drop pending color work rather than letting it fire against a torn-down
+		// plugin — on a reload, a late write would clobber the new instance's data.
+		// loadSettings and the vault scan reassign anything dropped here.
 		this.scheduleCurrentAuthorColor.cancel();
+		this.scheduleAuthorColorSave.cancel();
 		this.readingManager?.destroy();
 		this.unsubscribeAuthorIndex?.();
 		this.authorIndex?.dispose();
@@ -533,7 +554,7 @@ export default class DocCommentsPlugin extends Plugin {
 	 *  `scheduleCurrentAuthorColor` on the settings path: Obsidian's text field has
 	 *  no commit event, so we treat "stopped typing" as the commit and skip every
 	 *  half-typed name in between. */
-	ensureCurrentAuthorColor(): void {
+	private ensureCurrentAuthorColor(): void {
 		const created = ensureAuthorColors(
 			this.settings.authorColors,
 			[this.authorName()],
@@ -645,6 +666,10 @@ export default class DocCommentsPlugin extends Plugin {
 		const rawData = loaded.isOk() ? loaded.value : null;
 		const data = rawData && typeof rawData === "object" ? (rawData as Partial<DocCommentsSettings>) : {};
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, data, {
+			// Before Show highlights existed, hiding the comments hid the highlights
+			// too. Saved data from that version has no `showHighlights`, so inherit
+			// the old meaning rather than switching every highlight back on.
+			showHighlights: data.showHighlights ?? data.showComments ?? DEFAULT_SETTINGS.showHighlights,
 			authorColors: hydrateAuthorColors(data.authorColors),
 			excludedAuthorColors: hydrateExcludedAuthors(data.excludedAuthorColors),
 		});

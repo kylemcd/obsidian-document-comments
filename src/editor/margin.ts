@@ -147,7 +147,7 @@ class MarginView implements PluginValue {
 		const cfg = this.view.state.facet(commentConfig);
 		// When the sidebar panel is open the comments live there, so the inline
 		// column steps aside (no cards, no reserved width). Highlights persist —
-		// they're keyed on `dc-highlights`, which still follows showComments.
+		// they're keyed on `dc-highlights`, which follows Show highlights.
 		if (!cfg.showComments() || cfg.sidebarOpen()) return [];
 		const fv = this.view.state.field(commentField, false);
 		if (!fv) return [];

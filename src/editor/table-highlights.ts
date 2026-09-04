@@ -114,7 +114,10 @@ class TableHighlights {
 	private async refresh(generation: number): Promise<void> {
 		const cfg = this.view.state.facet(commentConfig);
 		const renderMarkdown = cfg.renderMarkdown;
-		if (!cfg.showComments()) {
+		// Table highlights paint through the CSS Custom Highlight API, not
+		// `.doc-comment-span`, so the `dc-highlights` class can't reach them. Gate
+		// them here on the same setting the class follows, or they invert it.
+		if (!cfg.showHighlights()) {
 			setViewRanges(this.view, new Map());
 			return;
 		}

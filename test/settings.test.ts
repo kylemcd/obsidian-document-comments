@@ -29,7 +29,6 @@ const plugin = (state: AuthorIndexState) => ({
 	scanAuthorsIfEnabled: vi.fn(async () => {}),
 	saveSettings: vi.fn(async (): Promise<ResultType<void, string>> => Result.ok(undefined)),
 	settingsError: vi.fn((): string | null => null),
-	ensureCurrentAuthorColor: vi.fn(),
 	scheduleCurrentAuthorColor: vi.fn(),
 	refreshEditors: vi.fn(),
 	updateRibbon: vi.fn(),
@@ -170,7 +169,6 @@ describe("highlight color settings", () => {
 
 		expect(fake.settings.author).toBe("Alice");
 		expect(fake.settings.authorColors).toEqual(before);
-		expect(fake.ensureCurrentAuthorColor).not.toHaveBeenCalled();
 		expect(fake.scheduleCurrentAuthorColor).toHaveBeenCalledTimes(5);
 	});
 
