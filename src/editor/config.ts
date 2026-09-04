@@ -19,6 +19,8 @@ export type CommentConfig = {
 	showComments: () => boolean;
 	/** Whether resolved comments still show a card in the margin. */
 	showResolved: () => boolean;
+	/** Whether the in-text highlights render at all. Independent of showComments. */
+	showHighlights: () => boolean;
 	/** Whether the new-comment composer accepts an empty comment. */
 	allowEmptyComments: () => boolean;
 	/** Whether the comments sidebar panel is open. While it is, the inline
@@ -38,6 +40,7 @@ const DEFAULT: CommentConfig = {
 	colorForAuthor: () => null,
 	showComments: () => true,
 	showResolved: () => true,
+	showHighlights: () => true,
 	allowEmptyComments: () => false,
 	sidebarOpen: () => false,
 };

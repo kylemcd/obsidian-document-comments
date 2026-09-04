@@ -7,7 +7,7 @@
 // crash) that pure-state and format tests miss. It fails outright if any editor
 // extension throws while a note is opened.
 import { beforeAll, describe, expect, test } from "vitest";
-import { EditorState } from "@codemirror/state";
+import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { commentField } from "../src/editor/state";
 import { draftField, setDraft } from "../src/editor/draft";
@@ -414,6 +414,52 @@ describe("editor extensions open every note without crashing", () => {
 		expect(draft).toMatchObject({ from: 1, to: 5, targetHighlightId: "h1" });
 		expect(className).not.toContain("dc-has"); // draft is a floating overlay, no column reserved
 		expect(className).toContain("dc-highlights"); // highlights still follow the master toggle
+	});
+
+	// Highlights used to ride the showComments toggle, so hiding the cards also
+	// wiped the underlines out of the text. They have their own setting now.
+	test("highlights survive hiding the comment column and follow showHighlights", () => {
+		const openWith = (cfg: Extension): string => {
+			const parent = document.createElement("div");
+			document.body.appendChild(parent);
+			const view = new EditorView({
+				state: EditorState.create({
+					doc: "Just plain text.\nNo comments here.\n",
+					extensions: [commentField, draftField, cfg, editorLayoutField],
+				}),
+				parent,
+			});
+			view.dispatch({ changes: { from: 0, insert: "x" } });
+			view.requestMeasure();
+			const className = view.dom.className;
+			view.destroy();
+			return className;
+		};
+
+		const cardsHidden = openWith(
+			commentConfig.of({
+				author: () => "me",
+				showComments: () => false,
+				showResolved: () => true,
+				showHighlights: () => true,
+				allowEmptyComments: () => false,
+				sidebarOpen: () => false,
+			}),
+		);
+		expect(cardsHidden).toContain("dc-highlights");
+		expect(cardsHidden).not.toContain("dc-has");
+
+		const highlightsHidden = openWith(
+			commentConfig.of({
+				author: () => "me",
+				showComments: () => true,
+				showResolved: () => true,
+				showHighlights: () => false,
+				allowEmptyComments: () => false,
+				sidebarOpen: () => false,
+			}),
+		);
+		expect(highlightsHidden).not.toContain("dc-highlights");
 	});
 
 	test("publishes a separate current-author color for drafts nested in another author's highlight", () => {

@@ -55,6 +55,48 @@ describe("plugin settings persistence", () => {
 		expect(reloadSave).not.toHaveBeenCalled();
 	});
 
+	// Rendering calls colorForAuthor on every transaction. It used to create and
+	// persist an assignment as a side effect, so every keystroke in the Author
+	// setting saved a generated color for a half-typed name (#77).
+	test("reading an author's color never creates an assignment", async () => {
+		const plugin = createPlugin();
+		vi.spyOn(plugin, "loadData").mockResolvedValue({
+			author: "Alice",
+			authorColorsEnabled: true,
+			authorColors: { Alice: { color: "#0090ff", mode: "generated" } },
+			excludedAuthorColors: [],
+		});
+		const saveData = vi.spyOn(plugin, "saveData").mockResolvedValue();
+		await plugin.loadSettings();
+		saveData.mockClear();
+
+		expect(plugin.colorForAuthor("Alice")).toBe("#0090ff");
+		["A", "Al", "Ali", "Alic"].forEach((prefix) => plugin.colorForAuthor(prefix));
+
+		expect(Object.keys(plugin.settings.authorColors)).toEqual(["Alice"]);
+		expect(saveData).not.toHaveBeenCalled();
+	});
+
+	test("assigns the settled author a color once, without saving each prefix", async () => {
+		const plugin = createPlugin();
+		vi.spyOn(plugin, "loadData").mockResolvedValue({
+			author: "",
+			authorColorsEnabled: true,
+			authorColors: {},
+			excludedAuthorColors: [],
+		});
+		vi.spyOn(plugin, "saveData").mockResolvedValue();
+		vi.spyOn(plugin, "refreshEditors").mockImplementation(() => {});
+		await plugin.loadSettings();
+
+		plugin.settings.author = "Alice";
+		plugin.ensureCurrentAuthorColor();
+		plugin.ensureCurrentAuthorColor();
+
+		expect(plugin.settings.authorColors.Alice).toBeDefined();
+		expect(Object.keys(plugin.settings.authorColors)).toEqual(["me", "Alice"]);
+	});
+
 	test("falls back without overwriting data when plugin settings fail to load", async () => {
 		const plugin = createPlugin();
 		vi.spyOn(plugin, "loadData").mockRejectedValue(new Error("vault unavailable"));

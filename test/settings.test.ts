@@ -9,6 +9,7 @@ const settings = (): DocCommentsSettings => ({
 	author: "Alice",
 	showComments: true,
 	showResolved: false,
+	showHighlights: true,
 	allowEmptyComments: false,
 	authorColorsEnabled: true,
 	authorColors: {
@@ -29,6 +30,7 @@ const plugin = (state: AuthorIndexState) => ({
 	saveSettings: vi.fn(async (): Promise<ResultType<void, string>> => Result.ok(undefined)),
 	settingsError: vi.fn((): string | null => null),
 	ensureCurrentAuthorColor: vi.fn(),
+	scheduleCurrentAuthorColor: vi.fn(),
 	refreshEditors: vi.fn(),
 	updateRibbon: vi.fn(),
 });
@@ -153,6 +155,23 @@ describe("highlight color settings", () => {
 		expect(fake.settings.authorColors).toEqual(before);
 		expect(fake.saveSettings).toHaveBeenCalledOnce();
 		expect(fake.scanAuthorsIfEnabled).toHaveBeenCalledOnce();
+	});
+
+	// Obsidian's text field fires onChange per keystroke. Assigning a color there
+	// saved one for every prefix of the name, filling the list with junk (#77).
+	test("typing an author name defers the color assignment instead of running per keystroke", async () => {
+		const fake = plugin({ status: "ready", authors: ["Alice"] });
+		const before = structuredClone(fake.settings.authorColors);
+		const tab = new DocCommentsSettingTab(new App(), fake as never);
+
+		for (const prefix of ["A", "Al", "Ali", "Alic", "Alice"]) {
+			await tab.setControlValue("author", prefix);
+		}
+
+		expect(fake.settings.author).toBe("Alice");
+		expect(fake.settings.authorColors).toEqual(before);
+		expect(fake.ensureCurrentAuthorColor).not.toHaveBeenCalled();
+		expect(fake.scheduleCurrentAuthorColor).toHaveBeenCalledTimes(5);
 	});
 
 	test("rolls back a rejected setting write and surfaces the failure inline", async () => {
