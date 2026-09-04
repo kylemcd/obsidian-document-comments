@@ -16,12 +16,6 @@ export type AuthorColorAssignments = Record<string, AuthorColorAssignment>;
 // Matches the yellow highlight used before per-author colors were introduced.
 export const DEFAULT_HIGHLIGHT_COLOR = "#f2b90d" as const satisfies HexColor;
 
-export type AuthorColorResolution = {
-	author: string;
-	color: ResolvedAuthorColor;
-	created: boolean;
-};
-
 // Radix Colors 3 light scale, step 9. Step 9 is Radix's highest-chroma accent
 // step and is intended for overlays and accent borders.
 export const AUTHOR_COLOR_PALETTE = [
@@ -141,20 +135,21 @@ export const ensureAuthorColors = (
 	return canonicalAuthors.map((author) => ensureAuthorColor(assignments, author)).some(({ created }) => created);
 };
 
-export const resolveAuthorColor = (
-	assignments: AuthorColorAssignments,
+/** Look up an author's stored color. Pure: it never creates an assignment.
+ *  Rendering calls this on every transaction, so a create-on-read would (and did)
+ *  persist a generated color for every prefix typed into the Author setting.
+ *  Creation lives at explicit points instead — the vault scan, Rescan, "Assign
+ *  color", and a settled Author change. */
+export const readAuthorColor = (
+	assignments: Readonly<AuthorColorAssignments>,
 	excludedAuthors: ReadonlySet<string>,
 	author: string,
 	enabled: boolean,
-): AuthorColorResolution => {
+): ResolvedAuthorColor => {
+	if (!enabled) return null;
 	const key = canonicalAuthorKey(author);
-	if (!key || excludedAuthors.has(key)) return { author: key, color: null, created: false };
-	const ensured = ensureAuthorColor(assignments, key);
-	return {
-		author: key,
-		color: enabled ? ensured.assignment.color : null,
-		created: ensured.created,
-	};
+	if (!key || excludedAuthors.has(key)) return null;
+	return assignments[key]?.color ?? null;
 };
 
 export const authorColorCss = (color: ResolvedAuthorColor): string => color ?? "var(--text-normal)";

@@ -9,6 +9,9 @@ export type DocCommentsSettings = {
 	showComments: boolean;
 	/** Show resolved comments in the margin. */
 	showResolved: boolean;
+	/** Show the in-text highlights. Independent of the comment column, so the
+	 *  underlines can stay while the cards are hidden. */
+	showHighlights: boolean;
 	/** Allow a blank comment to persist with an empty comment card. */
 	allowEmptyComments: boolean;
 	/** Apply stored per-author colors to highlights and author names. */
@@ -23,6 +26,7 @@ export const DEFAULT_SETTINGS: DocCommentsSettings = {
 	author: "",
 	showComments: true,
 	showResolved: false,
+	showHighlights: true,
 	allowEmptyComments: false,
 	authorColorsEnabled: false,
 	authorColors: {},
@@ -64,6 +68,13 @@ const SETTING_META: ReadonlyArray<{
 		name: "Show resolved comments",
 		desc: "Keep resolved comments visible in the margin.",
 		aliases: ["resolved comments"],
+		control: { type: "toggle" },
+	},
+	{
+		key: "showHighlights",
+		name: "Show highlights",
+		desc: "Show the highlighted text. Stays on when the comment column is hidden.",
+		aliases: ["text highlights", "underlines"],
 		control: { type: "toggle" },
 	},
 	{
@@ -281,6 +292,7 @@ export class DocCommentsSettingTab extends PluginSettingTab {
 		if (key === "author") this.plugin.settings.author = String(value);
 		else if (key === "showComments") this.plugin.settings.showComments = Boolean(value);
 		else if (key === "showResolved") this.plugin.settings.showResolved = Boolean(value);
+		else if (key === "showHighlights") this.plugin.settings.showHighlights = Boolean(value);
 		else if (key === "allowEmptyComments") this.plugin.settings.allowEmptyComments = Boolean(value);
 		else if (key === "authorColorsEnabled") this.plugin.settings.authorColorsEnabled = Boolean(value);
 	}
@@ -296,7 +308,9 @@ export class DocCommentsSettingTab extends PluginSettingTab {
 			this.refresh();
 			return;
 		}
-		if (key === "author") this.plugin.ensureCurrentAuthorColor();
+		// Debounced: onChange fires per keystroke, and assigning eagerly persisted a
+		// generated color for every prefix of the name ("A", "Al", "Ali", …).
+		if (key === "author") this.plugin.scheduleCurrentAuthorColor();
 		this.plugin.refreshEditors();
 		if (key === "showComments") this.plugin.updateRibbon();
 		if (key === "authorColorsEnabled" && previous === false && this.plugin.settings.authorColorsEnabled) {

@@ -5,6 +5,10 @@ matching the pushed tag as that GitHub release's notes, so add an entry here bef
 
 ## Unreleased
 
+- Added a **Show highlights** setting and a **Toggle highlights** command. Highlights no longer follow the comment column, so you can hide the cards and keep the highlighted text, or the reverse. Highlights start on, so if you had comments hidden you will now see the highlighted text until you turn **Show highlights** off.
+- Added **Add comment** to the editor right-click menu when text is selected. If you previously added that command to the menu with the Commander plugin, remove your mapping to avoid a duplicate entry.
+- Fixed the **Author** setting assigning a highlight color to every half-typed name. Typing `Alice` no longer leaves `A`, `Al`, `Ali`, and `Alic` behind in **Highlight colors**.
+
 ## 0.1.15
 
 - Fixed emoji reactions added to a reply being attached to the first comment in the thread. Reply reactions now remain with the thread entry where they were added, while existing reaction data remains compatible.

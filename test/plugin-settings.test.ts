@@ -55,6 +55,77 @@ describe("plugin settings persistence", () => {
 		expect(reloadSave).not.toHaveBeenCalled();
 	});
 
+	// Rendering calls colorForAuthor on every transaction. It used to create and
+	// persist an assignment as a side effect, so every keystroke in the Author
+	// setting saved a generated color for a half-typed name (#77).
+	test("reading an author's color never creates an assignment", async () => {
+		const plugin = createPlugin();
+		vi.spyOn(plugin, "loadData").mockResolvedValue({
+			author: "Alice",
+			authorColorsEnabled: true,
+			authorColors: { Alice: { color: "#0090ff", mode: "generated" } },
+			excludedAuthorColors: [],
+		});
+		const saveData = vi.spyOn(plugin, "saveData").mockResolvedValue();
+		await plugin.loadSettings();
+		saveData.mockClear();
+
+		expect(plugin.colorForAuthor("Alice")).toBe("#0090ff");
+		["A", "Al", "Ali", "Alic"].forEach((prefix) => plugin.colorForAuthor(prefix));
+
+		expect(Object.keys(plugin.settings.authorColors)).toEqual(["Alice"]);
+		expect(saveData).not.toHaveBeenCalled();
+	});
+
+	test("assigns only the settled author name a color, not each typed prefix", async () => {
+		const plugin = createPlugin();
+		vi.spyOn(plugin, "loadData").mockResolvedValue({
+			author: "",
+			authorColorsEnabled: true,
+			authorColors: {},
+			excludedAuthorColors: [],
+		});
+		const saveData = vi.spyOn(plugin, "saveData").mockResolvedValue();
+		vi.spyOn(plugin, "refreshEditors").mockImplementation(() => {});
+		await plugin.loadSettings();
+		saveData.mockClear();
+
+		vi.useFakeTimers();
+		try {
+			// Type the name a character at a time, never pausing long enough for the
+			// debounce to fire — this is what the settings field does on every key.
+			for (const prefix of ["A", "Al", "Ali", "Alic", "Alice"]) {
+				plugin.settings.author = prefix;
+				plugin.scheduleCurrentAuthorColor();
+				vi.advanceTimersByTime(100);
+			}
+			vi.advanceTimersByTime(1000);
+
+			expect(Object.keys(plugin.settings.authorColors).sort()).toEqual(["Alice", "me"]);
+			expect(saveData).toHaveBeenCalledOnce();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	// Deliberately NOT inherited from showComments on upgrade. Doing that persists
+	// showHighlights:false for anyone who merely had comments toggled off at update
+	// time, and it sticks — they turn comments back on later and the highlights
+	// never return. Highlights reappearing is visible and one toggle to undo.
+	test("defaults highlights on regardless of a hidden comment column", async () => {
+		const upgraded = createPlugin();
+		vi.spyOn(upgraded, "loadData").mockResolvedValue({ author: "Alice", showComments: false });
+		vi.spyOn(upgraded, "saveData").mockResolvedValue();
+		await upgraded.loadSettings();
+		expect(upgraded.settings.showHighlights).toBe(true);
+
+		const explicit = createPlugin();
+		vi.spyOn(explicit, "loadData").mockResolvedValue({ showComments: true, showHighlights: false });
+		vi.spyOn(explicit, "saveData").mockResolvedValue();
+		await explicit.loadSettings();
+		expect(explicit.settings.showHighlights).toBe(false);
+	});
+
 	test("falls back without overwriting data when plugin settings fail to load", async () => {
 		const plugin = createPlugin();
 		vi.spyOn(plugin, "loadData").mockRejectedValue(new Error("vault unavailable"));

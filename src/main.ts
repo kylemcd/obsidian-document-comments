@@ -35,7 +35,7 @@ import {
 	hydrateAuthorColors,
 	hydrateExcludedAuthors,
 	parseHexColor,
-	resolveAuthorColor,
+	readAuthorColor,
 	type AuthorColorAssignment,
 	type ResolvedAuthorColor,
 } from "./author-colors";
@@ -61,6 +61,9 @@ export default class DocCommentsPlugin extends Plugin {
 	private authorIndexError: string | null = null;
 	private excludedAuthorColorSet = new Set<string>();
 	private scheduleAuthorColorSave = debounce(() => void this.persistAuthorColors(), 100, true);
+	/** Author is a free-text setting that fires onChange per keystroke. Wait for
+	 *  the name to settle before assigning it a color. */
+	scheduleCurrentAuthorColor = debounce(() => this.ensureCurrentAuthorColor(), 600, true);
 	/** True while the "All discussions" sidebar panel is mounted. */
 	private sidebarOpen = false;
 
@@ -89,6 +92,7 @@ export default class DocCommentsPlugin extends Plugin {
 				highlightColorForAuthor: (author) => this.highlightColorForAuthor(author),
 				showComments: () => this.settings.showComments,
 				showResolved: () => this.settings.showResolved,
+				showHighlights: () => this.settings.showHighlights,
 				allowEmptyComments: () => this.settings.allowEmptyComments,
 				sidebarOpen: () => this.sidebarOpen,
 				openInSidebar: (id) => void this.revealComment(id),
@@ -112,6 +116,7 @@ export default class DocCommentsPlugin extends Plugin {
 			highlightColorForAuthor: (author) => this.highlightColorForAuthor(author),
 			showComments: () => this.settings.showComments,
 			showResolved: () => this.settings.showResolved,
+			showHighlights: () => this.settings.showHighlights,
 			allowEmptyComments: () => this.settings.allowEmptyComments,
 			sidebarOpen: () => this.sidebarOpen,
 			openInSidebar: (id) => void this.revealComment(id),
@@ -191,10 +196,31 @@ export default class DocCommentsPlugin extends Plugin {
 			editorCallback: (editor) => this.startAddComment(editor),
 		});
 
+		// Same entry point as the command, in the editor's right-click menu. Only
+		// offered with a selection, since a comment needs a range to anchor to.
+		this.registerEvent(
+			this.app.workspace.on("editor-menu", (menu, editor) => {
+				if (!editor.somethingSelected()) return;
+				menu.addItem((item) =>
+					item
+						.setSection("selection")
+						.setTitle("Add comment")
+						.setIcon("message-square")
+						.onClick(() => this.startAddComment(editor)),
+				);
+			}),
+		);
+
 		this.addCommand({
 			id: "toggle-comments",
 			name: "Toggle comments",
 			callback: () => void this.toggleComments(),
+		});
+
+		this.addCommand({
+			id: "toggle-highlights",
+			name: "Toggle highlights",
+			callback: () => void this.toggleHighlights(),
 		});
 
 		this.addCommand({
@@ -377,6 +403,19 @@ export default class DocCommentsPlugin extends Plugin {
 		new Notice(this.settings.showComments ? "Comments shown" : "Comments hidden");
 	}
 
+	private async toggleHighlights(): Promise<void> {
+		const previous = this.settings.showHighlights;
+		this.settings.showHighlights = !previous;
+		const saved = await this.saveSettings();
+		if (saved.isErr()) {
+			this.settings.showHighlights = previous;
+			new Notice(`Couldn't save settings: ${saved.error}`);
+			return;
+		}
+		this.refreshEditors();
+		new Notice(this.settings.showHighlights ? "Highlights shown" : "Highlights hidden");
+	}
+
 	private async toggleResolved(): Promise<void> {
 		const previous = this.settings.showResolved;
 		this.settings.showResolved = !previous;
@@ -483,6 +522,11 @@ export default class DocCommentsPlugin extends Plugin {
 	}
 
 	onunload(): void {
+		// Drop pending color work rather than letting it fire against a torn-down
+		// plugin — on a reload, a late write would clobber the new instance's data.
+		// loadSettings and the vault scan reassign anything dropped here.
+		this.scheduleCurrentAuthorColor.cancel();
+		this.scheduleAuthorColorSave.cancel();
 		this.readingManager?.destroy();
 		this.unsubscribeAuthorIndex?.();
 		this.authorIndex?.dispose();
@@ -494,22 +538,32 @@ export default class DocCommentsPlugin extends Plugin {
 
 	colorForAuthor(author: string): ResolvedAuthorColor {
 		const key = canonicalAuthorKey(author) || canonicalAuthorKey(this.authorName());
-		const resolved = resolveAuthorColor(
+		return readAuthorColor(
 			this.settings.authorColors,
 			this.excludedAuthorColorSet,
 			key,
 			this.settings.authorColorsEnabled,
 		);
-		if (resolved.created) this.scheduleAuthorColorSave();
-		return resolved.color;
 	}
 
 	highlightColorForAuthor(author: string): ResolvedAuthorColor {
 		return effectiveHighlightColor(this.colorForAuthor(author), this.settings.authorColorsEnabled);
 	}
 
-	ensureCurrentAuthorColor(): void {
-		this.colorForAuthor(this.authorName());
+	/** Give the configured author a color if they don't have one. Debounced by
+	 *  `scheduleCurrentAuthorColor` on the settings path: Obsidian's text field has
+	 *  no commit event, so we treat "stopped typing" as the commit and skip every
+	 *  half-typed name in between. */
+	private ensureCurrentAuthorColor(): void {
+		const created = ensureAuthorColors(
+			this.settings.authorColors,
+			[this.authorName()],
+			this.excludedAuthorColorSet,
+		);
+		if (!created) return;
+		this.scheduleAuthorColorSave();
+		this.refreshEditors();
+		this.settingsTab?.refresh();
 	}
 
 	async setAuthorColor(author: string, value: unknown): Promise<void> {
@@ -616,13 +670,12 @@ export default class DocCommentsPlugin extends Plugin {
 			excludedAuthorColors: hydrateExcludedAuthors(data.excludedAuthorColors),
 		});
 		this.excludedAuthorColorSet = new Set(this.settings.excludedAuthorColors);
-		const resolved = resolveAuthorColor(
+		const created = ensureAuthorColors(
 			this.settings.authorColors,
+			[this.authorName()],
 			this.excludedAuthorColorSet,
-			this.authorName(),
-			this.settings.authorColorsEnabled,
 		);
-		if (loaded.isOk() && resolved.created) await this.persistAuthorColors();
+		if (loaded.isOk() && created) await this.persistAuthorColors();
 	}
 
 	private removeAuthorColorExclusion(author: string): void {
