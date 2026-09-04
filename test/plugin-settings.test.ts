@@ -108,27 +108,22 @@ describe("plugin settings persistence", () => {
 		}
 	});
 
-	// Hiding the comments used to hide the highlights too. A saved showComments:false
-	// from that version means "hide both", so it must not turn every highlight on.
-	test("carries a hidden comment column over to the new highlight setting", async () => {
+	// Deliberately NOT inherited from showComments on upgrade. Doing that persists
+	// showHighlights:false for anyone who merely had comments toggled off at update
+	// time, and it sticks — they turn comments back on later and the highlights
+	// never return. Highlights reappearing is visible and one toggle to undo.
+	test("defaults highlights on regardless of a hidden comment column", async () => {
 		const upgraded = createPlugin();
 		vi.spyOn(upgraded, "loadData").mockResolvedValue({ author: "Alice", showComments: false });
 		vi.spyOn(upgraded, "saveData").mockResolvedValue();
 		await upgraded.loadSettings();
-		expect(upgraded.settings.showHighlights).toBe(false);
+		expect(upgraded.settings.showHighlights).toBe(true);
 
-		const untouched = createPlugin();
-		vi.spyOn(untouched, "loadData").mockResolvedValue({ author: "Alice" });
-		vi.spyOn(untouched, "saveData").mockResolvedValue();
-		await untouched.loadSettings();
-		expect(untouched.settings.showHighlights).toBe(true);
-
-		// Once the setting exists in saved data it wins outright, in both directions.
 		const explicit = createPlugin();
-		vi.spyOn(explicit, "loadData").mockResolvedValue({ showComments: false, showHighlights: true });
+		vi.spyOn(explicit, "loadData").mockResolvedValue({ showComments: true, showHighlights: false });
 		vi.spyOn(explicit, "saveData").mockResolvedValue();
 		await explicit.loadSettings();
-		expect(explicit.settings.showHighlights).toBe(true);
+		expect(explicit.settings.showHighlights).toBe(false);
 	});
 
 	test("falls back without overwriting data when plugin settings fail to load", async () => {

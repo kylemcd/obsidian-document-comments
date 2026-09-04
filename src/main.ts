@@ -666,10 +666,6 @@ export default class DocCommentsPlugin extends Plugin {
 		const rawData = loaded.isOk() ? loaded.value : null;
 		const data = rawData && typeof rawData === "object" ? (rawData as Partial<DocCommentsSettings>) : {};
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, data, {
-			// Before Show highlights existed, hiding the comments hid the highlights
-			// too. Saved data from that version has no `showHighlights`, so inherit
-			// the old meaning rather than switching every highlight back on.
-			showHighlights: data.showHighlights ?? data.showComments ?? DEFAULT_SETTINGS.showHighlights,
 			authorColors: hydrateAuthorColors(data.authorColors),
 			excludedAuthorColors: hydrateExcludedAuthors(data.excludedAuthorColors),
 		});
