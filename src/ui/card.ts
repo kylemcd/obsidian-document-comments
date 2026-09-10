@@ -32,6 +32,9 @@ export type CardCallbacks = {
 	/** Reveal this thread in the comments sidebar — the escape for a card too tall to
 	 *  fit the margin even when expanded. Absent for cards already in the sidebar. */
 	openInSidebar?: (id: string) => void;
+	/** Move this comment's anchor back inside its table cell. Absent where repair
+	 *  isn't offered, in which case the card shows no repair notice at all. */
+	repairTableAnchor?: (id: string) => void;
 };
 
 /** Per-view context a card needs to render comment text as Markdown. */
@@ -63,6 +66,8 @@ export class Card {
 	private overflows = false;
 	private tooTall = false;
 	private clipEl: HTMLElement | null = null;
+	/** This comment's anchor is breaking the table it sits in (see table-repair). */
+	private tableAnchorBroken = false;
 	private threadEl: HTMLElement | null = null;
 	private footEl: HTMLElement | null = null;
 	/** Owns the child components MarkdownRenderer attaches (link/embed handlers). */
@@ -98,6 +103,35 @@ export class Card {
 
 	get id(): string {
 		return this.comment.id;
+	}
+
+	/** Show or hide the "this comment is breaking its table" notice. Cheap enough
+	 *  to call on every reconcile; only touches the DOM when the state flips.
+	 *
+	 *  Deliberately does NOT call onResize: reconcile runs inside CodeMirror's
+	 *  update cycle, and repositioning reads layout, which throws there. The
+	 *  margin already schedules a measure pass after every reconcile, so the
+	 *  height change this causes is picked up then. */
+	setTableAnchorBroken(broken: boolean): void {
+		if (this.tableAnchorBroken === broken) return;
+		this.tableAnchorBroken = broken;
+		this.renderRepairNotice();
+	}
+
+	/** A card whose anchor broke its table sits beside the damage, so this is where
+	 *  the reader is already looking when they wonder what went wrong. */
+	private renderRepairNotice(): void {
+		this.el.querySelector(".dc-repair")?.remove();
+		if (!this.tableAnchorBroken || !this.cb.repairTableAnchor) return;
+		const notice = createDiv("dc-repair");
+		setIcon(notice.createSpan("dc-repair__icon"), "alert-triangle");
+		notice.createSpan({ cls: "dc-repair__text", text: "This comment is breaking its table." });
+		const button = notice.createEl("button", { cls: "dc-repair__action", text: "Repair" });
+		button.addEventListener("click", (e) => {
+			e.stopPropagation();
+			this.cb.repairTableAnchor?.(this.id);
+		});
+		this.el.prepend(notice);
 	}
 
 	get signature(): string {
@@ -190,6 +224,7 @@ export class Card {
 
 		// The thread lives in a clip wrapper that gets a max-height when a tall card is
 		// collapsed; the footer (Show more / Open in sidebar) sits outside the clip.
+		this.renderRepairNotice();
 		const clip = this.el.createDiv("dc-card-clip");
 		this.clipEl = clip;
 		const thread = clip.createDiv("dc-thread");
