@@ -1,10 +1,12 @@
 import { Notice, editorInfoField } from "obsidian";
 import { Result } from "better-result";
 import { EditorView, PluginValue, ViewPlugin } from "@codemirror/view";
-import { ParsedComment } from "../format/types";
+import { ParsedComment, TextRange } from "../format/types";
 import { anchorRange, hasMarginAnchor } from "../format/parse";
 import { isCodeComment, resolveCodeAnchor } from "../format/code-anchor";
 import { commentField } from "./state";
+import { setActiveTableComment, tableCellsForRanges, tableCommentAtPoint } from "./table-highlights";
+import { brokenTableAnchors } from "./table-repair";
 import { commentConfig } from "./config";
 import { Draft, clearDraft, draftField } from "./draft";
 import { Card, CardCallbacks, CardView } from "../ui/card";
@@ -15,6 +17,7 @@ import {
 	deleteComment,
 	deleteEntry,
 	editEntry,
+	repairTableAnchors,
 	setResolved,
 	toggleReaction,
 } from "./commands";
@@ -23,6 +26,9 @@ import { stackTops } from "../ui/stack";
 import { CARD_GAP, FLASH_MS } from "../ui/constants";
 import { buildDraftComposer } from "../ui/draft-composer";
 import { EmptySubmitAction } from "../ui/draft-behavior";
+
+/** Key for the draft composer's anchor in the table-cell lookup. */
+const DRAFT_ANCHOR = "draft:composer";
 
 /** Editor-margin writes go through a live CodeMirror view (no I/O), so the only
  *  failure is a compute error — surface it as a notice rather than swallowing it. */
@@ -85,6 +91,7 @@ class MarginView implements PluginValue {
 			toggleReaction: ({ id, entry, emoji }) =>
 				notifyErr(toggleReaction({ view, id, entry, emoji, author: this.cb.getAuthor() })),
 			openInSidebar: (id) => view.state.facet(commentConfig).openInSidebar?.(id),
+			repairTableAnchor: (id) => notifyErr(repairTableAnchors(view, new Set([id]))),
 		};
 
 		view.scrollDOM.addEventListener("scroll", this.scrollHandler, { passive: true });
@@ -93,6 +100,7 @@ class MarginView implements PluginValue {
 		view.contentDOM.addEventListener("mousedown", this.onContentMouseDown);
 		view.contentDOM.addEventListener("mouseover", this.onContentMouseOver);
 		view.contentDOM.addEventListener("mouseout", this.onContentMouseOut);
+		view.contentDOM.addEventListener("mousemove", this.onContentMouseMove);
 
 		this.reconcile();
 		this.requestReposition();
@@ -137,6 +145,7 @@ class MarginView implements PluginValue {
 		this.view.contentDOM.removeEventListener("mousedown", this.onContentMouseDown);
 		this.view.contentDOM.removeEventListener("mouseover", this.onContentMouseOver);
 		this.view.contentDOM.removeEventListener("mouseout", this.onContentMouseOut);
+		this.view.contentDOM.removeEventListener("mousemove", this.onContentMouseMove);
 		this.removeDraftOutside();
 		for (const card of this.cards.values()) card.destroy();
 		this.cards.clear();
@@ -170,15 +179,20 @@ class MarginView implements PluginValue {
 		}
 
 		const cardView = this.cardView();
+		// Reuses the comments already parsed for this pass, and the detection itself
+		// bails after a per-comment string check unless a marker looks damaging.
+		const broken = brokenTableAnchors(this.view.state.doc.toString(), comments);
 		for (const c of comments) {
 			const existing = this.cards.get(c.id);
 			if (!existing) {
 				const card = new Card(c, this.cb, cardView);
 				this.cards.set(c.id, card);
 				this.container.appendChild(card.el);
+				card.setTableAnchorBroken(broken.has(c.id));
 			} else {
 				if (existing.signature !== cardSignature(c)) existing.update(c);
 				existing.refreshAuthorColors();
+				existing.setTableAnchorBroken(broken.has(c.id));
 			}
 		}
 	}
@@ -209,28 +223,43 @@ class MarginView implements PluginValue {
 		// absolutely positioned, so a top write can't change any height.
 		const placements: Array<{ el: HTMLElement; top: number; height: number }> = [];
 
-		const place = (el: HTMLElement, pos: number) => {
-			const coords = this.view.coordsAtPos(pos);
-			if (!coords) {
+		// Live Preview renders a whole table as ONE block widget, and coordsAtPos
+		// reports that widget's rect for every position inside it — so measuring a
+		// table anchor that way piles every card in the table onto its top edge
+		// (issue #79). Where the anchor resolves to a rendered cell, measure the
+		// cell; everywhere else coordsAtPos is still the right answer.
+		const place = (el: HTMLElement, pos: number, cell: HTMLElement | undefined) => {
+			const rect = cell?.getBoundingClientRect() ?? this.view.coordsAtPos(pos);
+			if (!rect) {
 				el.addClass("dc-offscreen");
 				return;
 			}
 			el.removeClass("dc-offscreen");
 			if (el.offsetHeight === 0) return; // hidden (e.g. resolved)
-			placements.push({ el, top: coords.top - editorTop, height: el.offsetHeight });
+			placements.push({ el, top: rect.top - editorTop, height: el.offsetHeight });
 		};
 
 		const doc = this.view.state.doc.toString();
-		for (const c of this.comments()) {
-			const card = this.cards.get(c.id);
-			if (!card) continue;
+		const comments = this.comments();
+		const anchors = new Map<string, TextRange>();
+		for (const c of comments) {
 			// A code comment's card aligns to its target line, not the block top.
 			const range = isCodeComment(c) ? resolveCodeAnchor(doc, c) : anchorRange(c);
-			if (range) place(card.el, range.from);
+			if (range) anchors.set(c.id, range);
+		}
+		// Comment ids are alphanumeric, so this key can never collide with one.
+		if (draft) anchors.set(DRAFT_ANCHOR, { from: draft.from, to: draft.to });
+		const cells = tableCellsForRanges(this.view, doc, anchors);
+
+		for (const c of comments) {
+			const card = this.cards.get(c.id);
+			if (!card) continue;
+			const range = anchors.get(c.id);
+			if (range) place(card.el, range.from, cells.get(c.id));
 			else card.el.addClass("dc-offscreen"); // orphaned (e.g. the commented code changed)
 		}
 
-		if (draft && this.draftEl) place(this.draftEl, draft.from);
+		if (draft && this.draftEl) place(this.draftEl, draft.from, cells.get(DRAFT_ANCHOR));
 
 		const tops = stackTops(placements, CARD_GAP);
 		placements.forEach((p, i) => p.el.setCssStyles({ top: `${tops[i]}px` }));
@@ -318,6 +347,10 @@ class MarginView implements PluginValue {
 			this.cards.get(id)?.setActive(true);
 			this.markHighlight(id, true);
 		}
+		// Text inside a Live-Preview table is painted with the CSS Custom Highlight
+		// API, which has no element to carry `is-active` — the painter re-registers
+		// the range under its active name instead.
+		setActiveTableComment(this.view, id);
 	}
 
 	private markHighlight(id: string, active: boolean): void {
@@ -357,7 +390,7 @@ class MarginView implements PluginValue {
 	}
 
 	private onContentMouseDown = (e: MouseEvent): void => {
-		const id = closestSpanId(e.target);
+		const id = closestSpanId(e.target) ?? this.tableIdAt(e);
 		if (id) this.setActive(id);
 	};
 
@@ -366,12 +399,27 @@ class MarginView implements PluginValue {
 		if (id) this.setActive(id);
 	};
 
+	/** A table cell is usually one text node, so `mouseover` never fires as the
+	 *  pointer crosses into the commented words inside it. Track the pointer while
+	 *  it is over a table and hit-test the painted ranges directly. */
+	private onContentMouseMove = (e: MouseEvent): void => {
+		if (!(e.target instanceof Element) || !e.target.closest(".cm-table-widget")) return;
+		this.setActive(this.tableIdAt(e));
+	};
+
+	private tableIdAt(e: MouseEvent): string | null {
+		if (!(e.target instanceof Element) || !e.target.closest(".cm-table-widget")) return null;
+		return tableCommentAtPoint(this.view, e.clientX, e.clientY);
+	}
+
 	private onContentMouseOut = (e: MouseEvent): void => {
-		const span = e.target instanceof Element ? e.target.closest(".doc-comment-span") : null;
-		if (!span) return;
+		// A table widget counts as one hover region: its highlights are painted
+		// ranges rather than elements, so leaving the table is what ends the hover.
+		const region = e.target instanceof Element ? e.target.closest(".doc-comment-span, .cm-table-widget") : null;
+		if (!region) return;
 		// Ignore moves that stay within the same highlight element (avoids flicker).
 		const to = e.relatedTarget;
-		if (to instanceof Node && span.contains(to)) return;
+		if (to instanceof Node && region.contains(to)) return;
 		this.setActive(null);
 	};
 }

@@ -84,6 +84,48 @@ const callbacks = (): CardCallbacks => ({
 	toggleReaction: vi.fn(),
 });
 
+describe("broken table anchor notice", () => {
+	const view = { sourcePath: () => "note.md", colorForAuthor: () => null };
+
+	test("shows the notice and repair action only while the anchor is breaking a table", () => {
+		const repairTableAnchor = vi.fn();
+		const card = new Card(commentWithText(), { ...callbacks(), repairTableAnchor }, view);
+
+		expect(card.el.querySelector(".dc-repair")).toBeNull();
+
+		card.setTableAnchorBroken(true);
+		expect(card.el.querySelector(".dc-repair__text")?.textContent).toBe("This comment is breaking its table.");
+		card.el.querySelector<HTMLElement>(".dc-repair__action")?.click();
+		expect(repairTableAnchor).toHaveBeenCalledWith(commentWithText().id);
+
+		card.setTableAnchorBroken(false);
+		expect(card.el.querySelector(".dc-repair")).toBeNull();
+	});
+
+	test("stays silent when no repair action is available, as in the sidebar", () => {
+		const card = new Card(commentWithText(), callbacks(), view);
+
+		card.setTableAnchorBroken(true);
+
+		expect(card.el.querySelector(".dc-repair")).toBeNull();
+	});
+
+	test("never asks the margin to reposition", () => {
+		// The margin reconciles inside CodeMirror's update cycle, and repositioning
+		// reads layout — which throws there, taking the whole margin plugin down with
+		// it. The scheduled measure pass after each reconcile picks the height change
+		// up instead.
+		const cb = { ...callbacks(), repairTableAnchor: vi.fn() };
+		const card = new Card(commentWithText(), cb, view);
+		(cb.onResize as ReturnType<typeof vi.fn>).mockClear();
+
+		card.setTableAnchorBroken(true);
+		card.setTableAnchorBroken(false);
+
+		expect(cb.onResize).not.toHaveBeenCalled();
+	});
+});
+
 describe("empty comment card", () => {
 	test("colors every displayed author name with that author's assignment", () => {
 		const comment = {

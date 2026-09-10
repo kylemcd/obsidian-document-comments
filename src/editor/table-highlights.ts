@@ -1,15 +1,21 @@
 import { ViewPlugin, ViewUpdate } from "@codemirror/view";
 import type { EditorView } from "@codemirror/view";
 import { anchorRange } from "../format/parse";
-import type { ParsedComment } from "../format/types";
+import type { ParsedComment, TextRange } from "../format/types";
+import { type SourceLine, type SourceTable, sourceLines, sourceTables, tableColumnAt } from "../format/table";
 import { commentConfig, type CommentConfig } from "./config";
 import { getComments } from "./state";
 import { authorColorCss, creatorForComment, type ResolvedAuthorColor } from "../author-colors";
 
-export type TableHighlightTarget = {
+/** A rendered table cell, addressed the way the widget's DOM is laid out. */
+export type TableCellTarget = {
 	table: number;
 	row: number;
 	column: number;
+};
+
+export type TableHighlightTarget = TableCellTarget & {
+	id: string;
 	quote: string;
 	resolved: boolean;
 	author: string | null;
@@ -18,11 +24,11 @@ export type TableHighlightTarget = {
 type TableColorRanges = {
 	color: ResolvedAuthorColor;
 	resolved: boolean;
+	active: boolean;
 	ranges: Range[];
 };
 type TableRanges = Map<string, TableColorRanges>;
 type BrowserWindow = NonNullable<Document["defaultView"]>;
-type SourceTable = { start: number; end: number; from: number; to: number };
 
 // `CSS.highlights` is a per-DOCUMENT global registry, so every editor view in a
 // window must merge its ranges before we set it. Keyed by document (pop-out
@@ -31,14 +37,18 @@ const rangesByDocument = new WeakMap<Document, Map<EditorView, TableRanges>>();
 const namesByDocument = new WeakMap<Document, Set<string>>();
 const stylesByDocument = new WeakMap<Document, HTMLStyleElement>();
 
-export const tableHighlightName = (color: ResolvedAuthorColor, resolved: boolean): string => {
-	return `document-comments-table-${resolved ? "resolved" : "open"}-${color ? color.slice(1) : "default"}`;
+export const tableHighlightName = (color: ResolvedAuthorColor, resolved: boolean, active = false): string => {
+	const state = `${resolved ? "resolved" : "open"}${active ? "-active" : ""}`;
+	return `document-comments-table-${state}-${color ? color.slice(1) : "default"}`;
 };
 
-export const tableHighlightRule = (color: ResolvedAuthorColor, resolved: boolean): string => {
-	const name = tableHighlightName(color, resolved);
+export const tableHighlightRule = (color: ResolvedAuthorColor, resolved: boolean, active = false): string => {
+	const name = tableHighlightName(color, resolved, active);
 	const cssColor = authorColorCss(color);
-	const background = resolved ? "transparent" : `color-mix(in srgb, ${cssColor} 18%, transparent)`;
+	// Mirror the DOM highlight's 18% / 38% pair, so hovering a card emphasizes
+	// table text exactly as much as it emphasizes prose.
+	const mix = (percent: number) => `color-mix(in srgb, ${cssColor} ${percent}%, transparent)`;
+	const background = active ? mix(38) : resolved ? "transparent" : mix(18);
 	const decoration = resolved ? "dashed" : "solid";
 	return `::highlight(${name}) { background-color: ${background}; text-decoration-line: underline; text-decoration-style: ${decoration}; text-decoration-color: ${cssColor}; }`;
 };
@@ -46,40 +56,118 @@ export const tableHighlightRule = (color: ResolvedAuthorColor, resolved: boolean
 /** Map source comment anchors to the rendered table/cell that owns them. */
 export const tableHighlightTargets = (doc: string, comments: ParsedComment[]): TableHighlightTarget[] => {
 	const lines = sourceLines(doc);
-	const targets: TableHighlightTarget[] = [];
 	const tables = sourceTables(lines);
+	const targets: TableHighlightTarget[] = [];
 
-	for (const [table, { start, end }] of tables.entries()) {
-		for (const comment of comments) {
-			const range = anchorRange(comment);
-			if (!range) continue;
-			const lineIndex = lines.findIndex((line, index) => {
-				if (index === start + 1 || index < start || index >= end) return false;
-				return range.from >= line.from && range.to <= line.to;
-			});
-			const line = lines[lineIndex];
-			if (!line) continue;
-
-			const quote = doc.slice(range.from, range.to);
-			if (!quote.trim()) continue;
-			targets.push({
-				table,
-				row: lineIndex === start ? 0 : lineIndex - start - 1,
-				column: tableColumnAt(line.text, range.from - line.from),
-				quote,
-				resolved: comment.status === "resolved",
-				author: creatorForComment(comment),
-			});
-		}
+	for (const comment of comments) {
+		const range = anchorRange(comment);
+		if (!range) continue;
+		const quote = doc.slice(range.from, range.to);
+		if (!quote.trim()) continue;
+		const cell = tableCellTarget(lines, tables, range);
+		// Only an anchor wholly inside one cell has text there to paint.
+		if (!cell?.whole) continue;
+		targets.push({
+			table: cell.table,
+			row: cell.row,
+			column: cell.column,
+			id: comment.id,
+			quote,
+			resolved: comment.status === "resolved",
+			author: creatorForComment(comment),
+		});
 	}
 
 	return targets;
+};
+
+/**
+ * The table cell a source range starts in, or null when it starts in no table.
+ * `whole` says whether the range also ENDS there — an anchor spanning two rows
+ * has no single cell to paint, but its card still belongs beside the row it
+ * starts on rather than at the top of the table.
+ */
+export const tableCellForRange = (doc: string, range: TextRange): (TableCellTarget & { whole: boolean }) | null => {
+	const lines = sourceLines(doc);
+	return tableCellTarget(lines, sourceTables(lines), range);
+};
+
+const tableCellTarget = (
+	lines: readonly SourceLine[],
+	tables: readonly SourceTable[],
+	range: TextRange,
+): (TableCellTarget & { whole: boolean }) | null => {
+	for (const [table, { start, end }] of tables.entries()) {
+		const lineIndex = lines.findIndex((line, index) => {
+			if (index === start + 1 || index < start || index >= end) return false;
+			return range.from >= line.from && range.from <= line.to;
+		});
+		const line = lines[lineIndex];
+		if (!line) continue;
+		return {
+			table,
+			// The delimiter row is skipped above, so body rows shift up by one.
+			row: lineIndex === start ? 0 : lineIndex - start - 1,
+			column: tableColumnAt(line.text, range.from - line.from),
+			whole: range.to <= line.to,
+		};
+	}
+	return null;
+};
+
+/**
+ * The rendered `<th>`/`<td>` that owns each source range, keyed the way the
+ * caller keyed the ranges. A key is absent when its range isn't inside a table,
+ * or when Live Preview hasn't mounted that table's widget.
+ *
+ * The margin needs this because a Live-Preview table is a single block widget:
+ * `coordsAtPos` reports the widget's own rect for every position inside it, so
+ * measuring a card's anchor that way puts every card in a table on the table's
+ * top edge instead of beside its row (issue #79).
+ */
+export const tableCellsForRanges = (
+	view: EditorView,
+	doc: string,
+	ranges: ReadonlyMap<string, TextRange>,
+): Map<string, HTMLElement> => {
+	const cells = new Map<string, HTMLElement>();
+	if (ranges.size === 0) return cells;
+	const lines = sourceLines(doc);
+	const tables = sourceTables(lines);
+	if (tables.length === 0) return cells;
+
+	const widgets = mountedTableWidgets(view, doc);
+	for (const [key, range] of ranges) {
+		const target = tableCellTarget(lines, tables, range);
+		const cell = target && cellElement(widgets, target);
+		if (cell) cells.set(key, cell);
+	}
+	return cells;
+};
+
+/** Mounted table widgets, keyed by their index in the source's table order. */
+const mountedTableWidgets = (view: EditorView, doc: string): Map<number, HTMLElement> => {
+	const widgets = Array.from(view.dom.querySelectorAll<HTMLElement>(".cm-table-widget"));
+	return mapTableWidgets(doc, widgets, (widget) => {
+		try {
+			return view.posAtDOM(widget);
+		} catch {
+			return null;
+		}
+	});
+};
+
+const cellElement = (widgets: ReadonlyMap<number, HTMLElement>, target: TableCellTarget): HTMLElement | null => {
+	const row = widgets.get(target.table)?.querySelectorAll("tr").item(target.row);
+	return row?.querySelectorAll<HTMLElement>("th, td").item(target.column) ?? null;
 };
 
 class TableHighlights {
 	private observer: MutationObserver;
 	private scheduled = false;
 	private generation = 0;
+	private activeId: string | null = null;
+	private painted = new Map<string, Range[]>();
 	private renderedQuotes = new Map<string, Promise<string>>();
 
 	constructor(private view: EditorView) {
@@ -115,6 +203,7 @@ class TableHighlights {
 		const cfg = this.view.state.facet(commentConfig);
 		const renderMarkdown = cfg.renderMarkdown;
 		if (!cfg.showComments()) {
+			this.painted = new Map();
 			setViewRanges(this.view, new Map());
 			return;
 		}
@@ -124,22 +213,13 @@ class TableHighlights {
 			(comment) => cfg.showResolved() || comment.status !== "resolved",
 		);
 		const targets = tableHighlightTargets(doc, comments);
-		const widgets = Array.from(this.view.dom.querySelectorAll<HTMLElement>(".cm-table-widget"));
-		const widgetsByTable = mapTableWidgets(doc, widgets, (widget) => {
-			try {
-				return this.view.posAtDOM(widget);
-			} catch {
-				return null;
-			}
-		});
+		const widgetsByTable = mountedTableWidgets(this.view, doc);
 		const ranges: TableRanges = new Map();
+		const painted = new Map<string, Range[]>();
 		const nextMatch = new WeakMap<Element, number>();
 
 		for (const target of targets) {
-			const rows = widgetsByTable.get(target.table)?.querySelectorAll("tr");
-			const row = rows?.item(target.row);
-			const cells = row?.querySelectorAll<HTMLElement>("th, td");
-			const cell = cells?.item(target.column);
+			const cell = cellElement(widgetsByTable, target);
 			if (!cell) continue;
 
 			const content =
@@ -157,13 +237,35 @@ class TableHighlights {
 			if (!match) continue;
 			nextMatch.set(content, match.next);
 			const color = (cfg.highlightColorForAuthor ?? cfg.colorForAuthor)(target.author ?? cfg.author());
-			const name = tableHighlightName(color, target.resolved);
-			const entry = ranges.get(name) ?? { color, resolved: target.resolved, ranges: [] };
+			const active = target.id === this.activeId;
+			const name = tableHighlightName(color, target.resolved, active);
+			const entry = ranges.get(name) ?? { color, resolved: target.resolved, active, ranges: [] };
 			entry.ranges.push(match.range);
 			ranges.set(name, entry);
+			painted.set(target.id, [...(painted.get(target.id) ?? []), match.range]);
 		}
 
-		if (generation === this.generation) setViewRanges(this.view, ranges);
+		if (generation !== this.generation) return;
+		this.painted = painted;
+		setViewRanges(this.view, ranges);
+	}
+
+	/** Emphasize one comment's table text (or none). Hovering a margin card and
+	 *  hovering the text itself both land here. */
+	setActiveComment(id: string | null): void {
+		if (this.activeId === id) return;
+		this.activeId = id;
+		this.schedule();
+	}
+
+	/** The comment whose painted table text covers a point. A CSS Custom Highlight
+	 *  has no element to hit-test, so ask its ranges for their rects instead. */
+	commentAtPoint(x: number, y: number): string | null {
+		const covers = (rect: DOMRect) => x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+		for (const [id, ranges] of this.painted) {
+			if (ranges.some((range) => Array.from(range.getClientRects()).some(covers))) return id;
+		}
+		return null;
 	}
 
 	private renderedQuote(
@@ -191,6 +293,16 @@ class TableHighlights {
 }
 
 export const tableHighlightPlugin = ViewPlugin.fromClass(TableHighlights);
+
+/** Emphasize a comment's text inside this view's Live-Preview tables, or clear it. */
+export const setActiveTableComment = (view: EditorView, id: string | null): void => {
+	view.plugin(tableHighlightPlugin)?.setActiveComment(id);
+};
+
+/** The comment whose table text covers a viewport point, or null. */
+export const tableCommentAtPoint = (view: EditorView, x: number, y: number): string | null => {
+	return view.plugin(tableHighlightPlugin)?.commentAtPoint(x, y) ?? null;
+};
 
 const setViewRanges = (view: EditorView, ranges: TableRanges, remove = false): void => {
 	const doc = view.dom.ownerDocument;
@@ -243,7 +355,7 @@ const updateHighlightStyles = (doc: Document, ranges: ReadonlyMap<string, TableC
 		stylesByDocument.set(doc, style);
 	}
 	style.textContent = [...ranges.entries()]
-		.map(([, entry]) => tableHighlightRule(entry.color, entry.resolved))
+		.map(([, entry]) => tableHighlightRule(entry.color, entry.resolved, entry.active))
 		.join("\n");
 };
 
@@ -302,38 +414,6 @@ const textContent = (root: HTMLElement): string => {
 	return text;
 };
 
-const sourceLines = (doc: string): Array<{ text: string; from: number; to: number }> => {
-	const lines: Array<{ text: string; from: number; to: number }> = [];
-	let from = 0;
-	for (const text of doc.split("\n")) {
-		lines.push({ text, from, to: from + text.length });
-		from += text.length + 1;
-	}
-	return lines;
-};
-
-const sourceTables = (lines: Array<{ text: string; from: number; to: number }>): SourceTable[] => {
-	// Scanner that consumes a variable run of rows per table and advances `start`
-	// past it — a for loop is the natural fit, not an array method.
-	const tables: SourceTable[] = [];
-	for (let start = 0; start + 1 < lines.length; start++) {
-		const head = lines[start];
-		const delimiter = lines[start + 1];
-		if (!head || !delimiter || !isTableRow(head.text) || !isDelimiterRow(delimiter.text)) continue;
-		let end = start + 2;
-		let row = lines[end];
-		while (row && isTableRow(row.text)) {
-			end++;
-			row = lines[end];
-		}
-		const lastRow = lines[end - 1];
-		if (!lastRow) continue;
-		tables.push({ start, end, from: head.from, to: lastRow.to });
-		start = end - 1;
-	}
-	return tables;
-};
-
 export const mapTableWidgets = <T>(
 	doc: string,
 	widgets: readonly T[],
@@ -348,29 +428,4 @@ export const mapTableWidgets = <T>(
 		if (table >= 0) result.set(table, widget);
 	}
 	return result;
-};
-
-const isTableRow = (line: string): boolean => unescapedPipes(line).length > 0;
-
-const isDelimiterRow = (line: string): boolean => {
-	const cells = line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|");
-	return cells.length > 0 && cells.every((cell) => /^\s*:?-{3,}:?\s*$/.test(cell));
-};
-
-const tableColumnAt = (line: string, offset: number): number => {
-	const pipes = unescapedPipes(line);
-	const firstNonSpace = line.search(/\S/);
-	const leadingPipe = pipes[0] === firstNonSpace ? pipes[0] : null;
-	return pipes.filter((pipe) => pipe < offset && pipe !== leadingPipe).length;
-};
-
-const unescapedPipes = (line: string): number[] => {
-	const pipes: number[] = [];
-	for (let i = 0; i < line.length; i++) {
-		if (line[i] !== "|") continue;
-		let slashes = 0;
-		for (let j = i - 1; j >= 0 && line[j] === "\\"; j--) slashes++;
-		if (slashes % 2 === 0) pipes.push(i);
-	}
-	return pipes;
 };
