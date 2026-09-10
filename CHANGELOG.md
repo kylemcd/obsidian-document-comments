@@ -5,6 +5,11 @@ matching the pushed tag as that GitHub release's notes, so add an entry here bef
 
 ## Unreleased
 
+- Comment cards on a table now sit beside the row they belong to in Live Preview instead of stacking at the top of the table, and the new-comment composer opens beside its row too ([#79](https://github.com/kylemcd/obsidian-document-comments/issues/79)).
+- Commenting on a whole table row, a whole table, or a selection that crosses a cell border no longer breaks the table. Comment markers are kept inside the cell borders, where they can't stop the block rendering as a table, and a selection holding nothing but borders is now refused with an explanation.
+- Hovering a table comment's card highlights its text, and hovering the text raises its card — both of which previously did nothing inside a Live Preview table.
+- Added a repair for tables an older comment already broke. The comment's card, which sits beside the damage, says so and offers a one-click **Repair**; the **Repair table comments in this note** command fixes every one at once, which is the way out when several anchors broke the same table. Both land as a single undo step, and nothing is rewritten unless you ask.
+
 ## 0.1.15
 
 - Fixed emoji reactions added to a reply being attached to the first comment in the thread. Reply reactions now remain with the thread entry where they were added, while existing reaction data remains compatible.

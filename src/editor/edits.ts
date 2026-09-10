@@ -3,6 +3,7 @@ import { CommentData, ParsedComment, Reaction, ReactionTarget } from "../format/
 import { anchorRange, isAnchored, isHighlight, isInFencedCode, parseComments } from "../format/parse";
 import { codeSelectionTarget, isCodeComment, resolveCodeAnchor } from "../format/code-anchor";
 import { closeMarker, openMarker, serializeBody } from "../format/serialize";
+import { clampToTableCells } from "../format/table";
 
 /** A document edit in original coordinates (matches CodeMirror's ChangeSpec shape). */
 export type Change = {
@@ -80,7 +81,8 @@ export const computeAddComment = (
 	if (isInFencedCode(doc, from) || isInFencedCode(doc, to - 1)) {
 		return computeAddCodeComment(doc, from, to, input);
 	}
-	({ from, to } = expandInlineCodeSelection(doc, from, to));
+	({ from, to } = anchorSelection(doc, from, to));
+	if (to === from) return Result.err("Select the text inside a table cell, not its borders.");
 
 	const quote = doc.slice(from, to);
 	const data: CommentData = {
@@ -117,7 +119,7 @@ export const findHighlightAtSelection = (doc: string, from: number, to: number):
 		);
 	}
 
-	({ from, to } = expandInlineCodeSelection(doc, from, to));
+	({ from, to } = anchorSelection(doc, from, to));
 	return (
 		comments.find((comment) => {
 			if (isCodeComment(comment)) return false;
@@ -154,6 +156,14 @@ const computeAddCodeComment = (
 			insert: "\n" + closeMarker(input.id) + "\n" + serializeBody(input.id, data),
 		},
 	]);
+};
+
+/** Normalize a raw selection to the range we actually wrap in markers. Both the
+ *  write and the "is this already a highlight?" lookup have to agree, or running
+ *  Add comment twice on the same text stops finding the comment it just made. */
+const anchorSelection = (doc: string, from: number, to: number): { from: number; to: number } => {
+	const cell = clampToTableCells(doc, from, to);
+	return expandInlineCodeSelection(doc, cell.from, cell.to);
 };
 
 /** HTML comments inside a Markdown code span render as literal code. When a

@@ -18,7 +18,7 @@ import { marginPlugin } from "./editor/margin";
 import { commentConfig } from "./editor/config";
 import { editorLayoutField } from "./editor/layout";
 import { draftField, setDraft } from "./editor/draft";
-import { addComment, insertCommentInFile } from "./editor/commands";
+import { addComment, insertCommentInFile, repairTableAnchors } from "./editor/commands";
 import { findHighlightAtSelection } from "./editor/edits";
 import { findSectionRange, highlightPostProcessor, mapReadingSelection } from "./reading/highlight";
 import { ReadingDeps, ReadingMarginManager } from "./reading/margin";
@@ -26,6 +26,7 @@ import { COMMENTS_VIEW_TYPE, CommentsSidebarView, SidebarDeps } from "./ui/sideb
 import { CommentModal } from "./ui/comment-modal";
 import { DEFAULT_SETTINGS, DocCommentsSettings, DocCommentsSettingTab } from "./settings";
 import { tableHighlightPlugin } from "./editor/table-highlights";
+import { brokenTableAnchors } from "./editor/table-repair";
 import {
 	authorColorCss,
 	canonicalAuthorKey,
@@ -192,6 +193,12 @@ export default class DocCommentsPlugin extends Plugin {
 		});
 
 		this.addCommand({
+			id: "repair-table-comments",
+			name: "Repair table comments in this note",
+			editorCallback: (editor) => this.repairTableComments(editor),
+		});
+
+		this.addCommand({
 			id: "toggle-comments",
 			name: "Toggle comments",
 			callback: () => void this.toggleComments(),
@@ -230,6 +237,28 @@ export default class DocCommentsPlugin extends Plugin {
 
 		this.settingsTab = new DocCommentsSettingTab(this.app, this);
 		this.addSettingTab(this.settingsTab);
+	}
+
+	/** Move every anchor that is breaking a table in this note back inside its
+	 *  cell. The card offers the same repair one comment at a time; this is the
+	 *  way out when several anchors broke the same table. */
+	private repairTableComments(editor: Editor): void {
+		const view = editorView(editor);
+		if (!view) {
+			new Notice("Couldn't access the editor.");
+			return;
+		}
+		const broken = brokenTableAnchors(view.state.doc.toString());
+		if (broken.size === 0) {
+			new Notice("No table comments need repairing.");
+			return;
+		}
+		const result = repairTableAnchors(view);
+		if (result.isErr()) {
+			new Notice(`Couldn't repair the table comments: ${result.error}`);
+			return;
+		}
+		new Notice(`Repaired ${broken.size} table ${broken.size === 1 ? "comment" : "comments"}.`);
 	}
 
 	private startAddComment(editor: Editor): void {

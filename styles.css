@@ -623,3 +623,50 @@ body {
 	min-height: 5em;
 	resize: vertical;
 }
+
+/* ── Broken table anchor ────────────────────────────────────────────────── */
+/* A comment written before the anchor clamp can sit outside its row's outer
+   pipes and stop the block rendering as a table. The card is already anchored
+   beside the damage, so it is where the reader is looking when they wonder what
+   went wrong — hence a notice on the card rather than a command they'd have to
+   know to go find. */
+.dc-repair {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: calc(-1 * var(--dc-card-pad-y, 10px)) -12px 8px -12px;
+	padding: 7px 10px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m, 8px) var(--radius-m, 8px) 0 0;
+	background-color: color-mix(in srgb, var(--text-warning) 10%, transparent);
+	font-size: var(--font-ui-smaller);
+}
+.dc-repair__icon {
+	display: flex;
+	flex: 0 0 auto;
+	color: var(--text-warning);
+}
+.dc-repair__icon svg {
+	width: 14px;
+	height: 14px;
+}
+.dc-repair__text {
+	flex: 1 1 auto;
+	color: var(--text-muted);
+	line-height: 1.35;
+}
+.dc-repair__action {
+	flex: 0 0 auto;
+	padding: 2px 6px;
+	border: none;
+	border-radius: 4px;
+	background: none;
+	box-shadow: none;
+	color: var(--text-accent);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-medium);
+	cursor: pointer;
+}
+.dc-repair__action:hover {
+	background-color: var(--background-modifier-hover);
+}
