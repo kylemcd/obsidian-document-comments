@@ -126,22 +126,47 @@ describe("broken table anchor notice", () => {
 	});
 });
 
+/** A real click: press on `target`, release on `releaseOn`, then the click event,
+ *  which a browser sends to the nearest element holding both ends. */
+const click = (target: Element | null | undefined, releaseOn: Element | null | undefined = target): void => {
+	if (!target || !releaseOn) throw new Error("nothing to click");
+	target.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+	target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+	releaseOn.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+	let both: Element | null = target;
+	while (both && !both.contains(releaseOn)) both = both.parentElement;
+	both?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+};
+
+/** Select the first `length` characters of `el`'s text. */
+const selectText = (el: Element | null | undefined, length: number): void => {
+	const node = el?.firstChild;
+	if (!node) throw new Error("nothing to select");
+	const range = document.createRange();
+	range.setStart(node, 0);
+	range.setEnd(node, length);
+	document.getSelection()?.addRange(range);
+};
+
 describe("selecting comment text", () => {
 	const view = { sourcePath: () => "note.md" };
 
-	const mount = (cb: CardCallbacks): Card => {
-		const card = new Card(commentWithText(), cb, view);
+	const mount = (cb: CardCallbacks, comment = commentWithText()): Card => {
+		const card = new Card(comment, cb, view);
 		document.body.appendChild(card.el);
 		return card;
 	};
 
-	const unmount = (card: Card): void => {
+	const unmount = (...cards: Card[]): void => {
 		document.getSelection()?.removeAllRanges();
-		card.destroy();
-		card.el.remove();
+		for (const card of cards) {
+			card.destroy();
+			card.el.remove();
+		}
 	};
 
 	const commentText = (card: Card): HTMLElement | null => card.el.querySelector<HTMLElement>(".dc-entry__text");
+	const isOpen = (card: Card): boolean => card.el.classList.contains("is-open");
 
 	test("pressing a closed card leaves it alone, so a drag can select its text", () => {
 		// Opening on press rebuilt the card under the pointer and focused its reply
@@ -152,7 +177,7 @@ describe("selecting comment text", () => {
 
 		text?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
 
-		expect(card.el.classList.contains("is-open")).toBe(false);
+		expect(isOpen(card)).toBe(false);
 		expect(commentText(card)).toBe(text);
 		expect(cb.onClickAnchor).not.toHaveBeenCalled();
 		unmount(card);
@@ -162,30 +187,25 @@ describe("selecting comment text", () => {
 		const cb = callbacks();
 		const card = mount(cb);
 
-		commentText(card)?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-		commentText(card)?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+		click(commentText(card));
 
-		expect(card.el.classList.contains("is-open")).toBe(true);
+		expect(isOpen(card)).toBe(true);
 		expect(cb.onClickAnchor).toHaveBeenCalledWith("h1");
 		unmount(card);
 	});
 
-	test("a click that finishes selecting the comment's text keeps the selection", () => {
+	test("a press that selects the comment's text keeps the selection", () => {
 		const cb = callbacks();
 		const card = mount(cb);
 		const text = commentText(card);
-		const node = text?.firstChild;
-		if (!node) throw new Error("comment text did not render");
 
-		text.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-		const range = document.createRange();
-		range.setStart(node, 0);
-		range.setEnd(node, "Existing".length);
-		document.getSelection()?.addRange(range);
-		text.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+		text?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+		selectText(text, "Existing".length);
+		text?.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+		text?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
 		expect(document.getSelection()?.toString()).toBe("Existing");
-		expect(card.el.classList.contains("is-open")).toBe(false);
+		expect(isOpen(card)).toBe(false);
 		expect(commentText(card)).toBe(text);
 		expect(cb.onClickAnchor).not.toHaveBeenCalled();
 		unmount(card);
@@ -194,36 +214,113 @@ describe("selecting comment text", () => {
 	test("text selected earlier doesn't stop a later click opening the card", () => {
 		// Pressing a part of the card that can't be selected, like the author's name,
 		// leaves an earlier selection where it was.
-		const cb = callbacks();
-		const card = mount(cb);
-		const node = commentText(card)?.firstChild;
-		if (!node) throw new Error("comment text did not render");
-		const range = document.createRange();
-		range.setStart(node, 0);
-		range.setEnd(node, "Existing".length);
-		document.getSelection()?.addRange(range);
-		const author = card.el.querySelector<HTMLElement>(".dc-entry__author");
+		const card = mount(callbacks());
+		selectText(commentText(card), "Existing".length);
 
-		author?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-		author?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+		click(card.el.querySelector(".dc-entry__author"));
 
-		expect(card.el.classList.contains("is-open")).toBe(true);
+		expect(isOpen(card)).toBe(true);
 		unmount(card);
 	});
 
 	test("a selection somewhere else doesn't stop a click opening the card", () => {
-		const cb = callbacks();
-		const card = mount(cb);
+		const card = mount(callbacks());
 		const elsewhere = document.body.appendChild(document.createElement("p"));
 		elsewhere.textContent = "Some note text";
-		const range = document.createRange();
-		range.selectNodeContents(elsewhere);
-		document.getSelection()?.addRange(range);
+		selectText(elsewhere, 4);
 
-		commentText(card)?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+		click(commentText(card));
 
-		expect(card.el.classList.contains("is-open")).toBe(true);
+		expect(isOpen(card)).toBe(true);
 		elsewhere.remove();
+		unmount(card);
+	});
+
+	test("opens even when closing another card moves it out from under the pointer", () => {
+		// Pressing a card closes the open one above it straight away, and the cards
+		// below restack before the button comes up, so the release (and the click)
+		// lands on the column instead of the pressed card.
+		const column = document.body.appendChild(document.createElement("div"));
+		const above = new Card(commentWithText(), callbacks(), view);
+		const below = new Card({ ...commentWithText(), id: "h2" }, callbacks(), view);
+		column.append(above.el, below.el);
+		click(commentText(above));
+
+		click(commentText(below), column);
+
+		expect(isOpen(above)).toBe(false);
+		expect(isOpen(below)).toBe(true);
+		unmount(above, below);
+		column.remove();
+	});
+
+	test("pressing a button and sliding off it doesn't open the card", () => {
+		const cb = callbacks();
+		const card = mount(cb, {
+			...commentWithText(),
+			reactions: [{ emoji: "👍", authors: ["sam"], entry: 0 }],
+		});
+
+		click(card.el.querySelector(".dc-reaction"), card.el.querySelector(".dc-entry__reactions"));
+
+		expect(isOpen(card)).toBe(false);
+		expect(cb.toggleReaction).not.toHaveBeenCalled();
+		unmount(card);
+	});
+
+	test("a press whose release never comes doesn't open the card on a later release", () => {
+		// Dragging selected text away is a drag-and-drop, which ends without a
+		// mouseup; nor does a new press belong to the old one.
+		const card = mount(callbacks());
+		const elsewhere = document.body.appendChild(document.createElement("p"));
+
+		commentText(card)?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+		commentText(card)?.dispatchEvent(new DragEvent("dragstart", { bubbles: true }));
+		click(elsewhere);
+		commentText(card)?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+		click(elsewhere);
+
+		expect(isOpen(card)).toBe(false);
+		elsewhere.remove();
+		unmount(card);
+	});
+
+	test("a card removed mid-press stays closed", () => {
+		const card = mount(callbacks());
+
+		commentText(card)?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+		card.destroy();
+		document.body.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+
+		expect(isOpen(card)).toBe(false);
+		card.el.remove();
+	});
+
+	test("comment text is selectable only once a press starts in its card", () => {
+		// Selectable all the time, a drag through the note in Reading view that
+		// overshoots onto a card would run on through every paragraph after it.
+		const card = mount(callbacks());
+		const elsewhere = document.body.appendChild(document.createElement("p"));
+
+		expect(card.el.classList.contains("dc-selectable")).toBe(false);
+		commentText(card)?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+		expect(card.el.classList.contains("dc-selectable")).toBe(true);
+		card.el.querySelector(".dc-entry__author")?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+		expect(card.el.classList.contains("dc-selectable")).toBe(true);
+		elsewhere.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+		expect(card.el.classList.contains("dc-selectable")).toBe(false);
+		elsewhere.remove();
+		unmount(card);
+	});
+
+	test("pressing the Empty placeholder opens its editor and flashes the text", () => {
+		const cb = callbacks();
+		const card = mount(cb, emptyComment());
+
+		click(card.el.querySelector(".dc-entry__text--empty"));
+
+		expect(card.el.querySelector(".dc-field--edit textarea")).not.toBeNull();
+		expect(cb.onClickAnchor).toHaveBeenCalledWith("h1");
 		unmount(card);
 	});
 });
@@ -284,7 +381,7 @@ describe("empty comment card", () => {
 	test("opens and focuses the editor when the empty card is clicked", async () => {
 		const card = new Card(emptyComment(), callbacks(), { sourcePath: () => "note.md" });
 		document.body.appendChild(card.el);
-		card.el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+		click(card.el);
 
 		const editor = card.el.querySelector<HTMLTextAreaElement>(".dc-field--edit textarea");
 		expect(editor).not.toBeNull();
@@ -297,12 +394,14 @@ describe("empty comment card", () => {
 
 	test("hides the comment composer while the Empty placeholder is edited", () => {
 		const card = new Card(emptyComment(), callbacks(), { sourcePath: () => "note.md" });
-		card.el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+		document.body.appendChild(card.el);
+		click(card.el);
 		card.el.querySelector<HTMLButtonElement>(".dc-entry__text--empty")?.click();
 
 		expect(card.el.querySelector(".dc-field--edit textarea")).not.toBeNull();
 		expect(card.el.querySelector(".dc-field--composer")).toBeNull();
 		card.destroy();
+		card.el.remove();
 	});
 
 	test("keeps the first comment draft when saving fails", async () => {
@@ -389,7 +488,8 @@ describe("empty comment card", () => {
 		const cb = callbacks();
 		cb.reply = vi.fn(async () => Result.err("write failed"));
 		const card = new Card(commentWithText(), cb, { sourcePath: () => "note.md" });
-		card.el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+		document.body.appendChild(card.el);
+		click(card.el);
 
 		const composer = card.el.querySelector<HTMLTextAreaElement>(".dc-field--composer textarea");
 		expect(composer).not.toBeNull();
@@ -408,5 +508,6 @@ describe("empty comment card", () => {
 		);
 		expect(cb.reply).toHaveBeenCalledWith("h1", "Keep this reply");
 		card.destroy();
+		card.el.remove();
 	});
 });

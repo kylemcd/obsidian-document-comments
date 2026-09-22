@@ -259,11 +259,16 @@ body {
 	color: var(--text-muted);
 	font-size: var(--font-smaller);
 }
-/* Obsidian turns text selection off for its whole UI and back on only for note
-   content, so comment text has to opt back in before anyone can copy it. */
 .dc-entry__text {
 	overflow-wrap: anywhere;
 	color: var(--text-normal);
+}
+/* Obsidian turns text selection off for its whole UI and back on only for note
+   content, so comment text has to opt back in before anyone can copy it. Only
+   once a press starts in its card (see Card.setSelectable): always selectable,
+   a drag through the note that overshoots onto a card would run on through
+   everything between them, since Reading view puts the margin after the note. */
+.doc-comment-card.dc-selectable .dc-entry__text:not(.dc-entry__text--empty) {
 	user-select: text;
 	-webkit-user-select: text;
 }
@@ -284,9 +289,6 @@ body {
 	line-height: inherit;
 	text-align: left;
 	cursor: text;
-	/* A button that reads "Empty", not comment text. */
-	user-select: none;
-	-webkit-user-select: none;
 }
 .dc-entry__text--empty:hover,
 .dc-entry__text--empty:focus,

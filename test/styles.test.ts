@@ -51,17 +51,21 @@ describe("per-author highlight styles", () => {
 describe("comment text selection", () => {
 	// Obsidian sets `user-select: none` on body and turns it back on only for note
 	// content, so a card's text can't be selected unless the card opts in (#80).
-	test("lets comment text be selected, including on iOS", () => {
-		const rule = /\.dc-entry__text\s*\{([\s\S]*?)\}/.exec(styles)?.[1] ?? "";
+	const selectable =
+		/\.doc-comment-card\.dc-selectable \.dc-entry__text:not\(\.dc-entry__text--empty\)\s*\{([\s\S]*?)\}/;
+
+	test("lets comment text be selected once a press starts in its card, including on iOS", () => {
+		const rule = selectable.exec(styles)?.[1] ?? "";
 
 		expect(rule).toContain("user-select: text");
 		expect(rule).toContain("-webkit-user-select: text");
 	});
 
-	test("keeps the Empty placeholder a button rather than text to select", () => {
-		const rule = /\.dc-entry__text--empty\s*\{([\s\S]*?)\}/.exec(styles)?.[1] ?? "";
+	test("keeps comment text out of a drag that starts in the note", () => {
+		// Reading view puts the margin after the note, so text that is always
+		// selectable pulls every paragraph in between into an overshooting drag.
+		const rule = /\.dc-entry__text\s*\{([\s\S]*?)\}/.exec(styles)?.[1] ?? "";
 
-		expect(rule).toMatch(/(^|[^-])user-select: none/);
-		expect(rule).toContain("-webkit-user-select: none");
+		expect(rule).not.toContain("user-select");
 	});
 });

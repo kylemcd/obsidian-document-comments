@@ -24,6 +24,25 @@ const sameEnds = (a: SelectionEnds | null, b: SelectionEnds | null): boolean => 
 	);
 };
 
+/** Call `onRelease` when the press under way ends, wherever the pointer is by
+ *  then, and return a way to stop waiting. A drag-and-drop ends without a
+ *  mouseup, and a new press isn't this one's release, so either stops the wait. */
+const awaitRelease = (doc: Document, onRelease: () => void): (() => void) => {
+	const release = (): void => {
+		stop();
+		onRelease();
+	};
+	const stop = (): void => {
+		doc.removeEventListener("mouseup", release, true);
+		doc.removeEventListener("mousedown", stop, true);
+		doc.removeEventListener("dragstart", stop, true);
+	};
+	doc.addEventListener("mouseup", release, true);
+	doc.addEventListener("mousedown", stop, true);
+	doc.addEventListener("dragstart", stop, true);
+	return stop;
+};
+
 export type CardCallbacks = {
 	getAuthor: () => string;
 	onHover: (id: string, active: boolean) => void;
@@ -83,8 +102,10 @@ export class Card {
 	private tableAnchorBroken = false;
 	private threadEl: HTMLElement | null = null;
 	private footEl: HTMLElement | null = null;
-	/** The card's selected text when the current press began. */
-	private selectionAtPress: SelectionEnds | null = null;
+	/** Stops waiting for the release of a press on this card. */
+	private stopAwaitingRelease: (() => void) | null = null;
+	/** The latest press began in this card, so its comment text can be selected. */
+	private selectable = false;
 	/** Owns the child components MarkdownRenderer attaches (link/embed handlers). */
 	private md = new Component();
 	/** Re-measures overflow when the (async-rendered) content settles or changes. */
@@ -100,29 +121,27 @@ export class Card {
 		this.el = createDiv("doc-comment-card");
 		this.el.addEventListener("mouseenter", () => this.cb.onHover(this.id, true));
 		this.el.addEventListener("mouseleave", () => this.cb.onHover(this.id, false));
-		// Open on click, not on press: opening rebuilds the card under the pointer and
-		// focuses its reply field, which throws away a text selection before a drag
-		// can make one.
-		this.el.addEventListener("mousedown", () => {
-			this.selectionAtPress = this.selectedEnds();
-		});
-		this.el.addEventListener("click", (e) => {
+		this.el.addEventListener("pointerdown", () => this.setSelectable(true));
+		// Decide on the press, open on the release. Opening on the press rebuilds the
+		// card under the pointer and focuses its reply field, which throws away the
+		// selection a drag was about to make. Waiting for the click misses it instead
+		// when the press closes another card: the stack shifts this one out from
+		// under the pointer before the button comes up, so the click lands elsewhere.
+		this.el.addEventListener("mousedown", (e) => {
+			if (e.button !== 0) return;
 			const target = e.target as HTMLElement;
 			if (target.closest("button, textarea, a, .dc-foot-btn, .dc-reaction, .dc-pop")) return;
-			// A click that ends a drag or double-click over the comment's text is
-			// someone selecting it to copy, not asking to open the card. A selection
-			// from before doesn't count: pressing the author's name leaves it in place.
-			const selected = this.selectedEnds();
-			if (selected && !sameEnds(selected, this.selectionAtPress)) return;
-			this.cb.onClickAnchor(this.id);
-			if (this.comment.thread.length === 0) {
-				this.startEdit(0);
-				return;
-			}
-			// A thread too tall for the margin opens in the sidebar instead of expanding
-			// into a full-height card whose bottom you can't scroll to.
-			if (this.tooTall && this.cb.openInSidebar) this.cb.openInSidebar(this.id);
-			else this.setOpen(true);
+			const before = this.selectedEnds();
+			this.stopAwaitingRelease?.();
+			this.stopAwaitingRelease = awaitRelease(this.el.ownerDocument, () => {
+				this.stopAwaitingRelease = null;
+				// A press that selected the comment's text, by dragging or double-clicking,
+				// is someone copying it, not asking to open the card. A selection from
+				// before doesn't count: pressing the author's name leaves it in place.
+				const selected = this.selectedEnds();
+				if (selected && !sameEnds(selected, before)) return;
+				this.activate();
+			});
 		});
 		this.render();
 	}
@@ -184,6 +203,8 @@ export class Card {
 		this.ro.disconnect();
 		this.md.unload();
 		this.el.ownerDocument.removeEventListener("mousedown", this.onDocMouseDown, true);
+		this.stopAwaitingRelease?.();
+		this.setSelectable(false);
 	}
 
 	setActive(active: boolean): void {
@@ -220,6 +241,36 @@ export class Card {
 
 	private onDocMouseDown = (e: MouseEvent): void => {
 		if (!this.el.contains(e.target as Node)) this.setOpen(false);
+	};
+
+	/** Open the card, as a click on it asks. */
+	private activate(): void {
+		this.cb.onClickAnchor(this.id);
+		if (this.comment.thread.length === 0) {
+			this.startEdit(0);
+			return;
+		}
+		// A thread too tall for the margin opens in the sidebar instead of expanding
+		// into a full-height card whose bottom you can't scroll to.
+		if (this.tooTall && this.cb.openInSidebar) this.cb.openInSidebar(this.id);
+		else this.setOpen(true);
+	}
+
+	/** Comment text is selectable only while the latest press began in this card.
+	 *  Selectable all the time, a drag through the note that overshoots onto a card
+	 *  would run on through everything between them, since Reading view puts the
+	 *  margin after the note. */
+	private setSelectable(selectable: boolean): void {
+		if (this.selectable === selectable) return;
+		this.selectable = selectable;
+		this.el.toggleClass("dc-selectable", selectable);
+		const doc = this.el.ownerDocument;
+		if (selectable) doc.addEventListener("pointerdown", this.onPointerDownElsewhere, true);
+		else doc.removeEventListener("pointerdown", this.onPointerDownElsewhere, true);
+	}
+
+	private onPointerDownElsewhere = (e: PointerEvent): void => {
+		if (!this.el.contains(e.target as Node)) this.setSelectable(false);
 	};
 
 	/** The ends of the text selected in this card, or null when none of it is. */
@@ -373,6 +424,9 @@ export class Card {
 			});
 			const edit = (event: Event) => {
 				event.stopPropagation();
+				// A mouse press already opened the editor on release, replacing this
+				// placeholder, before its click arrives.
+				if (!this.el.contains(placeholder)) return;
 				this.startEdit(i);
 			};
 			placeholder.addEventListener("click", edit);
