@@ -11,6 +11,19 @@ const QUICK_EMOJI = ["👍", "❤️", "😄", "🎉", "😮", "👀", "🙏"];
 // bottom edge. Keep in sync with the .dc-card-clip max-height in styles.css.
 const CLAMP_HEIGHT = 220;
 
+/** Where a text selection starts and ends. */
+type SelectionEnds = Pick<Selection, "anchorNode" | "anchorOffset" | "focusNode" | "focusOffset">;
+
+const sameEnds = (a: SelectionEnds | null, b: SelectionEnds | null): boolean => {
+	if (!a || !b) return a === b;
+	return (
+		a.anchorNode === b.anchorNode &&
+		a.anchorOffset === b.anchorOffset &&
+		a.focusNode === b.focusNode &&
+		a.focusOffset === b.focusOffset
+	);
+};
+
 export type CardCallbacks = {
 	getAuthor: () => string;
 	onHover: (id: string, active: boolean) => void;
@@ -70,6 +83,8 @@ export class Card {
 	private tableAnchorBroken = false;
 	private threadEl: HTMLElement | null = null;
 	private footEl: HTMLElement | null = null;
+	/** The card's selected text when the current press began. */
+	private selectionAtPress: SelectionEnds | null = null;
 	/** Owns the child components MarkdownRenderer attaches (link/embed handlers). */
 	private md = new Component();
 	/** Re-measures overflow when the (async-rendered) content settles or changes. */
@@ -85,9 +100,20 @@ export class Card {
 		this.el = createDiv("doc-comment-card");
 		this.el.addEventListener("mouseenter", () => this.cb.onHover(this.id, true));
 		this.el.addEventListener("mouseleave", () => this.cb.onHover(this.id, false));
-		this.el.addEventListener("mousedown", (e) => {
+		// Open on click, not on press: opening rebuilds the card under the pointer and
+		// focuses its reply field, which throws away a text selection before a drag
+		// can make one.
+		this.el.addEventListener("mousedown", () => {
+			this.selectionAtPress = this.selectedEnds();
+		});
+		this.el.addEventListener("click", (e) => {
 			const target = e.target as HTMLElement;
 			if (target.closest("button, textarea, a, .dc-foot-btn, .dc-reaction, .dc-pop")) return;
+			// A click that ends a drag or double-click over the comment's text is
+			// someone selecting it to copy, not asking to open the card. A selection
+			// from before doesn't count: pressing the author's name leaves it in place.
+			const selected = this.selectedEnds();
+			if (selected && !sameEnds(selected, this.selectionAtPress)) return;
 			this.cb.onClickAnchor(this.id);
 			if (this.comment.thread.length === 0) {
 				this.startEdit(0);
@@ -195,6 +221,15 @@ export class Card {
 	private onDocMouseDown = (e: MouseEvent): void => {
 		if (!this.el.contains(e.target as Node)) this.setOpen(false);
 	};
+
+	/** The ends of the text selected in this card, or null when none of it is. */
+	private selectedEnds(): SelectionEnds | null {
+		const selection = this.el.ownerDocument.getSelection();
+		if (!selection || selection.isCollapsed) return null;
+		if (!this.el.contains(selection.anchorNode) && !this.el.contains(selection.focusNode)) return null;
+		const { anchorNode, anchorOffset, focusNode, focusOffset } = selection;
+		return { anchorNode, anchorOffset, focusNode, focusOffset };
+	}
 
 	/** Quick, smooth grow/shrink of the body on open/close: animate the clip from its
 	 *  previous height to the new target, then drop the inline overrides so it's free

@@ -47,3 +47,21 @@ describe("per-author highlight styles", () => {
 		expect(rule).toContain("padding-block: 10px");
 	});
 });
+
+describe("comment text selection", () => {
+	// Obsidian sets `user-select: none` on body and turns it back on only for note
+	// content, so a card's text can't be selected unless the card opts in (#80).
+	test("lets comment text be selected, including on iOS", () => {
+		const rule = /\.dc-entry__text\s*\{([\s\S]*?)\}/.exec(styles)?.[1] ?? "";
+
+		expect(rule).toContain("user-select: text");
+		expect(rule).toContain("-webkit-user-select: text");
+	});
+
+	test("keeps the Empty placeholder a button rather than text to select", () => {
+		const rule = /\.dc-entry__text--empty\s*\{([\s\S]*?)\}/.exec(styles)?.[1] ?? "";
+
+		expect(rule).toMatch(/(^|[^-])user-select: none/);
+		expect(rule).toContain("-webkit-user-select: none");
+	});
+});
