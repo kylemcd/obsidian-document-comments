@@ -37,6 +37,6 @@
 		"vitest": "^4.1.10"
 	},
 	"dependencies": {
-		"better-result": "^3.0.0"
+		"better-result": "^3.0.1"
 	}
 }
