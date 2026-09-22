@@ -126,6 +126,29 @@ describe("broken table anchor notice", () => {
 	});
 });
 
+describe("selecting comment text", () => {
+	test("pressing an open card leaves its text in place, so a drag can select it", async () => {
+		// Only an open card's text is selectable (#80), and a press that rebuilt the
+		// text or moved focus to the reply field would throw the selection away.
+		const card = new Card(commentWithText(), callbacks(), { sourcePath: () => "note.md" });
+		document.body.appendChild(card.el);
+		card.el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+		await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+		const text = card.el.querySelector(".dc-entry__text");
+		const focus = vi.spyOn(HTMLElement.prototype, "focus");
+
+		text?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+		await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+
+		expect(card.el.classList.contains("is-open")).toBe(true);
+		expect(card.el.querySelector(".dc-entry__text")).toBe(text);
+		expect(focus).not.toHaveBeenCalled();
+		focus.mockRestore();
+		card.destroy();
+		card.el.remove();
+	});
+});
+
 describe("empty comment card", () => {
 	test("colors every displayed author name with that author's assignment", () => {
 		const comment = {

@@ -263,6 +263,15 @@ body {
 	overflow-wrap: anywhere;
 	color: var(--text-normal);
 }
+/* Obsidian turns text selection off for its whole UI and back on only for note
+   content, so comment text has to opt back in before anyone can copy it. Only an
+   open card's: pressing a card opens it, and a closed card's selectable text
+   would pull every paragraph in between into a Reading view drag through the
+   note that overshoots onto it, since the margin comes after the note. */
+.doc-comment-card.is-open .dc-entry__text:not(.dc-entry__text--empty) {
+	user-select: text;
+	-webkit-user-select: text;
+}
 .dc-entry__text--empty {
 	display: block;
 	width: 100%;
