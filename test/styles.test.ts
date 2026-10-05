@@ -48,22 +48,12 @@ describe("per-author highlight styles", () => {
 	});
 });
 
-/** The body of every `@media <query>` block, matched by brace depth. */
+/** The rules inside every `@media <query>` block. Only plain rules nest in one, so a
+ *  single level of braces covers every block in the stylesheet. */
 const mediaBlocks = (query: string): string[] => {
-	const blocks: string[] = [];
-	let from = styles.indexOf(`@media ${query}`);
-	while (from !== -1) {
-		const open = styles.indexOf("{", from);
-		let depth = 0;
-		let close = open;
-		for (; close < styles.length; close++) {
-			if (styles[close] === "{") depth++;
-			else if (styles[close] === "}" && --depth === 0) break;
-		}
-		blocks.push(styles.slice(open + 1, close));
-		from = styles.indexOf(`@media ${query}`, close);
-	}
-	return blocks;
+	const escaped = query.replace(/[()]/g, "\\$&");
+	const block = new RegExp(`@media ${escaped}\\s*\\{((?:[^{}]*\\{[^{}]*\\})*[^{}]*)\\}`, "g");
+	return Array.from(styles.matchAll(block), (match) => match[1] ?? "");
 };
 
 describe("entry action bar on touch screens", () => {
@@ -79,11 +69,13 @@ describe("entry action bar on touch screens", () => {
 		expect(outside).not.toMatch(hoverReveal);
 	});
 
-	test("shows the bar on an open card on touch screens, where there is no hover", () => {
-		const openCardBar = /\.doc-comment-card\.is-open \.dc-entry__bar\s*\{([^}]*)\}/;
+	test("shows the bar on an open or edited card on touch screens, where there is no hover", () => {
+		// An empty comment's card is edited, not opened, when pressed.
+		const touchBar =
+			/\.doc-comment-card\.is-open \.dc-entry__bar,\s*\.doc-comment-card\.is-editing \.dc-entry__bar\s*\{([^}]*)\}/;
 		const rule =
 			mediaBlocks("(hover: none)")
-				.map((block) => openCardBar.exec(block)?.[1])
+				.map((block) => touchBar.exec(block)?.[1])
 				.find((body) => body !== undefined) ?? "";
 
 		expect(rule).toContain("opacity: 1");
