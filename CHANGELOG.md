@@ -10,6 +10,7 @@ matching the pushed tag as that GitHub release's notes, so add an entry here bef
 - Hovering a table comment's card highlights its text, and hovering the text raises its card — both of which previously did nothing inside a Live Preview table.
 - Added a repair for tables an older comment already broke. The comment's card, which sits beside the damage, says so and offers a one-click **Repair**; the **Repair table comments in this note** command fixes every one at once, which is the way out when several anchors broke the same table. Both land as a single undo step, and nothing is rewritten unless you ask.
 - Comment text can now be selected and copied from an open comment card — in the margin, the comments sidebar, and Reading view. Click a card to open it, then drag, double-click or triple-click to select ([#80](https://github.com/kylemcd/obsidian-document-comments/issues/80)).
+- On a note pane too narrow for both the text and the comment column, the text now stops shrinking at a readable width and the comment cards overlap its right edge. The text used to shrink to a sliver, which pushed the comment cards out of view ([#83](https://github.com/kylemcd/obsidian-document-comments/issues/83)).
 
 ## 0.1.15
 
