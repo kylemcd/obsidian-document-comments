@@ -84,6 +84,71 @@ const callbacks = (): CardCallbacks => ({
 	toggleReaction: vi.fn(),
 });
 
+describe("broken table anchor notice", () => {
+	const view = { sourcePath: () => "note.md", colorForAuthor: () => null };
+
+	test("shows the notice and repair action only while the anchor is breaking a table", () => {
+		const repairTableAnchor = vi.fn();
+		const card = new Card(commentWithText(), { ...callbacks(), repairTableAnchor }, view);
+
+		expect(card.el.querySelector(".dc-repair")).toBeNull();
+
+		card.setTableAnchorBroken(true);
+		expect(card.el.querySelector(".dc-repair__text")?.textContent).toBe("This comment is breaking its table.");
+		card.el.querySelector<HTMLElement>(".dc-repair__action")?.click();
+		expect(repairTableAnchor).toHaveBeenCalledWith(commentWithText().id);
+
+		card.setTableAnchorBroken(false);
+		expect(card.el.querySelector(".dc-repair")).toBeNull();
+	});
+
+	test("stays silent when no repair action is available, as in the sidebar", () => {
+		const card = new Card(commentWithText(), callbacks(), view);
+
+		card.setTableAnchorBroken(true);
+
+		expect(card.el.querySelector(".dc-repair")).toBeNull();
+	});
+
+	test("never asks the margin to reposition", () => {
+		// The margin reconciles inside CodeMirror's update cycle, and repositioning
+		// reads layout — which throws there, taking the whole margin plugin down with
+		// it. The scheduled measure pass after each reconcile picks the height change
+		// up instead.
+		const cb = { ...callbacks(), repairTableAnchor: vi.fn() };
+		const card = new Card(commentWithText(), cb, view);
+		(cb.onResize as ReturnType<typeof vi.fn>).mockClear();
+
+		card.setTableAnchorBroken(true);
+		card.setTableAnchorBroken(false);
+
+		expect(cb.onResize).not.toHaveBeenCalled();
+	});
+});
+
+describe("selecting comment text", () => {
+	test("pressing an open card leaves its text in place, so a drag can select it", async () => {
+		// Only an open card's text is selectable (#80), and a press that rebuilt the
+		// text or moved focus to the reply field would throw the selection away.
+		const card = new Card(commentWithText(), callbacks(), { sourcePath: () => "note.md" });
+		document.body.appendChild(card.el);
+		card.el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+		await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+		const text = card.el.querySelector(".dc-entry__text");
+		const focus = vi.spyOn(HTMLElement.prototype, "focus");
+
+		text?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+		await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+
+		expect(card.el.classList.contains("is-open")).toBe(true);
+		expect(card.el.querySelector(".dc-entry__text")).toBe(text);
+		expect(focus).not.toHaveBeenCalled();
+		focus.mockRestore();
+		card.destroy();
+		card.el.remove();
+	});
+});
+
 describe("empty comment card", () => {
 	test("colors every displayed author name with that author's assignment", () => {
 		const comment = {

@@ -47,3 +47,24 @@ describe("per-author highlight styles", () => {
 		expect(rule).toContain("padding-block: 10px");
 	});
 });
+
+describe("comment text selection", () => {
+	// Obsidian sets `user-select: none` on body and turns it back on only for note
+	// content, so a card's text can't be selected unless the card opts in (#80).
+	const openCardText = /\.doc-comment-card\.is-open \.dc-entry__text:not\(\.dc-entry__text--empty\)\s*\{([\s\S]*?)\}/;
+
+	test("lets an open card's text be selected, including on iOS", () => {
+		const rule = openCardText.exec(styles)?.[1] ?? "";
+
+		expect(rule).toContain("user-select: text");
+		expect(rule).toContain("-webkit-user-select: text");
+	});
+
+	test("keeps a closed card's text out of a drag that starts in the note", () => {
+		// Reading view puts the margin after the note, so selectable text on every
+		// card would pull all the paragraphs in between into an overshooting drag.
+		const rule = /\.dc-entry__text\s*\{([\s\S]*?)\}/.exec(styles)?.[1] ?? "";
+
+		expect(rule).not.toContain("user-select");
+	});
+});
