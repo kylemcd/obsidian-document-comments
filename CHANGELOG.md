@@ -14,6 +14,7 @@ matching the pushed tag as that GitHub release's notes, so add an entry here bef
 - Added **Add comment** to the editor right-click menu when text is selected. If you previously added that command to the menu with the Commander plugin, remove your mapping to avoid a duplicate entry.
 - Fixed the **Author** setting assigning a highlight color to every half-typed name. Typing `Alice` no longer leaves `A`, `Al`, `Ali`, and `Alic` behind in **Highlight colors**.
 - On iPhone and iPad, tapping a comment in the comments sidebar now opens it and scrolls the note to its text on the first tap. iOS treated that tap as a hover, because the comment's React, Resolve and More buttons appeared on hover. On touch screens those buttons now show on the card you open or edit instead ([#85](https://github.com/kylemcd/obsidian-document-comments/issues/85)).
+- On a note pane too narrow for both the text and the comment column, the text now stops shrinking at a readable width and the comment cards overlap its right edge. The text used to shrink to a sliver, which pushed the comment cards out of view ([#83](https://github.com/kylemcd/obsidian-document-comments/issues/83)).
 
 ## 0.1.15
 

@@ -83,6 +83,33 @@ describe("entry action bar on touch screens", () => {
 	});
 });
 
+describe("narrow panes", () => {
+	// Giving the column its full width at any pane width squeezed the text to a
+	// sliver on a narrow pane, which pushed every anchor, and its card, out of view (#83).
+	const textWidth =
+		/max-width: min\(\s*var\(--file-line-width, 50rem\),\s*max\(var\(--dc-min-text-width\), calc\(100% - var\(--dc-margin-width\)\)\)\s*\)/;
+
+	test("keeps the Live Preview text at its minimum width beside the column", () => {
+		const rule =
+			/\.markdown-source-view\.mod-cm6 \.cm-editor\.dc-has \.cm-sizer\s*\{([^}]*)\}/.exec(styles)?.[1] ?? "";
+
+		expect(rule).toMatch(textWidth);
+	});
+
+	test("keeps the Reading view text at its minimum width beside the column", () => {
+		const rule =
+			/\.markdown-reading-view\.dc-has \.markdown-preview-view \.markdown-preview-sizer\s*\{([^}]*)\}/.exec(
+				styles,
+			)?.[1] ?? "";
+
+		expect(rule).toMatch(textWidth);
+	});
+
+	test("defines the minimum text width", () => {
+		expect(styles).toMatch(/--dc-min-text-width: \d+rem;/);
+	});
+});
+
 describe("comment text selection", () => {
 	// Obsidian sets `user-select: none` on body and turns it back on only for note
 	// content, so a card's text can't be selected unless the card opts in (#80).
