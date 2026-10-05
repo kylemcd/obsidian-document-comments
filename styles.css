@@ -67,12 +67,14 @@ body {
 	cursor: text;
 	transition: background-color 120ms ease;
 }
-/* When comments are toggled off, drop the highlight entirely so the prose reads
-   clean. Keyed on `dc-highlights` (which follows the master toggle), NOT on
+/* When highlights are toggled off, drop them entirely so the prose reads clean.
+   Keyed on `dc-highlights` (which follows the Show highlights setting), NOT on
    `dc-has` (the inline column) — so highlights persist when the sidebar panel
-   hosts the cards and the inline column has stepped aside. */
-.cm-editor:not(.dc-highlights) .doc-comment-span,
-.markdown-reading-view:not(.dc-highlights) .doc-comment-span {
+   hosts the cards and the inline column has stepped aside, and when the cards
+   are hidden outright. `.dc-draft` is exempt: it marks the text an open composer
+   is about to anchor to, and losing it leaves you writing against nothing. */
+.cm-editor:not(.dc-highlights) .doc-comment-span:not(.dc-draft),
+.markdown-reading-view:not(.dc-highlights) .doc-comment-span:not(.dc-draft) {
 	background-color: transparent;
 	border-bottom-color: transparent;
 	cursor: text;

@@ -73,6 +73,7 @@ describe("reading margin windows", () => {
 			highlightColorForAuthor: () => "#e54d2e",
 			showComments: () => true,
 			showResolved: () => false,
+			showHighlights: () => true,
 			allowEmptyComments: () => false,
 			sidebarOpen: () => false,
 			isMobile: () => true,
@@ -83,6 +84,31 @@ describe("reading margin windows", () => {
 		expect(readingView.toggleClass).toHaveBeenCalledWith("dc-highlights", true);
 		expect(readingView.style.setProperty).toHaveBeenCalledWith("--dc-highlight-color", "#e54d2e");
 		expect(readingView.style.setProperty).toHaveBeenCalledWith("--dc-draft-highlight-color", "#e54d2e");
+	});
+
+	// Mobile has no cards, so Toggle comments only ever showed there through the
+	// highlights. It keeps hiding them now that highlights have their own setting.
+	test("on mobile, hiding comments hides the highlights", () => {
+		const readingView = document.createElement("div");
+		readingView.className = "markdown-reading-view";
+		const view = new MarkdownView();
+		Object.defineProperty(view, "containerEl", { value: { querySelector: () => readingView } });
+		const deps = {
+			app: { workspace: { getLeavesOfType: () => [{ view }] } },
+			getAuthor: () => "Bob",
+			colorForAuthor: () => null,
+			highlightColorForAuthor: () => null,
+			showComments: () => false,
+			showResolved: () => true,
+			showHighlights: () => true,
+			allowEmptyComments: () => false,
+			sidebarOpen: () => false,
+			isMobile: () => true,
+		} as unknown as ReadingDeps;
+
+		new ReadingMarginManager(deps).refresh();
+
+		expect(readingView.classList.contains("dc-highlights")).toBe(false);
 	});
 
 	test("keeps an open nested draft live when the current author's color changes", () => {
@@ -103,6 +129,7 @@ describe("reading margin windows", () => {
 			highlightColorForAuthor: () => currentColor,
 			showComments: () => true,
 			showResolved: () => false,
+			showHighlights: () => true,
 			allowEmptyComments: () => false,
 			sidebarOpen: () => false,
 			isMobile: () => mobile,

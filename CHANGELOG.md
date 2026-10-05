@@ -10,6 +10,9 @@ matching the pushed tag as that GitHub release's notes, so add an entry here bef
 - Hovering a table comment's card highlights its text, and hovering the text raises its card — both of which previously did nothing inside a Live Preview table.
 - Added a repair for tables an older comment already broke. The comment's card, which sits beside the damage, says so and offers a one-click **Repair**; the **Repair table comments in this note** command fixes every one at once, which is the way out when several anchors broke the same table. Both land as a single undo step, and nothing is rewritten unless you ask.
 - Comment text can now be selected and copied from an open comment card — in the margin, the comments sidebar, and Reading view. Click a card to open it, then drag, double-click or triple-click to select ([#80](https://github.com/kylemcd/obsidian-document-comments/issues/80)).
+- Added a **Show highlights** setting and a **Toggle highlights** command. Highlights no longer follow the comment column, so you can hide the cards and keep the highlighted text, or the reverse. Highlights start on, so if you had comments hidden on desktop you will now see the highlighted text until you turn **Show highlights** off. On mobile, which has no cards, **Toggle comments** still hides the highlights.
+- Added **Add comment** to the editor right-click menu when text is selected. If you previously added that command to the menu with the Commander plugin, remove your mapping to avoid a duplicate entry.
+- Fixed the **Author** setting assigning a highlight color to every half-typed name. Typing `Alice` no longer leaves `A`, `Al`, `Ali`, and `Alic` behind in **Highlight colors**.
 
 ## 0.1.15
 
