@@ -5,6 +5,8 @@ matching the pushed tag as that GitHub release's notes, so add an entry here bef
 
 ## Unreleased
 
+## 0.1.16
+
 - Comment cards on a table now sit beside the row they belong to in Live Preview instead of stacking at the top of the table, and the new-comment composer opens beside its row too ([#79](https://github.com/kylemcd/obsidian-document-comments/issues/79)).
 - Commenting on a whole table row, a whole table, a selection that crosses a cell border, or a selection that runs in from the text around a table no longer breaks the table. Comment markers are kept inside the cell borders, off the blank line a table needs above it, and on both sides of an escaped pipe (`\|`), where they can't stop the block rendering as a table; a selection holding nothing but borders is now refused with an explanation.
 - Hovering a table comment's card highlights its text, and hovering the text raises its card — both of which previously did nothing inside a Live Preview table.
