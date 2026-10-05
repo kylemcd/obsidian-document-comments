@@ -138,6 +138,68 @@ describe("anchoring inside a table", () => {
 		expect(renderedRows(out ?? "")).toBe(renderedRows(doc));
 	});
 
+	// The end that lands outside a table keeps its marker where the selection put it.
+	// Trimmed like the table end, it ran onto the markup of the line beyond, which
+	// stopped a heading or list item being one, and a table under that heading
+	// rendering at all.
+	const underHeading = ["Intro text", "", "## Plan", "| Day | Task |", "| --- | --- |", "| Monday | spec |"].join(
+		"\n",
+	);
+	const headingAbove = (doc: string): string => doc.slice(0, doc.indexOf("| Day"));
+	test.each([
+		["at the end of the paragraph above", underHeading.indexOf("\n\n")],
+		["on the blank line above", underHeading.indexOf("\n\n") + 1],
+	])("keeps a heading above a table when a selection starts %s", (_label, from) => {
+		const out = addComment(underHeading, from, underHeading.indexOf("spec") + "spec".length) ?? "";
+
+		expect(headingAbove(out)).toContain("\n## Plan\n");
+		expect(renderedRows(out)).toBe(renderedRows(underHeading));
+	});
+
+	const tableThenHeading = [normal, "", "## Next", "| A | B |", "| - | - |", "| 1 | 2 |"].join("\n");
+	const rowsUnder = (doc: string, heading: string): number | null =>
+		renderedRows(doc.slice(doc.lastIndexOf("\n", doc.indexOf(heading)) + 1));
+	test("keeps a heading below a table when a selection ends after its markup", () => {
+		const to = tableThenHeading.indexOf("## Next") + "## ".length;
+		const out = addComment(tableThenHeading, tableThenHeading.indexOf("write"), to) ?? "";
+
+		expect(out).toContain("\n## <!--/c:aa11-->Next\n");
+		expect(rowsUnder(out, "Next")).toBe(rowsUnder(tableThenHeading, "Next"));
+	});
+
+	// Pressing End on a table's last row and Shift+Down starts the selection past
+	// its closing pipe. Trimmed, that start crossed the blank line onto the next
+	// block, the same as a start above a heading.
+	test.each([
+		["a body row", tableThenHeading, tableThenHeading.indexOf("ben |") + "ben |".length],
+		[
+			"a header-only table's delimiter",
+			["| Day | Task |", "| --- | --- |", "", "## Next", "| A | B |", "| - | - |", "| 1 | 2 |"].join("\n"),
+			"| Day | Task |\n| --- | --- |".length,
+		],
+	])("keeps a heading below a table when a selection starts past the closing pipe of %s", (_label, doc, from) => {
+		const out = addComment(doc, from, doc.indexOf("| 1") + "| 1".length) ?? "";
+
+		expect(out).toContain("\n## Next\n");
+		expect(renderedRows(out)).toBe(renderedRows(doc));
+		expect(rowsUnder(out, "Next")).toBe(rowsUnder(doc, "Next"));
+	});
+
+	test("keeps a list item below a table when a selection starts past the table's last pipe", () => {
+		const doc = [normal, "", "- first", "- second"].join("\n");
+		const out = addComment(doc, doc.indexOf("ben |") + "ben |".length, doc.indexOf("first") + "first".length);
+
+		expect(out).toContain("\n- first");
+		expect(renderedRows(out)).toBe(renderedRows(doc));
+	});
+
+	test("keeps a list item below a table when a selection ends after its bullet", () => {
+		const doc = [normal, "", "- item"].join("\n");
+		const out = addComment(doc, doc.indexOf("write"), doc.indexOf("- item") + "- ".length);
+
+		expect(out).toContain("\n- <!--/c:aa11-->item");
+	});
+
 	test.each([
 		["one cell", ...span(simple, "write the spec")],
 		["a whole row", ...span(simple, "Monday | write the spec")],
