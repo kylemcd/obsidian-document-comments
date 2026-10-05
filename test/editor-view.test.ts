@@ -6,13 +6,14 @@
 // bugs (e.g. a `provide` referencing a const declared later, a temporal-dead-zone
 // crash) that pure-state and format tests miss. It fails outright if any editor
 // extension throws while a note is opened.
-import { beforeAll, describe, expect, test } from "vitest";
-import { EditorState } from "@codemirror/state";
+import { beforeAll, describe, expect, test, vi } from "vitest";
+import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { commentField } from "../src/editor/state";
 import { draftField, setDraft } from "../src/editor/draft";
 import { commentConfig } from "../src/editor/config";
 import { editorLayoutField } from "../src/editor/layout";
+import { tableHighlightPlugin } from "../src/editor/table-highlights";
 
 beforeAll(() => {
 	// Obsidian adds DOM creation helpers at runtime; happy-dom does not. Mirror
@@ -306,7 +307,7 @@ describe("editor extensions open every note without crashing", () => {
 	// these classes on .cm-editor, so verify editorLayoutField actually applies them.
 	test("editorLayoutField puts layout classes on .cm-editor", () => {
 		const plain = open("Just plain text.\nNo comments here.\n");
-		expect(plain).toContain("dc-highlights"); // master toggle is on
+		expect(plain).toContain("dc-highlights"); // Show highlights is on
 		expect(plain).not.toContain("dc-has"); // no comments → no reserved column
 
 		const withComment = open(
@@ -413,7 +414,134 @@ describe("editor extensions open every note without crashing", () => {
 		view.destroy();
 		expect(draft).toMatchObject({ from: 1, to: 5, targetHighlightId: "h1" });
 		expect(className).not.toContain("dc-has"); // draft is a floating overlay, no column reserved
-		expect(className).toContain("dc-highlights"); // highlights still follow the master toggle
+		expect(className).toContain("dc-highlights"); // highlights follow Show highlights
+	});
+
+	// Highlights used to ride the showComments toggle, so hiding the cards also
+	// wiped the underlines out of the text. They have their own setting now.
+	test("highlights survive hiding the comment column and follow showHighlights", () => {
+		const openWith = (cfg: Extension): string => {
+			const parent = document.createElement("div");
+			document.body.appendChild(parent);
+			const view = new EditorView({
+				state: EditorState.create({
+					doc: "Just plain text.\nNo comments here.\n",
+					extensions: [commentField, draftField, cfg, editorLayoutField],
+				}),
+				parent,
+			});
+			view.dispatch({ changes: { from: 0, insert: "x" } });
+			view.requestMeasure();
+			const className = view.dom.className;
+			view.destroy();
+			return className;
+		};
+
+		const cardsHidden = openWith(
+			commentConfig.of({
+				author: () => "me",
+				showComments: () => false,
+				showResolved: () => true,
+				showHighlights: () => true,
+				allowEmptyComments: () => false,
+				sidebarOpen: () => false,
+			}),
+		);
+		expect(cardsHidden).toContain("dc-highlights");
+		expect(cardsHidden).not.toContain("dc-has");
+
+		const highlightsHidden = openWith(
+			commentConfig.of({
+				author: () => "me",
+				showComments: () => true,
+				showResolved: () => true,
+				showHighlights: () => false,
+				allowEmptyComments: () => false,
+				sidebarOpen: () => false,
+			}),
+		);
+		expect(highlightsHidden).not.toContain("dc-highlights");
+	});
+
+	// Mobile has no cards, so Toggle comments only ever showed there through the
+	// highlights. It keeps hiding them now that highlights have their own setting.
+	test("on mobile, hiding comments hides the highlights", () => {
+		const classesWith = (showComments: boolean): string => {
+			const parent = document.createElement("div");
+			document.body.appendChild(parent);
+			const cfg = commentConfig.of({
+				author: () => "me",
+				showComments: () => showComments,
+				showResolved: () => true,
+				showHighlights: () => true,
+				allowEmptyComments: () => false,
+				sidebarOpen: () => false,
+				isMobile: () => true,
+			});
+			const view = new EditorView({
+				state: EditorState.create({ doc: "Plain text.\n", extensions: [commentField, cfg, editorLayoutField] }),
+				parent,
+			});
+			const className = view.dom.className;
+			view.destroy();
+			parent.remove();
+			return className;
+		};
+
+		expect(classesWith(false)).not.toContain("dc-highlights");
+		expect(classesWith(true)).toContain("dc-highlights");
+	});
+
+	// Table-cell highlights paint through the CSS Custom Highlight API rather than
+	// `.doc-comment-span`, so the `dc-highlights` class never reaches them and they
+	// must read the setting directly. They rode showComments at first, which
+	// inverted both halves of the Show highlights toggle inside tables.
+	test("table highlights follow Show highlights, not the comment column", async () => {
+		const reachesPainting = async (
+			showComments: boolean,
+			showHighlights: boolean,
+			mobile = false,
+		): Promise<boolean> => {
+			// Read once per comment immediately past the gate, so a call means the
+			// plugin got through it and is building ranges.
+			const showResolved = vi.fn(() => true);
+			const cfg = commentConfig.of({
+				author: () => "me",
+				showComments: () => showComments,
+				showHighlights: () => showHighlights,
+				showResolved,
+				allowEmptyComments: () => false,
+				sidebarOpen: () => false,
+				isMobile: () => mobile,
+			});
+			const doc = [
+				"| a | b |",
+				"| - | - |",
+				"| <!--c:aaa-->x<!--/c:aaa--> | y |",
+				"",
+				'<!--co:aaa by:me at:2026-06-17T00:00:00.000Z status:open quote:"x"',
+				"me: check this cell",
+				"-->",
+				"",
+			].join("\n");
+			const parent = document.createElement("div");
+			document.body.appendChild(parent);
+			const view = new EditorView({
+				state: EditorState.create({ doc, extensions: [commentField, cfg, tableHighlightPlugin] }),
+				parent,
+			});
+			// The plugin defers its work to a microtask.
+			await Promise.resolve();
+			await Promise.resolve();
+			view.destroy();
+			parent.remove();
+			return showResolved.mock.calls.length > 0;
+		};
+
+		await expect(reachesPainting(false, true)).resolves.toBe(true);
+		await expect(reachesPainting(true, false)).resolves.toBe(false);
+		// Mobile has no cards, so hiding comments hides the highlights there.
+		await expect(reachesPainting(false, true, true)).resolves.toBe(false);
 	});
 
 	test("publishes a separate current-author color for drafts nested in another author's highlight", () => {

@@ -9,8 +9,8 @@ import {
 	ensureAuthorColors,
 	hydrateAuthorColors,
 	hydrateExcludedAuthors,
+	readAuthorColor,
 	resetAuthorColor,
-	resolveAuthorColor,
 	type AuthorColorAssignments,
 } from "../src/author-colors";
 import { parseComments } from "../src/format/parse";
@@ -73,17 +73,27 @@ describe("author highlight colors", () => {
 		expect(hydrateExcludedAuthors({ Alice: true })).toEqual([]);
 	});
 
-	test("creates initial colors but returns no color when globally disabled or individually excluded", () => {
-		const assignments: AuthorColorAssignments = {};
-		const disabled = resolveAuthorColor(assignments, new Set(), "Alice", false);
+	test("reads a stored color without creating one", () => {
+		const assignments: AuthorColorAssignments = { Alice: { color: "#0090ff", mode: "generated" } };
 
-		expect(disabled.color).toBeNull();
-		expect(disabled.created).toBe(true);
-		expect(assignments.Alice).toBeDefined();
-
-		const excluded = resolveAuthorColor(assignments, new Set(["Bob"]), "Bob", true);
-		expect(excluded).toEqual({ author: "Bob", color: null, created: false });
+		expect(readAuthorColor(assignments, new Set(), "Alice", true)).toBe("#0090ff");
+		// The read path runs on every render, so an unknown author must not be
+		// silently assigned a color as a side effect of drawing them.
+		expect(readAuthorColor(assignments, new Set(), "Bob", true)).toBeNull();
 		expect(assignments.Bob).toBeUndefined();
+	});
+
+	test("returns no color when globally disabled or individually excluded", () => {
+		const assignments: AuthorColorAssignments = {
+			Alice: { color: "#0090ff", mode: "generated" },
+			Bob: { color: "#e54d2e", mode: "custom" },
+		};
+
+		expect(readAuthorColor(assignments, new Set(), "Alice", false)).toBeNull();
+		expect(readAuthorColor(assignments, new Set(["Bob"]), "Bob", true)).toBeNull();
+		// Neither gate deletes the saved assignment.
+		expect(assignments.Alice).toBeDefined();
+		expect(assignments.Bob).toBeDefined();
 	});
 
 	test("restores the legacy yellow highlight only when author colors are globally disabled", () => {

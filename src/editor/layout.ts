@@ -1,7 +1,7 @@
 import { EditorState, StateField } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { commentField } from "./state";
-import { commentConfig } from "./config";
+import { commentConfig, highlightsShown } from "./config";
 import { hasMarginAnchor } from "../format/parse";
 import { authorColorCss } from "../author-colors";
 
@@ -37,9 +37,10 @@ const editorLayoutAttributes = (state: EditorState): EditorLayoutAttributes => {
 
 	const classes: string[] = [];
 	if (hasColumn) classes.push("dc-has");
-	// Highlights follow the master toggle alone, so they persist while the sidebar
-	// panel hosts the cards (dc-has off, dc-highlights on).
-	if (cfg.showComments()) classes.push("dc-highlights");
+	// Highlights have their own toggle, so they persist both while the sidebar
+	// panel hosts the cards (dc-has off) and while the column is hidden entirely,
+	// except on mobile (see highlightsShown).
+	if (highlightsShown(cfg)) classes.push("dc-highlights");
 	if (!cfg.showResolved()) classes.push("dc-hide-resolved");
 	const draftColor = authorColorCss((cfg.highlightColorForAuthor ?? cfg.colorForAuthor)(cfg.author()));
 	return {
