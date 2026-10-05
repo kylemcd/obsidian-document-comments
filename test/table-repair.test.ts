@@ -259,6 +259,25 @@ describe("computeRepairTableAnchors", () => {
 		expect(brokenTableAnchors(out)).toEqual(new Set());
 	});
 
+	test("keeps the heading a table opens under when repairing an anchor that starts above it", () => {
+		const doc = [
+			"Intro text",
+			"<!--c:aa11-->",
+			"## Plan",
+			"| Day | Task |",
+			"| --- | --- |",
+			"| Monday | spec |",
+			"<!--/c:aa11-->| Tuesday | review |",
+			body("aa11", "Plan"),
+		].join("\n");
+
+		const out = repair(doc);
+
+		expect(out).toContain("\n## Plan\n| Day | Task |");
+		expect(out).toContain("| Monday | spec<!--/c:aa11--> |\n| Tuesday | review |");
+		expect(brokenTableAnchors(out)).toEqual(new Set());
+	});
+
 	test("keeps a literal marker inside a code span when repairing its table", () => {
 		// The parser skips code, so a marker written out in a code span is text, not
 		// an anchor. Repair has to leave it exactly as it found it.
