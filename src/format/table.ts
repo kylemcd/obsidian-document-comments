@@ -227,15 +227,26 @@ export const clampToTableCells = (doc: string, from: number, to: number): TextRa
  * where the selection put it, as for any other comment. The trim only decides
  * whether an end belongs to a table. Moved with it, a start on the blank line
  * above a heading lands in front of its `##`, the line stops being a heading,
- * and a table that opens under the heading stops rendering. The exception is a
- * start on a table's own line, past its last pipe, which the trim moves off it.
+ * and a table that opens under the heading stops rendering.
+ *
+ * A start past the closing pipe of a table's last row, as End then Shift+Down
+ * leaves it, is still on that table's line, where a marker would break the row.
+ * It goes inside the nearest cell instead, which adds no table text to the
+ * comment. Trimmed onto the next block, it would break that block's markup.
  */
 const outsideStart = (
 	lines: readonly SourceLine[],
 	tables: readonly SourceTable[],
 	from: number,
 	trimmed: number,
-): number => (tableAt(tables, lineIndexAt(lines, from)) ? trimmed : from);
+): number => {
+	const index = lineIndexAt(lines, from);
+	const table = tableAt(tables, index);
+	if (!table) return from;
+	return (
+		anchorablePosition(lines, table, index, from, 1) ?? anchorablePosition(lines, table, index, from, -1) ?? trimmed
+	);
+};
 
 /**
  * Where the marker goes for a selection end that sits outside every table. Like

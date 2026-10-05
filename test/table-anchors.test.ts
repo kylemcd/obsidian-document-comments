@@ -167,6 +167,32 @@ describe("anchoring inside a table", () => {
 		expect(rowsUnder(out, "Next")).toBe(rowsUnder(tableThenHeading, "Next"));
 	});
 
+	// Pressing End on a table's last row and Shift+Down starts the selection past
+	// its closing pipe. Trimmed, that start crossed the blank line onto the next
+	// block, the same as a start above a heading.
+	test.each([
+		["a body row", tableThenHeading, tableThenHeading.indexOf("ben |") + "ben |".length],
+		[
+			"a header-only table's delimiter",
+			["| Day | Task |", "| --- | --- |", "", "## Next", "| A | B |", "| - | - |", "| 1 | 2 |"].join("\n"),
+			"| Day | Task |\n| --- | --- |".length,
+		],
+	])("keeps a heading below a table when a selection starts past the closing pipe of %s", (_label, doc, from) => {
+		const out = addComment(doc, from, doc.indexOf("| 1") + "| 1".length) ?? "";
+
+		expect(out).toContain("\n## Next\n");
+		expect(renderedRows(out)).toBe(renderedRows(doc));
+		expect(rowsUnder(out, "Next")).toBe(rowsUnder(doc, "Next"));
+	});
+
+	test("keeps a list item below a table when a selection starts past the table's last pipe", () => {
+		const doc = [normal, "", "- first", "- second"].join("\n");
+		const out = addComment(doc, doc.indexOf("ben |") + "ben |".length, doc.indexOf("first") + "first".length);
+
+		expect(out).toContain("\n- first");
+		expect(renderedRows(out)).toBe(renderedRows(doc));
+	});
+
 	test("keeps a list item below a table when a selection ends after its bullet", () => {
 		const doc = [normal, "", "- item"].join("\n");
 		const out = addComment(doc, doc.indexOf("write"), doc.indexOf("- item") + "- ".length);
