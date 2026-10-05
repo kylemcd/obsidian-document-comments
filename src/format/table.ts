@@ -196,24 +196,56 @@ export const clampToTableCells = (doc: string, from: number, to: number): TextRa
 		// newline. Either way the markers belong on the selected text. A selection
 		// that touches neither is left exactly as it was.
 		const fillsGap = [from, to].some((pos) => isGapAboveTable(lines, tables, lineIndexAt(lines, pos)));
-		return touchesTable || fillsGap ? selected : { from, to };
+		if (!touchesTable && !fillsGap) return { from, to };
+		if (selected.to <= selected.from) return selected;
+		return { from: outsideStart(lines, tables, from, selected.from), to: outsideEnd(doc, selected.to, to) };
 	}
 
-	const start = head ? anchorablePosition(lines, head, fromIndex, selected.from, 1) : selected.from;
-	const end = tail ? anchorablePosition(lines, tail, toIndex, selected.to, -1) : selected.to;
+	const start = head
+		? anchorablePosition(lines, head, fromIndex, selected.from, 1)
+		: outsideStart(lines, tables, from, selected.from);
+	const end = tail ? anchorablePosition(lines, tail, toIndex, selected.to, -1) : outsideEnd(doc, selected.to, to);
 	if (start === null || end === null || end <= start) return { from, to: from };
 	const trimmed = trimRange(doc, start, end);
 	if (trimmed.to <= trimmed.from) return { from, to: from };
+	// Only an end clamped into a table drops the padding it picked up there.
+	const cellFrom = head ? trimmed.from : start;
+	const cellTo = tail ? trimmed.to : end;
 	// A marker between a backslash and the pipe it escapes un-escapes that pipe,
 	// splitting the cell in two and showing the marker as text. Keep the pair whole.
 	const range = {
-		from: splitsEscapedPipe(doc, trimmed.from) ? trimmed.from - 1 : trimmed.from,
-		to: splitsEscapedPipe(doc, trimmed.to) ? trimmed.to + 1 : trimmed.to,
+		from: splitsEscapedPipe(doc, cellFrom) ? cellFrom - 1 : cellFrom,
+		to: splitsEscapedPipe(doc, cellTo) ? cellTo + 1 : cellTo,
 	};
 	// Clamping only moves the two ends, so a selection between two rows or around a
 	// separator still holds nothing but the pipes that divide cells.
 	return holdsCellText(doc, range) ? range : { from, to: from };
 };
+
+/**
+ * Where the marker goes for a selection start that sits outside every table:
+ * where the selection put it, as for any other comment. The trim only decides
+ * whether an end belongs to a table. Moved with it, a start on the blank line
+ * above a heading lands in front of its `##`, the line stops being a heading,
+ * and a table that opens under the heading stops rendering. The exception is a
+ * start on a table's own line, past its last pipe, which the trim moves off it.
+ */
+const outsideStart = (
+	lines: readonly SourceLine[],
+	tables: readonly SourceTable[],
+	from: number,
+	trimmed: number,
+): number => (tableAt(tables, lineIndexAt(lines, from)) ? trimmed : from);
+
+/**
+ * Where the marker goes for a selection end that sits outside every table. Like
+ * the start, it stays where the selection put it: trimmed within its line, an
+ * end after a heading's `## ` lands before the space and breaks the heading. But
+ * an end whose whitespace runs onto later lines, as a triple-click's does, comes
+ * back to the text it ends on, off whatever those lines start with.
+ */
+const outsideEnd = (doc: string, trimmed: number, to: number): number =>
+	doc.slice(trimmed, to).includes("\n") ? trimmed : to;
 
 /** Whether `pos` falls between a backslash and the pipe it escapes. */
 const splitsEscapedPipe = (doc: string, pos: number): boolean => {
