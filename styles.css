@@ -341,9 +341,20 @@ body {
 	pointer-events: none;
 	transition: opacity 100ms ease;
 }
-.dc-entry:hover .dc-entry__bar {
-	opacity: 1;
-	pointer-events: auto;
+/* iOS treats a tap that reveals buttons through :hover as a hover and never sends the
+   mousedown and click, so a hover-revealed bar made a card's first tap do nothing
+   but show the bar (#85). Touch screens show it on the open card instead. */
+@media (hover: hover) {
+	.dc-entry:hover .dc-entry__bar {
+		opacity: 1;
+		pointer-events: auto;
+	}
+}
+@media (hover: none) {
+	.doc-comment-card.is-open .dc-entry__bar {
+		opacity: 1;
+		pointer-events: auto;
+	}
 }
 .dc-act {
 	display: flex;

@@ -48,6 +48,49 @@ describe("per-author highlight styles", () => {
 	});
 });
 
+/** The body of every `@media <query>` block, matched by brace depth. */
+const mediaBlocks = (query: string): string[] => {
+	const blocks: string[] = [];
+	let from = styles.indexOf(`@media ${query}`);
+	while (from !== -1) {
+		const open = styles.indexOf("{", from);
+		let depth = 0;
+		let close = open;
+		for (; close < styles.length; close++) {
+			if (styles[close] === "{") depth++;
+			else if (styles[close] === "}" && --depth === 0) break;
+		}
+		blocks.push(styles.slice(open + 1, close));
+		from = styles.indexOf(`@media ${query}`, close);
+	}
+	return blocks;
+};
+
+describe("entry action bar on touch screens", () => {
+	// iOS treats a tap that reveals buttons through :hover as a hover and never sends
+	// the mousedown and click, so a hover-revealed bar made a card's first tap do
+	// nothing but show the bar (#85).
+	const hoverReveal = /\.dc-entry:hover \.dc-entry__bar\s*\{[^}]*opacity: 1/;
+
+	test("reveals the bar on hover only where the pointer can hover", () => {
+		const outside = mediaBlocks("(hover: hover)").reduce((css, block) => css.replace(block, ""), styles);
+
+		expect(mediaBlocks("(hover: hover)").some((block) => hoverReveal.test(block))).toBe(true);
+		expect(outside).not.toMatch(hoverReveal);
+	});
+
+	test("shows the bar on an open card on touch screens, where there is no hover", () => {
+		const openCardBar = /\.doc-comment-card\.is-open \.dc-entry__bar\s*\{([^}]*)\}/;
+		const rule =
+			mediaBlocks("(hover: none)")
+				.map((block) => openCardBar.exec(block)?.[1])
+				.find((body) => body !== undefined) ?? "";
+
+		expect(rule).toContain("opacity: 1");
+		expect(rule).toContain("pointer-events: auto");
+	});
+});
+
 describe("comment text selection", () => {
 	// Obsidian sets `user-select: none` on body and turns it back on only for note
 	// content, so a card's text can't be selected unless the card opts in (#80).

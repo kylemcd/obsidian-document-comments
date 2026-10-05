@@ -10,6 +10,7 @@ matching the pushed tag as that GitHub release's notes, so add an entry here bef
 - Hovering a table comment's card highlights its text, and hovering the text raises its card — both of which previously did nothing inside a Live Preview table.
 - Added a repair for tables an older comment already broke. The comment's card, which sits beside the damage, says so and offers a one-click **Repair**; the **Repair table comments in this note** command fixes every one at once, which is the way out when several anchors broke the same table. Both land as a single undo step, and nothing is rewritten unless you ask.
 - Comment text can now be selected and copied from an open comment card — in the margin, the comments sidebar, and Reading view. Click a card to open it, then drag, double-click or triple-click to select ([#80](https://github.com/kylemcd/obsidian-document-comments/issues/80)).
+- On iPhone and iPad, tapping a comment in the comments sidebar now opens it and scrolls the note to its text on the first tap. iOS treated that tap as a hover, because the comment's React, Resolve and More buttons appeared on hover. On touch screens those buttons now show on the open card instead ([#85](https://github.com/kylemcd/obsidian-document-comments/issues/85)).
 
 ## 0.1.15
 
