@@ -6,7 +6,7 @@
 // bugs (e.g. a `provide` referencing a const declared later, a temporal-dead-zone
 // crash) that pure-state and format tests miss. It fails outright if any editor
 // extension throws while a note is opened.
-import { beforeAll, describe, expect, test } from "vitest";
+import { beforeAll, describe, expect, test, vi } from "vitest";
 import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { commentField } from "../src/editor/state";
@@ -469,17 +469,14 @@ describe("editor extensions open every note without crashing", () => {
 	// inverted both halves of the Show highlights toggle inside tables.
 	test("table highlights follow Show highlights, not the comment column", async () => {
 		const reachesPainting = async (showComments: boolean, showHighlights: boolean): Promise<boolean> => {
-			let painted = false;
+			// Read once per comment immediately past the gate, so a call means the
+			// plugin got through it and is building ranges.
+			const showResolved = vi.fn(() => true);
 			const cfg = commentConfig.of({
 				author: () => "me",
 				showComments: () => showComments,
 				showHighlights: () => showHighlights,
-				// Read once per comment immediately past the gate, so a call means the
-				// plugin got through it and is building ranges.
-				showResolved: () => {
-					painted = true;
-					return true;
-				},
+				showResolved,
 				allowEmptyComments: () => false,
 				sidebarOpen: () => false,
 			});
@@ -504,7 +501,7 @@ describe("editor extensions open every note without crashing", () => {
 			await Promise.resolve();
 			view.destroy();
 			parent.remove();
-			return painted;
+			return showResolved.mock.calls.length > 0;
 		};
 
 		await expect(reachesPainting(false, true)).resolves.toBe(true);

@@ -163,6 +163,8 @@ describe("highlight color settings", () => {
 		const before = structuredClone(fake.settings.authorColors);
 		const tab = new DocCommentsSettingTab(new App(), fake as never);
 
+		// A loop, not forEach: each keystroke's change has to finish before the next
+		// starts, as it does in the field.
 		for (const prefix of ["A", "Al", "Ali", "Alic", "Alice"]) {
 			await tab.setControlValue("author", prefix);
 		}

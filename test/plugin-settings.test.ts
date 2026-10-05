@@ -94,11 +94,11 @@ describe("plugin settings persistence", () => {
 		try {
 			// Type the name a character at a time, never pausing long enough for the
 			// debounce to fire — this is what the settings field does on every key.
-			for (const prefix of ["A", "Al", "Ali", "Alic", "Alice"]) {
+			["A", "Al", "Ali", "Alic", "Alice"].forEach((prefix) => {
 				plugin.settings.author = prefix;
 				plugin.scheduleCurrentAuthorColor();
 				vi.advanceTimersByTime(100);
-			}
+			});
 			vi.advanceTimersByTime(1000);
 
 			expect(Object.keys(plugin.settings.authorColors).sort()).toEqual(["Alice", "me"]);
