@@ -216,6 +216,19 @@ describe("empty comment card", () => {
 		card.el.remove();
 	});
 
+	// Pressing an empty comment's card edits it rather than opening it, so touch
+	// screens need this class to show the card's React / Resolve / More bar (#85).
+	test("marks the card while its entry is edited", () => {
+		const card = new Card(emptyComment(), callbacks(), { sourcePath: () => "note.md" });
+		card.el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+
+		expect(card.el.classList.contains("is-open")).toBe(false);
+		expect(card.el.classList.contains("is-editing")).toBe(true);
+		card.el.querySelector<HTMLButtonElement>("button[aria-label='Cancel']")?.click();
+		expect(card.el.classList.contains("is-editing")).toBe(false);
+		card.destroy();
+	});
+
 	test("hides the comment composer while the Empty placeholder is edited", () => {
 		const card = new Card(emptyComment(), callbacks(), { sourcePath: () => "note.md" });
 		card.el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));

@@ -13,6 +13,7 @@ matching the pushed tag as that GitHub release's notes, so add an entry here bef
 - Added a **Show highlights** setting and a **Toggle highlights** command. Highlights no longer follow the comment column, so you can hide the cards and keep the highlighted text, or the reverse. Highlights start on, so if you had comments hidden on desktop you will now see the highlighted text until you turn **Show highlights** off. On mobile, which has no cards, **Toggle comments** still hides the highlights.
 - Added **Add comment** to the editor right-click menu when text is selected. If you previously added that command to the menu with the Commander plugin, remove your mapping to avoid a duplicate entry.
 - Fixed the **Author** setting assigning a highlight color to every half-typed name. Typing `Alice` no longer leaves `A`, `Al`, `Ali`, and `Alic` behind in **Highlight colors**.
+- On iPhone and iPad, tapping a comment in the comments sidebar now opens it and scrolls the note to its text on the first tap. iOS treated that tap as a hover, because the comment's React, Resolve and More buttons appeared on hover. On touch screens those buttons now show on the card you open or edit instead ([#85](https://github.com/kylemcd/obsidian-document-comments/issues/85)).
 
 ## 0.1.15
 

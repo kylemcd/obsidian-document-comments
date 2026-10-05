@@ -221,6 +221,9 @@ export class Card {
 		this.el.empty();
 		this.el.toggleClass("is-resolved", c.status === "resolved");
 		this.el.toggleClass("is-open", this.open);
+		// Touch screens show the entry action bar on this, since pressing an empty
+		// comment's card edits it instead of opening it.
+		this.el.toggleClass("is-editing", this.editingIndex >= 0);
 
 		// The thread lives in a clip wrapper that gets a max-height when a tall card is
 		// collapsed; the footer (Show more / Open in sidebar) sits outside the clip.

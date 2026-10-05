@@ -48,6 +48,41 @@ describe("per-author highlight styles", () => {
 	});
 });
 
+/** The rules inside every `@media <query>` block. Only plain rules nest in one, so a
+ *  single level of braces covers every block in the stylesheet. */
+const mediaBlocks = (query: string): string[] => {
+	const escaped = query.replace(/[()]/g, "\\$&");
+	const block = new RegExp(`@media ${escaped}\\s*\\{((?:[^{}]*\\{[^{}]*\\})*[^{}]*)\\}`, "g");
+	return Array.from(styles.matchAll(block), (match) => match[1] ?? "");
+};
+
+describe("entry action bar on touch screens", () => {
+	// iOS treats a tap that reveals buttons through :hover as a hover and never sends
+	// the mousedown and click, so a hover-revealed bar made a card's first tap do
+	// nothing but show the bar (#85).
+	const hoverReveal = /\.dc-entry:hover \.dc-entry__bar\s*\{[^}]*opacity: 1/;
+
+	test("reveals the bar on hover only where the pointer can hover", () => {
+		const outside = mediaBlocks("(hover: hover)").reduce((css, block) => css.replace(block, ""), styles);
+
+		expect(mediaBlocks("(hover: hover)").some((block) => hoverReveal.test(block))).toBe(true);
+		expect(outside).not.toMatch(hoverReveal);
+	});
+
+	test("shows the bar on an open or edited card on touch screens, where there is no hover", () => {
+		// An empty comment's card is edited, not opened, when pressed.
+		const touchBar =
+			/\.doc-comment-card\.is-open \.dc-entry__bar,\s*\.doc-comment-card\.is-editing \.dc-entry__bar\s*\{([^}]*)\}/;
+		const rule =
+			mediaBlocks("(hover: none)")
+				.map((block) => touchBar.exec(block)?.[1])
+				.find((body) => body !== undefined) ?? "";
+
+		expect(rule).toContain("opacity: 1");
+		expect(rule).toContain("pointer-events: auto");
+	});
+});
+
 describe("comment text selection", () => {
 	// Obsidian sets `user-select: none` on body and turns it back on only for note
 	// content, so a card's text can't be selected unless the card opts in (#80).
