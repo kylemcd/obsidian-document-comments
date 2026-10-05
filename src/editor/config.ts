@@ -45,6 +45,12 @@ const DEFAULT: CommentConfig = {
 	sidebarOpen: () => false,
 };
 
+/** Whether the in-text highlights render. Mobile has no comment cards, so there
+ *  Toggle comments hides the highlights, as it did before they had their own
+ *  setting; on desktop the two settings are independent. */
+export const highlightsShown = (cfg: Pick<CommentConfig, "showComments" | "showHighlights" | "isMobile">): boolean =>
+	cfg.showHighlights() && (cfg.showComments() || !(cfg.isMobile?.() ?? false));
+
 export const commentConfig = Facet.define<CommentConfig, CommentConfig>({
 	combine: (values) => ({ ...DEFAULT, ...values[0] }),
 });

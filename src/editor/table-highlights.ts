@@ -10,7 +10,7 @@ import {
 	sourceTables,
 	tableColumnAt,
 } from "../format/table";
-import { commentConfig, type CommentConfig } from "./config";
+import { commentConfig, highlightsShown, type CommentConfig } from "./config";
 import { getComments } from "./state";
 import { authorColorCss, creatorForComment, type ResolvedAuthorColor } from "../author-colors";
 
@@ -212,7 +212,7 @@ class TableHighlights {
 		// Table highlights paint through the CSS Custom Highlight API, not
 		// `.doc-comment-span`, so the `dc-highlights` class can't reach them. Gate
 		// them here on the same setting the class follows, or they invert it.
-		if (!cfg.showHighlights()) {
+		if (!highlightsShown(cfg)) {
 			this.painted = new Map();
 			setViewRanges(this.view, new Map());
 			return;

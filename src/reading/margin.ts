@@ -14,6 +14,7 @@ import {
 	computeToggleReaction,
 } from "../editor/edits";
 import { applyCommentEdit, insertComment as routeInsertComment } from "../editor/routing";
+import { highlightsShown } from "../editor/config";
 import { closestSpanId, spanSelector } from "../util/css";
 import { stackTops } from "../ui/stack";
 import { CARD_GAP, FLASH_MS } from "../ui/constants";
@@ -189,7 +190,7 @@ class ReadingMargin {
 		this.readingView.toggleClass("dc-margin", hasCards || !!this.draft);
 		// Highlights have their own toggle, so they persist both while the sidebar
 		// panel hosts the cards (dc-has is off) and while the column is hidden.
-		this.readingView.toggleClass("dc-highlights", this.deps.showHighlights());
+		this.readingView.toggleClass("dc-highlights", highlightsShown(this.deps));
 		const topRef = this.readingView.getBoundingClientRect().top;
 		// Gather geometry (reads) first, then write every top in one pass — cards are
 		// absolutely positioned, so a top write can't change any height.
@@ -440,7 +441,7 @@ export class ReadingMarginManager {
 				// Mobile: no floating cards or reserved column. Just keep the in-text
 				// highlights' visibility in sync with the toggles (no `dc-has`, so the
 				// text keeps full width). Comments are read/created via the sidebar.
-				rv.toggleClass("dc-highlights", this.deps.showHighlights());
+				rv.toggleClass("dc-highlights", highlightsShown(this.deps));
 				rv.toggleClass("dc-hide-resolved", !this.deps.showResolved());
 				rv.removeClasses(["dc-has", "dc-margin"]);
 				const draftColor = authorColorCss(this.deps.highlightColorForAuthor(this.deps.getAuthor()));

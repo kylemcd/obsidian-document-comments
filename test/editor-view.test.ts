@@ -463,12 +463,45 @@ describe("editor extensions open every note without crashing", () => {
 		expect(highlightsHidden).not.toContain("dc-highlights");
 	});
 
+	// Mobile has no cards, so Toggle comments only ever showed there through the
+	// highlights. It keeps hiding them now that highlights have their own setting.
+	test("on mobile, hiding comments hides the highlights", () => {
+		const classesWith = (showComments: boolean): string => {
+			const parent = document.createElement("div");
+			document.body.appendChild(parent);
+			const cfg = commentConfig.of({
+				author: () => "me",
+				showComments: () => showComments,
+				showResolved: () => true,
+				showHighlights: () => true,
+				allowEmptyComments: () => false,
+				sidebarOpen: () => false,
+				isMobile: () => true,
+			});
+			const view = new EditorView({
+				state: EditorState.create({ doc: "Plain text.\n", extensions: [commentField, cfg, editorLayoutField] }),
+				parent,
+			});
+			const className = view.dom.className;
+			view.destroy();
+			parent.remove();
+			return className;
+		};
+
+		expect(classesWith(false)).not.toContain("dc-highlights");
+		expect(classesWith(true)).toContain("dc-highlights");
+	});
+
 	// Table-cell highlights paint through the CSS Custom Highlight API rather than
 	// `.doc-comment-span`, so the `dc-highlights` class never reaches them and they
 	// must read the setting directly. They rode showComments at first, which
 	// inverted both halves of the Show highlights toggle inside tables.
 	test("table highlights follow Show highlights, not the comment column", async () => {
-		const reachesPainting = async (showComments: boolean, showHighlights: boolean): Promise<boolean> => {
+		const reachesPainting = async (
+			showComments: boolean,
+			showHighlights: boolean,
+			mobile = false,
+		): Promise<boolean> => {
 			// Read once per comment immediately past the gate, so a call means the
 			// plugin got through it and is building ranges.
 			const showResolved = vi.fn(() => true);
@@ -479,6 +512,7 @@ describe("editor extensions open every note without crashing", () => {
 				showResolved,
 				allowEmptyComments: () => false,
 				sidebarOpen: () => false,
+				isMobile: () => mobile,
 			});
 			const doc = [
 				"| a | b |",
@@ -506,6 +540,8 @@ describe("editor extensions open every note without crashing", () => {
 
 		await expect(reachesPainting(false, true)).resolves.toBe(true);
 		await expect(reachesPainting(true, false)).resolves.toBe(false);
+		// Mobile has no cards, so hiding comments hides the highlights there.
+		await expect(reachesPainting(false, true, true)).resolves.toBe(false);
 	});
 
 	test("publishes a separate current-author color for drafts nested in another author's highlight", () => {

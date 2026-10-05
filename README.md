@@ -199,7 +199,7 @@ Use the trash-can button beside a person to remove their assignment. Deleted map
 
 Desktop views show cards in a margin beside the note. The cards align with their selected text and avoid overlaps.
 
-Mobile views show the highlights without a margin. Use the sidebar to read and manage comments.
+Mobile views show the highlights without a margin, so there **Toggle comments** hides the highlights. Use the sidebar to read and manage comments.
 
 Mobile uses a dialog for new comments. The stored comment format stays the same on all devices.
 
