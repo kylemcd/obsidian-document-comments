@@ -330,7 +330,8 @@ const reactionsAfterEntryDelete = (reactions: Reaction[], deletedEntry: number):
 };
 
 export const computeDeleteComment = (doc: string, id: string): Result<Change[], string> => {
-	if (!parseComments(doc).some((x) => x.id === id)) return Result.err("Comment not found.");
+	const comment = parseComments(doc).find((x) => x.id === id);
+	if (!comment) return Result.err("Comment not found.");
 	// Remove EVERY occurrence of this id's markers/body, not just the first the
 	// parser records. Copy-pasting a commented span duplicates the markers; deleting
 	// only the first pair used to leave invisible, UI-unremovable leftovers behind.
@@ -344,10 +345,13 @@ export const computeDeleteComment = (doc: string, id: string): Result<Change[], 
 		doc.charCodeAt(p - 1) === 10 ? (doc.charCodeAt(p - 2) === 13 ? 2 : 1) : 0;
 	const trailingTerm = (p: number): number =>
 		doc.charCodeAt(p) === 13 && doc.charCodeAt(p + 1) === 10 ? 2 : doc.charCodeAt(p) === 10 ? 1 : 0;
-	// A marker alone on its line (code-comment block wrap) takes its line terminator
-	// with it, so deleting the comment doesn't leave a blank line around the code block.
+	// A code comment's markers sit on lines of their own that it added around the
+	// block, so they take their line terminator with them, and deleting the comment
+	// leaves no blank line there. Any other comment's marker alone on its line was
+	// written onto a line that was blank already, which stays.
+	const ownLines = isCodeComment(comment);
 	const aloneOnLine = (from: number, to: number): boolean =>
-		(from === 0 || leadingTerm(from) > 0) && (to === doc.length || trailingTerm(to) > 0);
+		ownLines && (from === 0 || leadingTerm(from) > 0) && (to === doc.length || trailingTerm(to) > 0);
 	scanAll(doc, new RegExp(`<!--c:${id}-->`, "g"), (from, to) => {
 		const end = aloneOnLine(from, to) ? to + trailingTerm(to) : to;
 		ranges.push({ from, to: end, insert: "" });

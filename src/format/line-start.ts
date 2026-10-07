@@ -105,11 +105,11 @@ export const anchorOffBlockMarkup = (doc: string, from: number, to: number): Tex
 };
 
 /**
- * Keep an anchor's markers out of indented code, where they'd show as text, by
- * taking in the whole code lines it touches. With a blank line above the code and
- * somewhere clear to end below it, the markers go on the lines around the code,
- * which stays as it is. Otherwise a marker goes at the start of a code line, the
- * one place in the code it's hidden, and that line shows as text instead.
+ * Keep an anchor's markers out of indented code, where they'd show as text. No
+ * place inside the block hides a marker without splitting it in two, so the anchor
+ * takes in the whole block, blank lines and all, with its markers on the lines
+ * around it. Where there's no such line, a marker goes at the start of a code
+ * line, as it always did, and that line shows as text instead.
  */
 const outOfCode = (doc: string, from: number, to: number): TextRange => {
 	const code = indentedCodeLines(doc);
@@ -124,12 +124,47 @@ const outOfCode = (doc: string, from: number, to: number): TextRange => {
 	const opens = code(first.from);
 	const closes = to > last.from && code(last.from);
 	if (!opens && !closes) return { from, to };
-	const after = closes ? pastCodeLine(doc, last, code) : null;
-	const clear = !closes || (after !== null && !code(lineAround(doc, after).from));
-	const start = opens ? ((clear ? blankLineAbove(doc, first.from) : null) ?? first.from) : from;
-	// On the line the opener starts, the closer is hidden along with the rest of it.
-	if (!closes || (start === first.from && first.from === last.from)) return { from: start, to };
-	return { from: start, to: after ?? last.from };
+	const above = opens ? openerAbove(doc, blockEdge(doc, first, code, -1)) : null;
+	const below = closes ? pastCodeLine(doc, blockEdge(doc, last, code, 1), code) : null;
+	const clearBelow = below !== null && !code(lineAround(doc, below).from);
+	if ((!opens || above !== null) && (!closes || clearBelow)) {
+		return { from: above ?? from, to: closes ? (below ?? to) : to };
+	}
+	// A closer on the opener's code line is hidden with the rest of it, and one that
+	// can go back to the text before the code doesn't touch the code at all.
+	const start = opens ? first.from : from;
+	if (!closes || (opens && first.from === last.from)) return { from: start, to };
+	const back = opens ? null : endOfPlainTextBefore(doc, from, last.from);
+	return { from: start, to: back ?? pastCodeLine(doc, last, code) ?? last.from };
+};
+
+/** The first or last line of the indented code block holding `line`, past any
+ *  blank lines inside it. */
+const blockEdge = (doc: string, line: TextRange, code: (lineFrom: number) => boolean, step: 1 | -1): TextRange => {
+	// Each step reaches more code or stops, which no array method expresses.
+	for (let edge = line; ;) {
+		let next = neighborLine(doc, edge, step);
+		while (next && !doc.slice(next.from, next.to).trim()) next = neighborLine(doc, next, step);
+		if (!next || !code(next.from)) return edge;
+		edge = next;
+	}
+};
+
+const neighborLine = (doc: string, line: TextRange, step: 1 | -1): TextRange | null => {
+	if (step < 0) return line.from > 0 ? lineAround(doc, line.from - 1) : null;
+	const newline = doc.indexOf("\n", line.to);
+	return newline < 0 ? null : lineAround(doc, newline + 1);
+};
+
+/** Where an opener can go above the code block starting at `top`: on a blank line,
+ *  where it's an invisible HTML block of its own, or after the comments on a line
+ *  of nothing else, where it joins them. Null when the line above is neither. */
+const openerAbove = (doc: string, top: TextRange): number | null => {
+	if (top.from === 0) return null;
+	const above = lineAround(doc, top.from - 1);
+	const text = doc.slice(above.from, above.to);
+	if (!text.trim()) return above.from;
+	return /^ {0,3}<!--/.test(text) && !showsText(text) ? above.to : null;
 };
 
 const textStart = (doc: string, from: number): number => {
@@ -350,14 +385,25 @@ export const indentedCodeLines = (doc: string): ((lineFrom: number) => boolean) 
 	// between them. A block starting further out ends the items it's outside of.
 	const marginOf = (index: number, indent: number): number => {
 		let reach = indent;
+		let endsFootnote = false;
 		// A walk back with a bound that tightens as it goes, which no array method does.
 		for (let above = index - 1; above >= 0; above--) {
 			const text = at(above);
 			const columns = indentColumns(text);
-			if (blank(above) || columns >= reach) continue;
+			if (blank(above)) continue;
+			endsFootnote ||= !text.trim() || QUOTE.test(text);
+			if (columns >= reach) continue;
 			// Code that looks like a list item isn't one, and shares its holder.
 			const shape = shapeOf(above);
 			if (shape.code) return shape.margin;
+			// A footnote's text goes on four columns in, like an item's. Checked in the
+			// app, a footnote only opens after a blank line, and a comment or quote ends it.
+			if (FOOTNOTE.test(text.trimStart()) && startsBlock(above)) {
+				if (endsFootnote) return 0;
+				if (columns + 4 <= reach) return columns + 4;
+				reach = columns;
+				continue;
+			}
 			// Four columns past its own holder's text, a bullet carries on a paragraph
 			// rather than opening an item.
 			const content = columns < shape.margin + 4 ? itemContent(text) : null;

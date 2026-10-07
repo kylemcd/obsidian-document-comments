@@ -157,6 +157,11 @@ describe("indentedCodeLines", () => {
 		["after a quote", "> Quote\n    code", "    code"],
 		["after a bullet that carries on a paragraph", "Para\n    - x\n\n      deeper", "      deeper"],
 		["after a heading that ends a list", "- Item\n## Heading\n    code", "    code"],
+		["four columns past a footnote's text", "[^1]: First\n\n        code", "        code"],
+		// Checked against Obsidian's own rendering.
+		["after a comment that ends a footnote", "Text[^1]\n\n[^1]: Note\n<!-- c -->\n    code", "    code"],
+		["after a quote that ends a footnote", "Text[^1]\n\n[^1]: Note\n> quote\n\n    code", "    code"],
+		["after a footnote label that carries on a paragraph", "Text[^1]\nPara\n[^1]: Note\n\n    code", "    code"],
 	])("finds a line of code %s", (_label, doc, line) => {
 		expect(isCode(doc, line)).toBe(true);
 	});
@@ -171,6 +176,8 @@ describe("indentedCodeLines", () => {
 		["a nested item after a comment in its list", "- Item\n<!-- note -->\n    - nested", "    - nested"],
 		["a list item's paragraph after its thread", "- Item\n<!--co:aa11 by:me\nme: hi\n-->\n\n    para", "    para"],
 		["a quote's text in a list item", "- Item\n> quote\n    more", "    more"],
+		["a footnote's second paragraph", "Text[^1]\n\n[^1]: First\n\n    Second", "    Second"],
+		["a footnote's paragraph after a lazy line", "Text[^1]\n\n[^1]: Note\nlazy\n\n    more", "    more"],
 		["a line in a fence", "```\n    code\n```", "    code"],
 		["a line three spaces in", "Intro\n\n   text", "   text"],
 	])("reads %s as text", (_label, doc, line) => {

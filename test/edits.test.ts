@@ -689,14 +689,44 @@ describe("comments that start a line", () => {
 		expect(out).not.toContain(G);
 	});
 
-	// No place in the middle of a code block hides a marker without breaking the
-	// block, so the line goes on showing as text, as it always did.
-	it("keeps the markers of a comment on a middle line of indented code at its start and end", () => {
-		const doc = "Intro\n\n    one\n    two\n    three\n\nAfter\n";
-		const line = doc.indexOf("    two");
-		const out = addAt(doc, line, line + "    two".length);
+	// No place inside a code block hides a marker without splitting the block, so
+	// the comment takes in the whole block, blank lines and all.
+	it.each([
+		["a middle line", "Intro\n\n    one\n    two\n    three\n\nAfter\n", "    two"],
+		["a line before a blank line in the block", "Intro\n\n    one\n\n    two\n\nAfter\n", "    one"],
+		["a line after a blank line in the block", "Intro\n\n    one\n\n    two\n\nAfter\n", "    two"],
+	])("takes in the whole block around a comment on %s of indented code", (_label, doc, text) => {
+		const line = doc.indexOf(text);
+		const out = addAt(doc, line, line + text.length);
+		const block = doc.slice(doc.indexOf("    one"), doc.indexOf("\n\nAfter"));
 
-		expect(out).toContain("\n    one\n<!--c:a1-->    two<!--/c:a1-->\n    three\n");
+		expect(out).toContain(`Intro\n<!--c:a1-->\n${block}\n<!--/c:a1-->\nAfter`);
+	});
+
+	it.each([
+		["a line of indented code", "Intro paragraph.\n\n    npm run build\n\nAfter.\n", "    npm run build"],
+		["a blank line above a fence", "Intro\n\n```\ncode\n```\nAfter\n", "\n```\ncode"],
+	])("deletes a comment starting on %s back to the original document", (_label, doc, text) => {
+		const out = addAt(doc, doc.indexOf(text), doc.indexOf("After") + "After".length);
+
+		expect(applyChanges(out, computeDeleteComment(out, "a1").unwrap())).toBe(doc);
+	});
+
+	it("finds the empty comment it made on a line of indented code when the line is selected again", () => {
+		const doc = "Intro paragraph.\n\n    npm run build\n\nAfter.\n";
+		const line = doc.indexOf("    npm");
+		const out = addAt(doc, line, line + "    npm run build".length, "");
+		const again = out.indexOf("    npm");
+
+		expect(findHighlightAtSelection(out, again, again + "    npm run build".length)?.id).toBe("a1");
+	});
+
+	it("keeps a comment on a footnote's indented second paragraph inline", () => {
+		const doc = "Text[^1]\n\n[^1]: First para\n\n    Second para of the note\n";
+		const line = doc.indexOf("    Second");
+		const out = addAt(doc, line, line + "    Second para of the note".length);
+
+		expect(out).toContain(`\n\n    ${G}<!--c:a1-->Second para of the note<!--/c:a1-->`);
 	});
 
 	it("errs on a selection of an indented code line's indentation alone", () => {
