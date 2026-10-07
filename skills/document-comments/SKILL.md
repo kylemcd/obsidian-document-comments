@@ -74,7 +74,11 @@ IDs must be unique within a file.
    a single block. Shorter and unique is better (it re-anchors more reliably).
 2. **Generate a fresh ID** (see the ID rule) and confirm it's unused in the file.
 3. **Wrap the text** with `<!--c:ID-->` before and `<!--/c:ID-->` after — with no
-   space introduced between the markers and the text.
+   space introduced between the markers and the text. If the text starts a line
+   (a paragraph's first word, or the text of a list item, quote, or callout), put
+   `<!--c:ID-->` after the line's markup (`- `, `1. `, `- [ ] `, `> `), never in
+   front of it, and write a zero-width space (U+200B) immediately before it. A
+   heading's text needs no zero-width space; just keep the marker after the `#`s.
 4. **Append the body block** on the line immediately after the block that
    contains the anchor:
 
@@ -131,7 +135,8 @@ These all edit the **body block**; the anchor markers stay put.
 - **Edit a reply**: change the text after the `:` on that thread line only.
 - **Delete a comment**: remove all three pieces — the `<!--c:ID-->` marker, the
   `<!--/c:ID-->` marker, and the entire `<!--co:ID …-->` body block — leaving the
-  anchored text itself in place.
+  anchored text itself in place. Remove a zero-width space directly in front of
+  either marker too, unless another comment's marker follows it.
 
 ## Reading comments
 
@@ -153,6 +158,12 @@ A body with matching markers but no thread lines is an **empty comment**.
 - **Multi-line thread text.** Each thread entry is one physical line. A raw
   newline inside a reply starts what looks like a new entry. Keep replies to a
   single line, or see `references/format-reference.md` for the escaping scheme.
+- **A marker starting a line's text.** Markdown reads a line whose text starts
+  with `<!--` as raw HTML, so Reading view shows that whole line unformatted:
+  `==highlights==`, `**bold**`, and links appear as plain text. Put a zero-width
+  space (U+200B) right before the marker. In front of a list bullet, `>`, or
+  heading `#`s, a marker also stops the line being a list item, quote, or heading;
+  put it after that markup instead.
 - **Commenting inside a fenced code block.** Markers placed inside a ```` ``` ````
   fence render as literal text and are ignored by the parser. Commenting on code
   needs a different (whole-block) anchoring approach — see the reference.

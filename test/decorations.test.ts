@@ -322,4 +322,44 @@ describe("commentField decorations", () => {
 		const overlaps = ranges.some(([f1, t1], i) => ranges.some(([f2, t2], j) => i < j && f1 < t2 && f2 < t1));
 		expect(overlaps).toBe(false);
 	});
+
+	// The zero-width guard in front of a marker that starts its line (#94) is
+	// invisible, so the caret and deletion must treat guard and marker as one.
+	describe("a guarded marker", () => {
+		const doc = "\u200b<!--c:x-->text<!--/c:x--> after";
+		const open = parseComments(doc)[0]!.open!;
+
+		test("hides the guard with its marker as one atomic range", () => {
+			const state = EditorState.create({ doc, extensions: [commentField] });
+			const ranges: Array<[number, number]> = [];
+			const cursor = state.field(commentField).atomic.iter();
+			while (cursor.value) {
+				ranges.push([cursor.from, cursor.to]);
+				cursor.next();
+			}
+
+			expect(ranges).toContainEqual([0, open.to]);
+		});
+
+		test("keeps the guard when a user deletion reaches it", () => {
+			const state = EditorState.create({ doc, extensions: [commentField] });
+			const tr = state.update({ changes: { from: 0, to: 1 }, userEvent: "delete.forward" });
+
+			expect(tr.newDoc.toString()).toBe(doc);
+		});
+
+		test("snaps a caret between the guard and its marker back out", () => {
+			const state = EditorState.create({ doc, selection: { anchor: open.to }, extensions: [commentField] });
+			const tr = state.update({ selection: { anchor: 1 }, userEvent: "select" });
+
+			expect(tr.newSelection.main.head).toBe(0);
+		});
+
+		test("lets a comment delete remove the guard", () => {
+			const state = EditorState.create({ doc, extensions: [commentField] });
+			const tr = state.update({ changes: { from: 0, to: open.to } });
+
+			expect(tr.newDoc.toString()).toBe("text<!--/c:x--> after");
+		});
+	});
 });

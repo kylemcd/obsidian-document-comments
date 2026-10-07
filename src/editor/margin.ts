@@ -7,7 +7,7 @@ import { anchorRange, hasMarginAnchor } from "../format/parse";
 import { isCodeComment, resolveCodeAnchor } from "../format/code-anchor";
 import { commentField } from "./state";
 import { setActiveTableComment, tableCellsForRanges, tableCommentAtPoint } from "./table-highlights";
-import { brokenTableAnchors } from "./table-repair";
+import { AnchorDamage, anchorDamage } from "./anchor-repair";
 import { commentConfig } from "./config";
 import { Draft, clearDraft, draftField } from "./draft";
 import { Card, CardCallbacks, CardView } from "../ui/card";
@@ -18,7 +18,7 @@ import {
 	deleteComment,
 	deleteEntry,
 	editEntry,
-	repairTableAnchors,
+	repairAnchors,
 	setResolved,
 	toggleReaction,
 } from "./commands";
@@ -55,9 +55,9 @@ class MarginView implements PluginValue {
 	private animFrames = 0;
 	private animatingLoop = false;
 	private destroyed = false;
-	/** Broken table anchors and the document they were found in. Only an edit can
-	 *  change them, while reconcile runs on every cursor move and scroll too. */
-	private brokenAnchors: { doc: Text; ids: Set<string> } | null = null;
+	/** Broken anchors and the document they were found in. Only an edit can change
+	 *  them, while reconcile runs on every cursor move and scroll too. */
+	private brokenAnchors: { doc: Text; damage: Map<string, AnchorDamage> } | null = null;
 
 	constructor(private view: EditorView) {
 		this.container = view.dom.createDiv("doc-comment-margin");
@@ -95,7 +95,7 @@ class MarginView implements PluginValue {
 			toggleReaction: ({ id, entry, emoji }) =>
 				notifyErr(toggleReaction({ view, id, entry, emoji, author: this.cb.getAuthor() })),
 			openInSidebar: (id) => view.state.facet(commentConfig).openInSidebar?.(id),
-			repairTableAnchor: (id) => notifyErr(repairTableAnchors(view, new Set([id]))),
+			repairAnchor: (id) => notifyErr(repairAnchors(view, new Set([id]))),
 		};
 
 		view.scrollDOM.addEventListener("scroll", this.scrollHandler, { passive: true });
@@ -183,28 +183,28 @@ class MarginView implements PluginValue {
 		}
 
 		const cardView = this.cardView();
-		const broken = comments.length > 0 ? this.brokenTableAnchorIds() : new Set<string>();
+		const damage = comments.length > 0 ? this.anchorDamage() : new Map<string, AnchorDamage>();
 		for (const c of comments) {
 			const existing = this.cards.get(c.id);
 			if (!existing) {
 				const card = new Card(c, this.cb, cardView);
 				this.cards.set(c.id, card);
 				this.container.appendChild(card.el);
-				card.setTableAnchorBroken(broken.has(c.id));
+				card.setAnchorDamage(damage.get(c.id) ?? null);
 			} else {
 				if (existing.signature !== cardSignature(c)) existing.update(c);
 				existing.refreshAuthorColors();
-				existing.setTableAnchorBroken(broken.has(c.id));
+				existing.setAnchorDamage(damage.get(c.id) ?? null);
 			}
 		}
 	}
 
-	private brokenTableAnchorIds(): Set<string> {
+	private anchorDamage(): Map<string, AnchorDamage> {
 		const doc = this.view.state.doc;
-		if (this.brokenAnchors?.doc === doc) return this.brokenAnchors.ids;
+		if (this.brokenAnchors?.doc === doc) return this.brokenAnchors.damage;
 		const comments = this.view.state.field(commentField, false)?.comments ?? [];
-		this.brokenAnchors = { doc, ids: brokenTableAnchors(doc.toString(), comments) };
-		return this.brokenAnchors.ids;
+		this.brokenAnchors = { doc, damage: anchorDamage(doc.toString(), comments) };
+		return this.brokenAnchors.damage;
 	}
 
 	private cardView(): CardView {

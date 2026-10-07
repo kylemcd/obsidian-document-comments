@@ -193,11 +193,15 @@ describe("anchoring inside a table", () => {
 		expect(renderedRows(out)).toBe(renderedRows(doc));
 	});
 
+	// Pulled back to the text it ends on, the marker would land after the table's
+	// closing pipe. Starting the item's text instead, it takes a guard so the item
+	// keeps its formatting in Reading view (#94).
 	test("keeps a list item below a table when a selection ends after its bullet", () => {
 		const doc = [normal, "", "- item"].join("\n");
 		const out = addComment(doc, doc.indexOf("write"), doc.indexOf("- item") + "- ".length);
 
-		expect(out).toContain("\n- <!--/c:aa11-->item");
+		expect(out).toContain("\n- \u200b<!--/c:aa11-->item");
+		expect(renderedRows(out ?? "")).toBe(renderedRows(doc));
 	});
 
 	test.each([

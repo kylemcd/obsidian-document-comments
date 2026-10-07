@@ -8,6 +8,7 @@ import {
 	computeDeleteEntry,
 	computeEditEntry,
 	computeSetResolved,
+	findHighlightAtSelection,
 } from "../src/editor/edits";
 import { anchorRange, parseComments } from "../src/format/parse";
 import { closeMarker, openMarker } from "../src/format/serialize";
@@ -466,3 +467,102 @@ describe("blockEnd", () => {
 const stripComments = (s: string): string => {
 	return s.replace(/<!--\/?co?:[A-Za-z0-9]+[\s\S]*?-->/g, "");
 };
+
+// A comment starting a line's text used to put `<!--` first on the line, which
+// Reading view takes for a raw HTML block and shows without formatting (#94).
+describe("comments that start a line", () => {
+	const G = "\u200b";
+	const addAt = (doc: string, from: number, to: number, text = "note"): string => {
+		const changes = computeAddComment(doc, from, to, { id: "a1", createdAt: "t", author: "me", text }).unwrap();
+		return applyChanges(doc, changes);
+	};
+	const anchored = (doc: string): string => {
+		const range = anchorRange(parseComments(doc).find((comment) => comment.id === "a1")!)!;
+		return doc.slice(range.from, range.to);
+	};
+
+	it("guards a comment on a paragraph's first word", () => {
+		const doc = "Hello ==World== and **bold**\n";
+		const out = addAt(doc, 0, 2);
+
+		expect(out.startsWith(`${G}<!--c:a1-->He<!--/c:a1-->llo ==World==`)).toBe(true);
+		expect(anchored(out)).toBe("He");
+		expect(parseComments(out)[0]?.quote).toBe("He");
+	});
+
+	it.each([
+		["a list item", "- One item ==hl==", "- ", G],
+		["a numbered item", "1. One item ==hl==", "1. ", G],
+		["a task", "- [ ] One item ==hl==", "- [ ] ", G],
+		["a quote", "> One item ==hl==", "> ", G],
+		["a callout title", "> [!note] One item ==hl==", "> [!note] ", G],
+		["a heading", "## One item ==hl==", "## ", ""],
+	])("anchors a triple-clicked %s after its markup", (_label, doc, markup, guard) => {
+		const out = addAt(doc, 0, doc.length);
+
+		expect(out.startsWith(`${markup}${guard}<!--c:a1-->One item ==hl==<!--/c:a1-->`)).toBe(true);
+		expect(anchored(out)).toBe("One item ==hl==");
+	});
+
+	it("guards a comment starting a paragraph's second line", () => {
+		const doc = "First line\nSecond line ==hl==\n";
+		const out = addAt(doc, doc.indexOf("Second"), doc.indexOf(" line =="));
+
+		expect(out).toContain(`First line\n${G}<!--c:a1-->Second<!--/c:a1--> line ==hl==`);
+	});
+
+	it("leaves a comment in the middle of a line unguarded", () => {
+		const doc = "Hello ==World==\n";
+		const out = addAt(doc, 6, 15);
+
+		expect(out).not.toContain(G);
+	});
+
+	it("brings an end at the start of the next line back to the text it ends on", () => {
+		const doc = "- One\n- Two\n";
+		const out = addAt(doc, 0, doc.indexOf("- Two"));
+
+		expect(out.startsWith(`- ${G}<!--c:a1-->One<!--/c:a1-->\n`)).toBe(true);
+		expect(out).toContain("\n- Two\n");
+	});
+
+	it("shares a guard already starting the line", () => {
+		const doc = `- ${G}<!--c:zz99-->Item<!--/c:zz99-->\n<!--co:zz99 by:me status:open quote:"Item"\nme: hi\n-->\n`;
+		const out = addAt(doc, 0, doc.indexOf("\n"));
+
+		const line = out.slice(0, out.indexOf("\n"));
+		expect(line).toBe(`- ${G}<!--c:a1--><!--c:zz99-->Item<!--/c:zz99--><!--/c:a1-->`);
+	});
+
+	it("errs on a selection of nothing but block markup", () => {
+		const doc = "- Item\n";
+		const result = computeAddComment(doc, 0, 2, { id: "a1", createdAt: "t", author: "me", text: "x" });
+
+		expect(result.isErr() && result.error).toBe("Select some text to comment on.");
+	});
+
+	it("finds the highlight it made when the same line is selected again", () => {
+		const doc = "Hello world\n";
+		const out = addAt(doc, 0, 5, "");
+		const range = anchorRange(parseComments(out)[0]!)!;
+
+		expect(findHighlightAtSelection(out, range.from, range.to)?.id).toBe("a1");
+	});
+
+	it.each([
+		["a paragraph's first word", "Hello world\n\nNext.\n", 0, 5],
+		["a triple-clicked list item", "- One\n- Two\n", 0, 5],
+		["a quote", "> Quote\n", 0, 7],
+	])("deletes a comment on %s back to the original document", (_label, doc, from, to) => {
+		const out = addAt(doc, from, to);
+
+		expect(applyChanges(out, computeDeleteComment(out, "a1").unwrap())).toBe(doc);
+	});
+
+	it("keeps a shared guard while another comment's marker still starts the line", () => {
+		const doc = `${G}<!--c:a1--><!--c:b2-->Hello<!--/c:b2--><!--/c:a1-->\n`;
+		const out = applyChanges(doc, computeDeleteComment(doc, "a1").unwrap());
+
+		expect(out).toBe(`${G}<!--c:b2-->Hello<!--/c:b2-->\n`);
+	});
+});

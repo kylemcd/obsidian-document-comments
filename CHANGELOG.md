@@ -5,6 +5,10 @@ matching the pushed tag as that GitHub release's notes, so add an entry here bef
 
 ## Unreleased
 
+- Fixed Reading view showing a whole line's formatting as plain text (`==highlights==`, bold, links and the rest) when a comment starts at the beginning of a paragraph, list item, quote, callout, or footnote. Markdown reads a line that starts with an HTML comment as raw HTML, so the plugin now writes an invisible zero-width space in front of the comment's marker there ([#94](https://github.com/kylemcd/obsidian-document-comments/issues/94)).
+- Commenting on a whole list item, quote, or heading, as a triple-click selects it, no longer stops the line being a list item, quote, or heading in both views. The comment now starts after the bullet, `>`, or `#`s instead of in front of them. A selection that ends at the start of the next line, or just after its bullet, now ends on the text it covers.
+- Comments written before these fixes say so on their card and offer a one-click **Repair**, which now also appears on Reading view cards, where the damage shows. The **Repair table comments in this note** command is now **Repair comments in this note**: it repairs both tables and lines, works from Reading view, and keeps any hotkey you gave it.
+
 ## 0.1.16
 
 - Comment cards on a table now sit beside the row they belong to in Live Preview instead of stacking at the top of the table, and the new-comment composer opens beside its row too ([#79](https://github.com/kylemcd/obsidian-document-comments/issues/79)).

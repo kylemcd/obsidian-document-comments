@@ -40,6 +40,8 @@ sam (2026-06-17T10:05:00.000Z): Thursday is better for QA.
 
 The `<!--c:ID-->` and `<!--/c:ID-->` markers identify the selected text. The matching `<!--co:ID ...-->` block stores the comment thread.
 
+When the selected text starts a paragraph, list item, or quote, the plugin writes a zero-width space (U+200B) in front of `<!--c:ID-->`. Markdown reads a line whose text starts with `<!--` as raw HTML, so without it Reading view would show that line's formatting as plain text. The space renders as nothing, and the plugin removes it with the comment.
+
 Reactions to the first comment use a line such as `+👍 kyle`. Reactions to replies include the reply's zero-based thread index, such as `+@1 👀 sam` for the first reply.
 
 Markdown renderers hide these HTML comments. Tools that read the source file can find each comment and its selected text.
@@ -176,6 +178,8 @@ Use the **Open comments sidebar** command or ribbon icon to show all comments in
 Use **Toggle comments** to show or hide the comment cards. Use **Toggle resolved comments** to show or hide resolved comments.
 
 Highlights have their own switch. Use **Toggle highlights**, or **Show highlights** in **Settings → Document Comments**, to hide the highlighted text and keep the cards. Turn off **Toggle comments** to hide the cards and keep the highlights. Read and manage the hidden cards in the sidebar.
+
+A comment whose markers break the note around it, such as a table or the formatting of the line it starts, says so on its card and offers **Repair**. Use **Repair comments in this note** to repair every one at once, from any view.
 
 ### Set the author
 

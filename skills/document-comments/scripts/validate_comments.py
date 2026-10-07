@@ -9,7 +9,8 @@ Usage:
     python3 validate_comments.py FILE.md [FILE.md ...]
 
 Exit status is non-zero if any definite problem is found (invalid ID, a
-marker with no body, or a duplicated ID), so it can gate an agent's work.
+marker with no body, a duplicated ID, or a marker starting a line's text
+without a zero-width space in front of it), so it can gate an agent's work.
 No third-party dependencies — Python 3 standard library only.
 """
 
@@ -22,6 +23,17 @@ VALID_ID = re.compile(r"^[A-Za-z0-9]+$")
 OPEN_LOOSE = re.compile(r"<!--c:([^\s>]*)-->")
 CLOSE_LOOSE = re.compile(r"<!--/c:([^\s>]*)-->")
 BODY_LOOSE = re.compile(r"<!--co:([^\s]*)([^\n]*)\n?([\s\S]*?)-->")
+# A run of anchor markers starting a line's text: after indentation, quote markers,
+# a list bullet or number and its task box, a callout's [!type], or a footnote
+# label, with more text after it on the line. Markdown reads such a line as raw
+# HTML, so Reading view shows it unformatted unless a zero-width space comes first.
+# A heading's text is inline, and a marker alone on its line is invisible anyway.
+LINE_START = re.compile(
+    r"^(?:[ \t]*(?:>[ \t]?|(?:[-+*]|\d{1,9}[.)])(?:[ \t]+(?:\[[^\]\n]\](?:[ \t]+|$))?|$)))*"
+    r"(?:\[![^\]\n]*\][-+]?[ \t]*|\[\^[^\]\n]+\]:[ \t]*)?[ \t]*"
+    r"((?:<!--/?c:[A-Za-z0-9]+-->)+)(?=[^\n]*\S)",
+    re.M,
+)
 
 
 def masked_spans(doc):
@@ -88,6 +100,10 @@ def analyze(doc):
         if i not in ids:
             ids.append(i)
 
+    line_starts = [
+        m.group(1)[:40] for m in LINE_START.finditer(doc) if not is_masked(spans, m.start(1))
+    ]
+
     comments = []
     for cid in ids:
         has_open, has_close = cid in opens, cid in closes
@@ -108,7 +124,7 @@ def analyze(doc):
                 "quote": quote_of(header),
             }
         )
-    return comments, problems
+    return comments, problems, line_starts
 
 
 def main(argv):
@@ -125,7 +141,7 @@ def main(argv):
             any_problem = True
             continue
 
-        comments, problems = analyze(doc)
+        comments, problems, line_starts = analyze(doc)
         print(f"\n{path} — {len(comments)} comment(s)")
         for c in comments:
             note = ""
@@ -141,6 +157,14 @@ def main(argv):
             print(
                 f"  INVALID ID   in {kind} marker: {snippet!r} — "
                 f'id "{raw}" has characters outside [A-Za-z0-9]; the parser ignores this marker'
+            )
+
+        for snippet in line_starts:
+            any_problem = True
+            print(
+                f"  LINE START   {snippet!r} starts its line's text, so Reading view shows the line "
+                "unformatted — move it after any bullet, `>`, or heading `#`s and put a zero-width "
+                "space (U+200B) right before it"
             )
 
         marker_only = [c for c in comments if c["state"] == "MARKERS-ONLY"]

@@ -282,6 +282,23 @@ describe("editor extensions open every note without crashing", () => {
 		view.destroy();
 	});
 
+	test("one arrow press crosses a guarded marker at the start of a line", () => {
+		const doc = "\u200b<!--c:x-->text<!--/c:x-->";
+		const markerTo = doc.indexOf("text");
+		const parent = document.createElement("div");
+		document.body.appendChild(parent);
+		const view = new EditorView({
+			state: EditorState.create({ doc, selection: { anchor: 0 }, extensions: [commentField] }),
+			parent,
+		});
+
+		pressArrow(view, "ArrowRight");
+		expect(view.state.selection.main.head).toBe(markerTo);
+		pressArrow(view, "ArrowLeft");
+		expect(view.state.selection.main.head).toBe(0);
+		view.destroy();
+	});
+
 	test("a selected no-space marker never exposes its raw syntax", () => {
 		const doc = "before<!--c:x-->text<!--/c:x-->after";
 		const markerFrom = doc.indexOf("<!--c:x-->");

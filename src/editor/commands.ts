@@ -16,7 +16,7 @@ import {
 	computeToggleReaction,
 	findHighlightAtSelection,
 } from "./edits";
-import { computeRepairTableAnchors } from "./table-repair";
+import { computeRepairAnchors } from "./anchor-repair";
 
 /** Create a comment/highlight, or update an exact matching highlight. Ok carries
  *  the affected id, or an empty string when a disabled blank submit writes nothing. */
@@ -47,10 +47,10 @@ export const addComment = (
 	});
 };
 
-/** Move broken table anchors back inside their cells. `only` limits it to one
+/** Put anchors that are breaking a table or a line right. `only` limits it to one
  *  comment (the card's Repair action); without it, the whole note. */
-export const repairTableAnchors = (view: EditorView, only?: ReadonlySet<string>): Result<void, string> => {
-	return computeRepairTableAnchors(view.state.doc.toString(), only).map((changes) => {
+export const repairAnchors = (view: EditorView, only?: ReadonlySet<string>): Result<void, string> => {
+	return computeRepairAnchors(view.state.doc.toString(), only).map((changes) => {
 		if (changes.length > 0) view.dispatch({ changes });
 	});
 };

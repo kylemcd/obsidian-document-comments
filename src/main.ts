@@ -18,7 +18,7 @@ import { marginPlugin } from "./editor/margin";
 import { commentConfig } from "./editor/config";
 import { editorLayoutField } from "./editor/layout";
 import { draftField, setDraft } from "./editor/draft";
-import { addComment, insertCommentInFile, repairTableAnchors } from "./editor/commands";
+import { addComment, insertCommentInFile } from "./editor/commands";
 import { findHighlightAtSelection } from "./editor/edits";
 import { findSectionRange, highlightPostProcessor, mapReadingSelection } from "./reading/highlight";
 import { ReadingDeps, ReadingMarginManager } from "./reading/margin";
@@ -26,7 +26,8 @@ import { COMMENTS_VIEW_TYPE, CommentsSidebarView, SidebarDeps } from "./ui/sideb
 import { CommentModal } from "./ui/comment-modal";
 import { DEFAULT_SETTINGS, DocCommentsSettings, DocCommentsSettingTab } from "./settings";
 import { tableHighlightPlugin } from "./editor/table-highlights";
-import { brokenTableAnchors } from "./editor/table-repair";
+import { anchorDamage, computeRepairAnchors } from "./editor/anchor-repair";
+import { applyCommentEdit, editorViewForFile } from "./editor/routing";
 import {
 	authorColorCss,
 	canonicalAuthorKey,
@@ -213,9 +214,15 @@ export default class DocCommentsPlugin extends Plugin {
 		);
 
 		this.addCommand({
+			// The id predates line repairs. It stays so existing hotkeys keep working.
 			id: "repair-table-comments",
-			name: "Repair table comments in this note",
-			editorCallback: (editor) => this.repairTableComments(editor),
+			name: "Repair comments in this note",
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveViewOfType(MarkdownView)?.file;
+				if (!file) return false;
+				if (!checking) void this.repairComments(file);
+				return true;
+			},
 		});
 
 		this.addCommand({
@@ -265,26 +272,30 @@ export default class DocCommentsPlugin extends Plugin {
 		this.addSettingTab(this.settingsTab);
 	}
 
-	/** Move every anchor that is breaking a table in this note back inside its
-	 *  cell. The card offers the same repair one comment at a time; this is the
-	 *  way out when several anchors broke the same table. */
-	private repairTableComments(editor: Editor): void {
-		const view = editorView(editor);
-		if (!view) {
-			new Notice("Couldn't access the editor.");
+	/** Put right every comment in this note whose markers are breaking a table or a
+	 *  line. The card offers the same repair one comment at a time; this is the way
+	 *  out when several broke the same table, and the only one on mobile. Works from
+	 *  Reading view too, which is where a broken line shows. */
+	private async repairComments(file: TFile): Promise<void> {
+		const cm = editorViewForFile(this.app, file);
+		let doc: string;
+		try {
+			doc = cm ? cm.state.doc.toString() : await this.app.vault.read(file);
+		} catch (error) {
+			new Notice(`Couldn't read the note: ${error instanceof Error ? error.message : "unknown error"}`);
 			return;
 		}
-		const broken = brokenTableAnchors(view.state.doc.toString());
-		if (broken.size === 0) {
-			new Notice("No table comments need repairing.");
+		const broken = anchorDamage(doc).size;
+		if (broken === 0) {
+			new Notice("No comments need repairing.");
 			return;
 		}
-		const result = repairTableAnchors(view);
+		const result = await applyCommentEdit(this.app, file, (fresh) => computeRepairAnchors(fresh));
 		if (result.isErr()) {
-			new Notice(`Couldn't repair the table comments: ${result.error}`);
+			new Notice(`Couldn't repair the comments: ${result.error}`);
 			return;
 		}
-		new Notice(`Repaired ${broken.size} table ${broken.size === 1 ? "comment" : "comments"}.`);
+		new Notice(`Repaired ${broken} ${broken === 1 ? "comment" : "comments"}.`);
 	}
 
 	private startAddComment(editor: Editor): void {

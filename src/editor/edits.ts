@@ -4,6 +4,7 @@ import { anchorRange, isAnchored, isHighlight, isInFencedCode, parseComments } f
 import { codeSelectionTarget, isCodeComment, resolveCodeAnchor } from "../format/code-anchor";
 import { closeMarker, openMarker, serializeBody } from "../format/serialize";
 import { clampToTableCells } from "../format/table";
+import { MARKER_GUARD, anchorOffBlockMarkup, needsMarkerGuard } from "../format/line-start";
 
 /** A document edit in original coordinates (matches CodeMirror's ChangeSpec shape). */
 export type Change = {
@@ -81,8 +82,10 @@ export const computeAddComment = (
 	if (isInFencedCode(doc, from) || isInFencedCode(doc, to - 1)) {
 		return computeAddCodeComment(doc, from, to, input);
 	}
-	({ from, to } = anchorSelection(doc, from, to));
-	if (to === from) return Result.err("Select the text inside a table cell, not its borders.");
+	const cell = clampToTableCells(doc, from, to);
+	if (cell.to === cell.from) return Result.err("Select the text inside a table cell, not its borders.");
+	({ from, to } = anchorText(doc, cell));
+	if (to === from) return Result.err("Select some text to comment on.");
 
 	const quote = doc.slice(from, to);
 	const data: CommentData = {
@@ -95,11 +98,13 @@ export const computeAddComment = (
 	};
 	const paraEnd = blockEnd(doc, to);
 	return Result.ok([
-		{ from, to: from, insert: openMarker(input.id) },
-		{ from: to, to, insert: closeMarker(input.id) },
+		{ from, to: from, insert: guardFor(doc, from) + openMarker(input.id) },
+		{ from: to, to, insert: guardFor(doc, to) + closeMarker(input.id) },
 		{ from: paraEnd, to: paraEnd, insert: "\n" + serializeBody(input.id, data) },
 	]);
 };
+
+const guardFor = (doc: string, pos: number): string => (needsMarkerGuard(doc, pos) ? MARKER_GUARD : "");
 
 /** Find an empty-thread highlight whose complete target matches the selection. */
 export const findHighlightAtSelection = (doc: string, from: number, to: number): ParsedComment | null => {
@@ -162,8 +167,14 @@ const computeAddCodeComment = (
  *  write and the "is this already a highlight?" lookup have to agree, or running
  *  Add comment twice on the same text stops finding the comment it just made. */
 const anchorSelection = (doc: string, from: number, to: number): TextRange => {
-	const cell = clampToTableCells(doc, from, to);
-	return expandInlineCodeSelection(doc, cell.from, cell.to);
+	return anchorText(doc, clampToTableCells(doc, from, to));
+};
+
+/** Everything anchorSelection does after the table clamp, split out so creation
+ *  can tell a selection of table borders from one of block markup. */
+const anchorText = (doc: string, cell: TextRange): TextRange => {
+	const text = anchorOffBlockMarkup(doc, cell.from, cell.to);
+	return expandInlineCodeSelection(doc, text.from, text.to);
 };
 
 /** HTML comments inside a Markdown code span render as literal code. When a
@@ -334,14 +345,28 @@ export const computeDeleteComment = (doc: string, id: string): Result<Change[], 
 		const start = aloneOnLine(from, to) ? from - leadingTerm(from) : from;
 		ranges.push({ from: start, to, insert: "" });
 	});
+	const markers = ranges.length;
 	scanAll(doc, new RegExp(`<!--co:${id}(?![A-Za-z0-9])[\\s\\S]*?-->`, "g"), (from, to) => {
 		// Swallow the whole line terminator before the body so its line disappears
 		// cleanly, CR included, leaving no stray blank line.
 		ranges.push({ from: from - leadingTerm(from), to, insert: "" });
 	});
 	if (ranges.length === 0) return Result.err("Nothing to delete.");
-	ranges.sort((a, b) => a.from - b.from);
-	return Result.ok(ranges);
+	// A guard belongs to the marker right after it, so it goes with that marker
+	// unless another comment's marker is left behind it to guard.
+	const pastRemoved = (pos: number): number => {
+		const next = ranges.find((range) => range.from === pos && range.to > pos);
+		return next ? pastRemoved(next.to) : pos;
+	};
+	const guarded = ranges.map((range, index) => {
+		if (index >= markers || doc.charAt(range.from - 1) !== MARKER_GUARD) return range;
+		const next = pastRemoved(range.to);
+		return doc.startsWith("<!--c:", next) || doc.startsWith("<!--/c:", next)
+			? range
+			: { ...range, from: range.from - 1 };
+	});
+	guarded.sort((a, b) => a.from - b.from);
+	return Result.ok(guarded);
 };
 
 /** Invoke `fn(from, to)` for every match of a global regex. Stateful cursor scan. */
