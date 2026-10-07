@@ -164,6 +164,18 @@ Anchor the text next to it instead: start on the line after, end on the line
 before. A marker on a blank line is invisible, but between list items it can split
 the list in some Markdown tools, so prefer anchoring the item's text.
 
+### Backslashes and indented code
+
+- **Never put a marker right after a backslash.** `\<` is an escape, so the marker
+  shows as text, and a backslash ending a line (a hard line break) stops being
+  one. Put the marker in front of the backslash: `Address line one<!--/c:ID-->\`.
+- **Never put a marker inside indented code.** A line indented four spaces or a
+  tab past its list item's text, or past the margin outside a list, after a blank
+  line, is code, and a marker anywhere on it shows as text. Anchor the code's
+  whole lines, with each marker alone on the blank line above or below the
+  block. With no blank line there, a marker at the very start of the code line
+  is hidden, but that line then shows as text instead of code.
+
 When a code block follows the anchored paragraph with no blank line between, put
 the body block after the closing fence, never inside the code. Don't comment
 inside a code block that has no closing fence: everything after its opening line

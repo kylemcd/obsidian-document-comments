@@ -10,8 +10,8 @@ Usage:
 
 Exit status is non-zero if any definite problem is found (invalid ID, a
 marker with no body, a duplicated ID, a marker starting a line's text
-without a zero-width space in front of it, or a marker on a rule or underline),
-so it can gate an agent's work.
+without a zero-width space in front of it, a marker on a rule or underline,
+or a marker right after a backslash), so it can gate an agent's work.
 No third-party dependencies — Python 3 standard library only.
 """
 
@@ -112,6 +112,12 @@ def analyze(doc):
         bare = MARKER.sub("", line)
         if bare != line and RULE.match(bare):
             rule_lines.append(line.strip()[:40])
+    # A backslash that isn't escaped itself escapes the marker's `<` into text.
+    escaped = []
+    for m in MARKER.finditer(doc):
+        slashes = len(doc[: m.start()]) - len(doc[: m.start()].rstrip("\\"))
+        if slashes % 2 == 1 and not is_masked(spans, m.start()):
+            escaped.append(doc[max(0, m.start() - 12) : m.end()].split("\n")[-1][:40])
 
     comments = []
     for cid in ids:
@@ -133,7 +139,7 @@ def analyze(doc):
                 "quote": quote_of(header),
             }
         )
-    return comments, problems, line_starts, rule_lines
+    return comments, problems, line_starts, rule_lines, escaped
 
 
 def main(argv):
@@ -150,7 +156,7 @@ def main(argv):
             any_problem = True
             continue
 
-        comments, problems, line_starts, rule_lines = analyze(doc)
+        comments, problems, line_starts, rule_lines, escaped = analyze(doc)
         print(f"\n{path} — {len(comments)} comment(s)")
         for c in comments:
             note = ""
@@ -181,6 +187,13 @@ def main(argv):
                 f"  LINE START   {snippet!r} starts its line's text, so Reading view shows the line "
                 "unformatted — move it after any bullet, `>`, or heading `#`s and put a zero-width "
                 "space (U+200B) right before it"
+            )
+
+        for snippet in escaped:
+            any_problem = True
+            print(
+                f"  ESCAPED      {snippet!r} has a marker right after a backslash, which escapes it into "
+                "text — move the marker in front of the backslash"
             )
 
         marker_only = [c for c in comments if c["state"] == "MARKERS-ONLY"]

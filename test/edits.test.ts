@@ -657,6 +657,126 @@ describe("comments that start a line", () => {
 		expect(result.isErr() && result.error).toBe("Select some text to comment on.");
 	});
 
+	// `\<` is an escape, so a marker right after the backslash would show as text.
+	// Obsidian's triple-click stops at the line's end; CodeMirror's takes the break.
+	it.each([
+		["the line's end", "Address line one\\".length],
+		["the next line's start", "Address line one\\\n".length],
+	])("ends a line selected to %s in front of its hard break's backslash", (_label, to) => {
+		const doc = "Address line one\\\nAddress line two\n";
+
+		expect(addAt(doc, 0, to)).toContain("Address line one<!--/c:a1-->\\\nAddress line two");
+	});
+
+	it("starts a selection right after a backslash in front of it", () => {
+		const doc = "Hello \\*world*\n";
+		const out = addAt(doc, doc.indexOf("*world"), doc.indexOf("\n"));
+
+		expect(out).toContain("Hello <!--c:a1-->\\*world*<!--/c:a1-->");
+	});
+
+	// A marker anywhere in indented code shows as text in the code.
+	it.each([
+		["to the line's end", "    npm run build".length],
+		["through the line break", "    npm run build\n".length],
+		["part of it", "    npm".length],
+	])("keeps a selection of a line of indented code %s out of the code", (_label, length) => {
+		const doc = "Intro paragraph.\n\n    npm run build\n\nAfter.\n";
+		const line = doc.indexOf("    npm");
+		const out = addAt(doc, length === "    npm".length ? line + 4 : line, line + length);
+
+		expect(out).toContain("Intro paragraph.\n<!--c:a1-->\n    npm run build\n<!--/c:a1-->\n");
+		expect(out).not.toContain(G);
+	});
+
+	// No place in the middle of a code block hides a marker without breaking the
+	// block, so the line goes on showing as text, as it always did.
+	it("keeps the markers of a comment on a middle line of indented code at its start and end", () => {
+		const doc = "Intro\n\n    one\n    two\n    three\n\nAfter\n";
+		const line = doc.indexOf("    two");
+		const out = addAt(doc, line, line + "    two".length);
+
+		expect(out).toContain("\n    one\n<!--c:a1-->    two<!--/c:a1-->\n    three\n");
+	});
+
+	it("errs on a selection of an indented code line's indentation alone", () => {
+		const doc = "Intro\n\n    npm run build\n";
+		const at = doc.indexOf("    npm");
+		const result = computeAddComment(doc, at + 1, at + 3, { id: "a1", createdAt: "t", author: "me", text: "x" });
+
+		expect(result.isErr() && result.error).toBe("Select some text to comment on.");
+	});
+
+	it.each([
+		["the break after a line of indented code", "\n    two"],
+		["the breaks between indented code and a list item", "\n\n1. Item"],
+	])("errs on a selection of %s", (_label, after) => {
+		const doc = `Intro\n\n    one${after}\n`;
+		const at = doc.indexOf("one") + 3;
+		const result = computeAddComment(doc, at, at + after.indexOf(after.trim()), {
+			id: "a1",
+			createdAt: "t",
+			author: "me",
+			text: "x",
+		});
+
+		expect(result.isErr() && result.error).toBe("Select some text to comment on.");
+	});
+
+	it("starts a selection from the end of a line of indented code on the line after it", () => {
+		const doc = "Intro\n\n    code\n---\nNext text\n";
+		const out = addAt(doc, doc.indexOf("\n---"), doc.indexOf("Next text") + "Next text".length);
+
+		expect(out).toContain(`\n    code\n---\n${G}<!--c:a1-->Next text<!--/c:a1-->`);
+	});
+
+	it("keeps the markers of a comment on indented code before a rule on the line's start and end", () => {
+		const doc = "Intro\n\n    code\n---\n";
+		const line = doc.indexOf("    code");
+		const out = addAt(doc, line, doc.indexOf("---"));
+
+		expect(out).toContain("\n<!--c:a1-->    code<!--/c:a1-->\n---\n");
+	});
+
+	it("ends a selection at indented code after a rule on the text before the rule", () => {
+		const doc = "Para text\n\n---\n    code\n";
+		const out = addAt(doc, 0, doc.indexOf("    code"));
+
+		expect(out).toContain(`${G}<!--c:a1-->Para text<!--/c:a1-->\n`);
+		expect(out).toContain("\n---\n    code\n");
+	});
+
+	// A marker alone on the blank line after another would end the list there.
+	it("starts a selection on the blank lines above an item's indented text on that text", () => {
+		const doc = "- One\n\n\n    more of one\n";
+		const out = addAt(doc, doc.indexOf("\n\n\n") + 2, doc.length - 1);
+
+		expect(out).toContain(`\n\n\n    ${G}<!--c:a1-->more of one<!--/c:a1-->`);
+	});
+
+	it("errs on a selection of the space after a code line's dash", () => {
+		const doc = "Intro\n\n    - code\n";
+		const at = doc.indexOf("- code") + 1;
+		const result = computeAddComment(doc, at, at + 1, { id: "a1", createdAt: "t", author: "me", text: "x" });
+
+		expect(result.isErr() && result.error).toBe("Select some text to comment on.");
+	});
+
+	it("leaves a comment on a line of nothing but an HTML comment unguarded", () => {
+		const doc = "Intro\n\n<!-- note -->\n";
+		const at = doc.indexOf("<!--");
+		const out = addAt(doc, at, at + "<!-- note -->".length);
+
+		expect(out).toContain("\n<!--c:a1--><!-- note --><!--/c:a1-->\n");
+	});
+
+	it("keeps an end after a line of indented code off the end of the code", () => {
+		const doc = "Intro.\n\n    npm run build\n- Next item\n";
+		const out = addAt(doc, 0, doc.indexOf("- Next"));
+
+		expect(out).toContain(`\n    npm run build\n- ${G}<!--/c:a1-->Next item`);
+	});
+
 	it("ends a selection on a whitespace line after a fence at the line's start", () => {
 		const doc = "Intro\n```\ncode\n```\n    \nNext\n";
 		const out = addAt(doc, 0, doc.indexOf("    \nNext") + 4);

@@ -42,6 +42,8 @@ The `<!--c:ID-->` and `<!--/c:ID-->` markers identify the selected text. The mat
 
 When the selected text starts a paragraph, list item, or quote, the plugin writes a zero-width space (U+200B) in front of `<!--c:ID-->`. Markdown reads a line whose text starts with `<!--` as raw HTML, so without it Reading view would show that line's formatting as plain text. The space renders as nothing, and the plugin removes it with the comment.
 
+Markers also stay out of the places where they would show as text. A marker never goes right after a backslash, which escapes it, and never inside an indented code block: a comment there takes in the code's whole lines, with its markers on the lines around them.
+
 Reactions to the first comment use a line such as `+👍 kyle`. Reactions to replies include the reply's zero-based thread index, such as `+@1 👀 sam` for the first reply.
 
 Markdown renderers hide these HTML comments. Tools that read the source file can find each comment and its selected text.

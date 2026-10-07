@@ -6,10 +6,13 @@ import {
 	MARKER_GUARD,
 	endOfPlainTextBefore,
 	endOfTextBefore,
+	indentedCodeLines,
+	isEscaped,
 	leadingMarkup,
 	lineAround,
 	needsMarkerGuard,
 	nextTextStart,
+	showsText,
 	tableBodyRows,
 } from "../format/line-start";
 import type { Change } from "./edits";
@@ -63,10 +66,12 @@ const repairRun = (
 	run: readonly Marker[],
 	comments: ReadonlyMap<string, ParsedComment>,
 	bodyRow: (lineFrom: number) => boolean,
+	codeLine: (lineFrom: number) => boolean,
 ): Change[] | null => {
 	const first = run[0];
 	const last = run[run.length - 1];
 	if (!first || !last) return null;
+	if (isEscaped(doc, first.from)) return outOfEscape(doc, run, comments);
 	const line = lineAround(doc, first.from);
 	const text = doc.slice(first.from, last.to);
 	const offset = first.from - line.from;
@@ -78,9 +83,11 @@ const repairRun = (
 	const markup = leadingMarkup(bare);
 	if (offset > markup.end) return null;
 	const rest = doc.slice(last.to, line.to);
-	// Alone on its line, the run is an invisible HTML block already. In front of a
-	// row's leading pipe, it's the table repair's to put right.
-	if (!rest.trim() || rest.trimStart().startsWith("|") || bodyRow(line.from)) return null;
+	// Alone on its line, or with nothing but comments after it, the run is an
+	// invisible HTML block already. In front of a row's leading pipe, it's the
+	// table repair's to put right.
+	if (!showsText(rest) || rest.trimStart().startsWith("|") || bodyRow(line.from)) return null;
+	if (codeLine(line.from)) return offCodeLine(doc, run, line, comments);
 
 	if (offset === markup.end) {
 		return markup.heading ? null : [{ from: first.from, to: first.from, insert: MARKER_GUARD }];
@@ -113,6 +120,48 @@ const repairRun = (
 	];
 	if (back !== null && leaving.length > 0) changes.push({ from: back, to: back, insert: textOf(leaving) });
 	return changes;
+};
+
+/** Right after a backslash that isn't escaped itself, a run is escaped into text,
+ *  so it moves in front of the backslash. Null when that would empty a comment. */
+const outOfEscape = (
+	doc: string,
+	run: readonly Marker[],
+	comments: ReadonlyMap<string, ParsedComment>,
+): Change[] | null => {
+	const first = run[0];
+	const last = run[run.length - 1];
+	if (!first || !last) return null;
+	const keepsText = run.every((marker) => {
+		const open = comments.get(marker.id)?.open;
+		return !marker.closing || (!!open && open.to < first.from - 1);
+	});
+	if (!keepsText) return null;
+	return [{ from: first.from - 1, to: last.to, insert: doc.slice(first.from, last.to) + "\\" }];
+};
+
+/** Past an indented code line's indentation, a marker is in the code and shows as
+ *  text, so a run there only moves when it's all closers that can go back to the
+ *  text they close on. Openers stay where they are, which hides them as before. */
+const offCodeLine = (
+	doc: string,
+	run: readonly Marker[],
+	line: TextRange,
+	comments: ReadonlyMap<string, ParsedComment>,
+): Change[] | null => {
+	const first = run[0];
+	const last = run[run.length - 1];
+	const back = endOfTextBefore(doc, 0, line.from);
+	if (!first || !last || back === null) return null;
+	const closesBack = run.every((marker) => {
+		const open = comments.get(marker.id)?.open;
+		return marker.closing && !!open && open.to < back;
+	});
+	if (!closesBack) return null;
+	return [
+		{ from: back, to: back, insert: doc.slice(first.from, last.to) },
+		{ from: first.from, to: last.to, insert: "" },
+	];
 };
 
 /** Move a run off a rule or underline: its openers on to the text after it, and its
@@ -155,12 +204,14 @@ const lineRepairs = (doc: string, parsed?: readonly ParsedComment[]): RunRepair[
 	const runs = markerRuns(anchorMarkers(comments));
 	if (runs.length === 0) return [];
 	const byId = new Map(comments.map((comment) => [comment.id, comment]));
-	// Finding the tables scans the whole document, so only do it once a run is
-	// actually at the start of a line.
+	// Finding the tables and code blocks scans the whole document, so only do it
+	// once a run is actually at the start of a line.
 	let rows: ((lineFrom: number) => boolean) | null = null;
+	let code: ((lineFrom: number) => boolean) | null = null;
 	const bodyRow = (lineFrom: number): boolean => (rows ??= tableBodyRows(doc))(lineFrom);
+	const codeLine = (lineFrom: number): boolean => (code ??= indentedCodeLines(doc))(lineFrom);
 	return runs.flatMap((run) => {
-		const changes = repairRun(doc, run, byId, bodyRow);
+		const changes = repairRun(doc, run, byId, bodyRow, codeLine);
 		return changes ? [{ ids: run.map((marker) => marker.id), changes }] : [];
 	});
 };

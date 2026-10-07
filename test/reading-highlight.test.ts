@@ -15,6 +15,7 @@ import {
 	visibleText,
 } from "../src/reading/highlight";
 import { anchorRange, parseComments } from "../src/format/parse";
+import { applyChanges, computeAddComment } from "../src/editor/edits";
 
 Node.prototype.createSpan ??= function (o?: string | { cls?: string; text?: string; attr?: Record<string, string> }) {
 	const el = document.createElement("span");
@@ -362,6 +363,21 @@ describe("highlighting rendered text", () => {
 		highlightPostProcessor(el, ctxFor(doc, 1, 3));
 
 		expect(highlighted(el, "k1")).toBe("const a = 1;");
+	});
+
+	test("highlights a code comment's line holding an HTML comment, which code shows as written", () => {
+		const code = "```\n<!-- Navigation -->\n<nav>Home</nav>\n```\n";
+		const from = code.indexOf("<!--");
+		const to = code.indexOf("</nav>") + "</nav>".length;
+		const doc = applyChanges(
+			code,
+			computeAddComment(code, from, to, { id: "k3", createdAt: "t", author: "me", text: "ok" }).unwrap(),
+		);
+		const lines = doc.split("\n");
+		const el = render("<pre><code>&lt;!-- Navigation --&gt;\n&lt;nav&gt;Home&lt;/nav&gt;\n</code></pre>");
+		highlightPostProcessor(el, ctxFor(doc, lines.indexOf("```"), lines.lastIndexOf("```")));
+
+		expect(highlighted(el, "k3")).toBe("<!-- Navigation -->\n<nav>Home</nav>");
 	});
 });
 

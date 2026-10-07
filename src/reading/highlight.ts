@@ -1,6 +1,6 @@
 import type { MarkdownPostProcessorContext } from "obsidian";
 import { ParsedComment } from "../format/types";
-import { anchorRange, fencedRanges, isHighlight, parseComments } from "../format/parse";
+import { anchorRange, commentsOutside, fencedRanges, isHighlight, parseComments } from "../format/parse";
 import { isCodeComment, resolveCodeAnchor } from "../format/code-anchor";
 import { commentPreview } from "../format/preview";
 import { MARKER_GUARD, isStructuralLine, leadingMarkup } from "../format/line-start";
@@ -218,14 +218,8 @@ export const visibleText = (source: string): Visible => {
 		}
 	};
 
-	// Comments render as nothing, and code shows as written.
-	[
-		...htmlCommentRanges(source),
-		...[...source.matchAll(/%%[\s\S]*?%%/g)].map((m): [number, number] => [m.index, m.index + m[0].length]),
-	].forEach(([from, to]) => {
-		hide(from, to);
-		settle(from, to);
-	});
+	// Code shows as written, comments in it included. Comments anywhere else render
+	// as nothing.
 	const fences = fencedRanges(source);
 	fences.forEach(([from, to]) => settle(from, to));
 	inlineCodeSpans(source).forEach((span) => {
@@ -234,6 +228,13 @@ export const visibleText = (source: string): Visible => {
 		hide(span.from, span.from + ticks);
 		hide(span.to - ticks, span.to);
 	});
+	const inCode = (at: number): boolean => !free(at, at + 1);
+	[/<!--[\s\S]*?-->/g, /%%[\s\S]*?%%/g]
+		.flatMap((pattern) => commentsOutside(source, pattern, inCode))
+		.forEach(([from, to]) => {
+			hide(from, to);
+			settle(from, to);
+		});
 
 	const lines = sourceLines(source);
 	const tables = sourceTables(lines);

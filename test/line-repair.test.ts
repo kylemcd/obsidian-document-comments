@@ -69,6 +69,45 @@ describe("brokenLineAnchors and its repair", () => {
 		expect(repair(doc)).toContain(`\n\`\`\`\n- ${G}<!--/c:aa11-->Next\n`);
 	});
 
+	test("brings a closer back in front of a hard break's backslash", () => {
+		const doc = `<!--c:aa11-->- first item\\\n<!--/c:aa11-->- second item\n${body("aa11")}`;
+
+		expect(repair(doc)).toBe(`- ${G}<!--c:aa11-->first item<!--/c:aa11-->\\\n- second item\n${body("aa11")}`);
+	});
+
+	test("brings a closer in front of a line of indented code back to the text it closes", () => {
+		const doc = `Intro <!--c:aa11-->text\n\n<!--/c:aa11-->    npm run build\n${body("aa11")}`;
+
+		expect([...brokenLineAnchors(doc)]).toEqual(["aa11"]);
+		expect(repair(doc)).toBe(`Intro <!--c:aa11-->text<!--/c:aa11-->\n\n    npm run build\n${body("aa11")}`);
+	});
+
+	// A line that carries on a paragraph is text however far it's indented.
+	test("brings a closer in front of an indented line that carries on a paragraph back", () => {
+		const doc = `<!--c:aa11-->Another line\n<!--/c:aa11-->    - more\n${body("aa11")}`;
+
+		expect(repair(doc)).toBe(`${G}<!--c:aa11-->Another line<!--/c:aa11-->\n    - more\n${body("aa11")}`);
+	});
+
+	test("moves a closer from behind a hard break's backslash in front of it", () => {
+		const doc = `Address <!--c:aa11-->line one\\<!--/c:aa11-->\nAddress line two\n${body("aa11")}`;
+
+		expect([...brokenLineAnchors(doc)]).toEqual(["aa11"]);
+		expect(repair(doc)).toBe(`Address <!--c:aa11-->line one<!--/c:aa11-->\\\nAddress line two\n${body("aa11")}`);
+	});
+
+	test("leaves a closer behind a backslash that's all its comment holds", () => {
+		const doc = `Path <!--c:aa11-->\\<!--/c:aa11-->\n${body("aa11")}`;
+
+		expect([...brokenLineAnchors(doc)]).toEqual([]);
+	});
+
+	test("keeps a closer off the end of a line of indented code", () => {
+		const doc = `Intro <!--c:aa11-->text\n\n    npm run build\n<!--/c:aa11-->- Item\n${body("aa11")}`;
+
+		expect(repair(doc)).toContain(`\n    npm run build\n- ${G}<!--/c:aa11-->Item\n`);
+	});
+
 	test("leaves a rule alone on a file with Windows line endings", () => {
 		const doc = ["Intro <!--c:aa11-->text", "", "---", "<!--/c:aa11-->- Item", body("aa11"), ""].join("\r\n");
 
@@ -123,8 +162,11 @@ describe("brokenLineAnchors and its repair", () => {
 		["behind a guard", `${G}<!--c:aa11-->text<!--/c:aa11-->`],
 		["starting a heading's text", "## <!--c:aa11-->Heading<!--/c:aa11-->"],
 		["alone on its line", "<!--c:aa11-->\nText<!--/c:aa11-->"],
+		["with nothing but a comment after it", "<!--c:aa11--><!-- note --><!--/c:aa11-->"],
 		["starting a table's body row", "a | b\n--|--\n<!--c:aa11-->c<!--/c:aa11--> | d"],
 		["in front of a table row's pipe", "| A | B |\n| - | - |\n<!--c:aa11-->| 1 | 2 |<!--/c:aa11-->"],
+		["in front of a line of indented code", "Intro\n\n<!--c:aa11-->    npm run build<!--/c:aa11-->"],
+		["starting a line of indented code", "Intro\n\n    <!--c:aa11-->npm run build<!--/c:aa11-->"],
 		[
 			"around a code block",
 			`<!--c:aa11-->\n\`\`\`js\nx\n\`\`\`\n<!--/c:aa11-->\n<!--co:aa11 by:me status:open quote:"x" line:0\nme: hi\n-->`,
