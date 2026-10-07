@@ -54,11 +54,14 @@ export const leadingMarkup = (line: string): LeadingMarkup => {
 	return { end: text + (INDENT.exec(line.slice(text))?.[0].length ?? 0), heading: false };
 };
 
-/** The line holding `pos`, without its line break. */
+/** The line holding `pos`, without its line break, CR included, so the patterns
+ *  read a file with Windows line endings the same way. */
 export const lineAround = (doc: string, pos: number): TextRange => {
-	const end = doc.indexOf("\n", pos);
+	const newline = doc.indexOf("\n", pos);
+	const end = newline < 0 ? doc.length : newline;
 	// lastIndexOf clamps a negative start to 0, which would find a newline AT 0.
-	return { from: pos > 0 ? doc.lastIndexOf("\n", pos - 1) + 1 : 0, to: end < 0 ? doc.length : end };
+	const from = pos > 0 ? doc.lastIndexOf("\n", pos - 1) + 1 : 0;
+	return { from, to: end > from && pos < end && doc.charAt(end - 1) === "\r" ? end - 1 : end };
 };
 
 /**
@@ -76,16 +79,18 @@ export const anchorOffBlockMarkup = (doc: string, from: number, to: number): Tex
 const textStart = (doc: string, from: number): number => {
 	const line = lineAround(doc, from);
 	const text = line.from + leadingMarkup(doc.slice(line.from, line.to)).end;
-	// A line with no text of its own keeps the marker where the selection put it.
-	if (from > text || !doc.slice(text, line.to).trim()) return from;
+	if (from > text) return from;
 	// Behind an existing guard, the new marker shares it instead of adding another.
 	return doc.charAt(text) === MARKER_GUARD ? text + 1 : text;
 };
 
 const textEnd = (doc: string, from: number, to: number): number => {
 	const line = lineAround(doc, to);
-	if (line.from <= from || to > line.from + leadingMarkup(doc.slice(line.from, line.to)).end) return to;
-	return endOfTextBefore(doc, from, line.from) ?? to;
+	const text = line.from + leadingMarkup(doc.slice(line.from, line.to)).end;
+	if (line.from <= from || to > text) return to;
+	// Where it can't go back, it goes past the markup instead, to start the text
+	// with a guard rather than stop the line being a list item, quote, or heading.
+	return endOfTextBefore(doc, from, line.from) ?? text;
 };
 
 /** Where a marker leaving the start of the line at `lineFrom` can go: the end of

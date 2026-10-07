@@ -295,7 +295,10 @@ export default class DocCommentsPlugin extends Plugin {
 			new Notice(`Couldn't repair the comments: ${result.error}`);
 			return;
 		}
-		new Notice(`Repaired ${broken} ${broken === 1 ? "comment" : "comments"}.`);
+		// A line repair a table repair touches waits for the next run.
+		const left = anchorDamage(result.value).size;
+		const repaired = `Repaired ${count(Math.max(0, broken - left))}.`;
+		new Notice(left > 0 ? `${repaired} Run it again to repair the other ${count(left)}.` : repaired);
 	}
 
 	private startAddComment(editor: Editor): void {
@@ -750,6 +753,8 @@ export default class DocCommentsPlugin extends Plugin {
 		return this.writeSettings("Couldn't save settings");
 	}
 }
+
+const count = (comments: number): string => `${comments} ${comments === 1 ? "comment" : "comments"}`;
 
 const editorView = (editor: Editor): EditorView | null => {
 	const cm = (editor as unknown as { cm?: unknown }).cm;

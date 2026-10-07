@@ -12,6 +12,7 @@ import {
 } from "../src/editor/edits";
 import { anchorRange, parseComments } from "../src/format/parse";
 import { closeMarker, openMarker } from "../src/format/serialize";
+import { anchorDamage } from "../src/editor/anchor-repair";
 
 const DOC = "We should ship on Friday regardless of the QA timeline.\n\nNext paragraph.\n";
 const FROM = DOC.indexOf("ship on Friday");
@@ -524,6 +525,26 @@ describe("comments that start a line", () => {
 
 		expect(out.startsWith(`- ${G}<!--c:a1-->One<!--/c:a1-->\n`)).toBe(true);
 		expect(out).toContain("\n- Two\n");
+	});
+
+	it.each([
+		["a fence before a list item", "Intro text\n```\ncode\n```\n- Next item\n", "- Next", "- "],
+		["a rule before a quote", "Intro text\n\n---\n> Quote here\n", "> Quote", "> "],
+		["a rule before a heading", "Intro text\n\n---\n## Next\n", "## Next", "## "],
+	])("keeps an end after %s off the markup when it can't move back", (_label, doc, next, markup) => {
+		const out = addAt(doc, 0, doc.indexOf(next));
+		const guard = markup === "## " ? "" : G;
+
+		expect(out).toContain(`\n${markup}${guard}<!--/c:a1-->${next.slice(markup.length)}`);
+		expect(anchorDamage(out).size).toBe(0);
+	});
+
+	it("starts a selection on an empty list item after its bullet", () => {
+		const doc = "- \n- Next item\n";
+		const out = addAt(doc, 0, doc.indexOf("\n", 3));
+
+		expect(out.startsWith("- <!--c:a1-->\n- Next item<!--/c:a1-->")).toBe(true);
+		expect(anchorDamage(out).size).toBe(0);
 	});
 
 	it("shares a guard already starting the line", () => {

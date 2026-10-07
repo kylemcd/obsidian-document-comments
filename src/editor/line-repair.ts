@@ -120,9 +120,30 @@ export const brokenLineAnchors = (doc: string, parsed?: readonly ParsedComment[]
 	return new Set(lineRepairs(doc, parsed).flatMap((repair) => repair.ids));
 };
 
-/** Guard or move every run of markers breaking its line. `only` limits it to runs
- *  holding one of those comments' markers; without it, the whole document. */
-export const computeRepairLineAnchors = (doc: string, only?: ReadonlySet<string>): Result<Change[], string> => {
-	const repairs = lineRepairs(doc).filter((repair) => !only || repair.ids.some((id) => only.has(id)));
-	return Result.ok(repairs.flatMap((repair) => repair.changes).sort((a, b) => a.from - b.from));
+/**
+ * Guard or move every run of markers breaking its line. `only` limits it to runs
+ * holding one of those comments' markers; without it, the whole document.
+ *
+ * A run whose edits would touch one in `around`, or one an earlier run already
+ * makes, is left for the next repair. It's kept or left whole: moving a closer
+ * back is two edits, and making only the first deletes the closer outright.
+ */
+export const computeRepairLineAnchors = (
+	doc: string,
+	only?: ReadonlySet<string>,
+	around: readonly Change[] = [],
+): Result<Change[], string> => {
+	const kept = lineRepairs(doc)
+		.filter((repair) => !only || repair.ids.some((id) => only.has(id)))
+		.reduce<Change[]>(
+			(taken, repair) => {
+				const clear = repair.changes.every((change) => taken.every((other) => apart(change, other)));
+				return clear ? [...taken, ...repair.changes] : taken;
+			},
+			[...around],
+		);
+	return Result.ok(kept.slice(around.length).sort((a, b) => a.from - b.from));
 };
+
+/** Two edits that neither overlap nor touch. */
+const apart = (a: Change, b: Change): boolean => a.to < b.from || a.from > b.to;

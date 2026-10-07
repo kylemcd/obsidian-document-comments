@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import { brokenLineAnchors, computeRepairLineAnchors } from "../src/editor/line-repair";
 import { anchorDamage, computeRepairAnchors } from "../src/editor/anchor-repair";
 import { applyChanges } from "../src/editor/edits";
+import { parseComments } from "../src/format/parse";
 
 const G = "\u200b";
 const body = (id: string) => [`<!--co:${id} by:me status:open quote:"x"`, "me: hi", "-->"].join("\n");
@@ -66,6 +67,13 @@ describe("brokenLineAnchors and its repair", () => {
 		const doc = `<!--c:aa11-->Intro\n\`\`\`\ncode\n\`\`\`\n<!--/c:aa11-->- Next\n${body("aa11")}`;
 
 		expect(repair(doc)).toContain(`\n\`\`\`\n- ${G}<!--/c:aa11-->Next\n`);
+	});
+
+	test("leaves a rule alone on a file with Windows line endings", () => {
+		const doc = ["Intro <!--c:aa11-->text", "", "---", "<!--/c:aa11-->- Item", body("aa11"), ""].join("\r\n");
+
+		expect(repair(doc)).not.toContain("---<!--/c:aa11-->");
+		expect(repair(doc)).toContain("---\r\n- \u200b<!--/c:aa11-->Item");
 	});
 
 	test("guards a run once, in front of its first marker", () => {
@@ -146,5 +154,30 @@ describe("anchorDamage", () => {
 		if (result.isErr()) throw new Error(result.error);
 		const fixed = applyChanges(doc, result.value);
 		expect(anchorDamage(fixed).size).toBe(0);
+	});
+
+	// Moving a closer back takes two edits, one at each end. A table repair that
+	// touches one of them must hold back both, or the closer is deleted outright.
+	test("never drops half of a closer's move when the table repair touches the other half", () => {
+		const doc = [
+			"Intro <!--c:xx11-->text",
+			"",
+			"| A | B |",
+			"| - | - |",
+			"<!--c:tt22-->| 1 | 2 |<!--/c:tt22-->",
+			body("tt22"),
+			"",
+			"<!--/c:xx11-->- Item",
+			body("xx11"),
+		].join("\n");
+		const pass = (text: string): string => {
+			const result = computeRepairAnchors(text);
+			if (result.isErr()) throw new Error(result.error);
+			return applyChanges(text, result.value);
+		};
+
+		const once = pass(doc);
+		expect(parseComments(once).find((comment) => comment.id === "xx11")?.close).not.toBeNull();
+		expect(anchorDamage(pass(once)).size).toBe(0);
 	});
 });

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { anchorOffBlockMarkup, leadingMarkup, needsMarkerGuard } from "../src/format/line-start";
+import { anchorOffBlockMarkup, endOfTextBefore, leadingMarkup, needsMarkerGuard } from "../src/format/line-start";
 
 describe("leadingMarkup", () => {
 	test.each([
@@ -81,6 +81,15 @@ describe("anchorOffBlockMarkup", () => {
 	])("keeps an end that would land at the end of %s", (_label, doc) => {
 		const to = doc.indexOf("Next");
 		expect(anchorOffBlockMarkup(doc, 0, to).to).toBe(to);
+	});
+});
+
+describe("endOfTextBefore", () => {
+	test.each([
+		["LF", "Intro\n\n---\n- Item"],
+		["CRLF", "Intro\r\n\r\n---\r\n- Item"],
+	])("refuses the end of a rule with %s line endings", (_label, doc) => {
+		expect(endOfTextBefore(doc, 0, doc.indexOf("- Item"))).toBeNull();
 	});
 });
 

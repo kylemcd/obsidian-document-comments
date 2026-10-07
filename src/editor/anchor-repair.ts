@@ -19,13 +19,11 @@ export const anchorDamage = (doc: string, parsed?: readonly ParsedComment[]): Ma
 };
 
 /** Repair every broken anchor, or only `only`'s. A line repair that a table repair
- *  overlaps is left for the next run, once the markers have settled into the cell. */
+ *  touches is left for the next run, once the markers have settled into the cell. */
 export const computeRepairAnchors = (doc: string, only?: ReadonlySet<string>): Result<Change[], string> => {
 	const tables = computeRepairTableAnchors(doc, only);
 	if (tables.isErr()) return tables;
-	const lines = computeRepairLineAnchors(doc, only);
+	const lines = computeRepairLineAnchors(doc, only, tables.value);
 	if (lines.isErr()) return lines;
-	const clear = (change: Change): boolean =>
-		tables.value.every((table) => change.to < table.from || change.from > table.to);
-	return Result.ok([...tables.value, ...lines.value.filter(clear)].sort((a, b) => a.from - b.from));
+	return Result.ok([...tables.value, ...lines.value].sort((a, b) => a.from - b.from));
 };
