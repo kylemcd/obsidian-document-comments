@@ -319,6 +319,17 @@ describe("highlighting rendered text", () => {
 		expect(highlighted(second, "f5")).toBe("second part");
 	});
 
+	// Obsidian keeps a rendered block whose source didn't change, so a block in the
+	// middle, with none of the comment's markers, would keep a highlight after the
+	// comment is deleted. Only the blocks holding a marker highlight.
+	test("leaves the middle block of a comment over three blocks unhighlighted", () => {
+		const doc = ["One <!--c:f7-->first", "", "middle block", "", "last<!--/c:f7--> end.", body("f7")].join("\n");
+		const blocks = ["<p>One first</p>", "<p>middle block</p>", "<p>last end.</p>"].map(render);
+		blocks.forEach((el, index) => highlightPostProcessor(el, ctxFor(doc, index * 2, index * 2)));
+
+		expect(blocks.map((el) => highlighted(el, "f7"))).toEqual(["first", "", "last"]);
+	});
+
 	test("highlights a list item's text past its bullet", () => {
 		const doc = [`- ${G}<!--c:f6-->Item **bold**<!--/c:f6-->`, body("f6")].join("\n");
 		const el = render(`<ul><li><span class="list-bullet"></span>${G}Item <strong>bold</strong></li></ul>`);

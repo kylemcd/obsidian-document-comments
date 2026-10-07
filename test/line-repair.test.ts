@@ -99,6 +99,12 @@ describe("brokenLineAnchors and its repair", () => {
 		expect(repair(doc)).toBe(`${fixed.replace("G", G)}\n${body("aa11")}`);
 	});
 
+	test("leaves a marker on a rule alone when the next line opens a math block", () => {
+		const doc = `<!--c:aa11-->---\n$$\nx\n$$\nText<!--/c:aa11-->\n${body("aa11")}`;
+
+		expect(repair(doc)).not.toContain("<!--c:aa11-->$$");
+	});
+
 	test("leaves a marker after an empty bullet alone", () => {
 		const doc = `- <!--c:aa11-->\n- Next<!--/c:aa11-->\n${body("aa11")}`;
 

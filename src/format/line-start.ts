@@ -34,6 +34,9 @@ const INDENT = /^[ \t]*/;
 const STRUCTURAL_LINE = /^[ \t]*(?:`{3,}|~{3,}|(?:[-*_=][ \t]*)+$)/;
 // Four columns of indentation, a tab counting as four, start an indented code block.
 const CODE_INDENT = /^(?: {4}| {0,3}\t)/;
+// A math block, a comment block, or raw HTML. With a marker in front, the line no
+// longer opens its block, which then shows as text.
+const BLOCK_OPENER = /^(?:\$\$|%%|<)/;
 
 /** A fence, rule, setext underline, or empty bullet: a line with no text of its own. */
 export const isStructuralLine = (line: string): boolean => STRUCTURAL_LINE.test(line);
@@ -111,8 +114,9 @@ const skipGuard = (doc: string, pos: number): number => (doc.charAt(pos) === MAR
 
 /**
  * Where the text starts on the first line after `lineEnd` that has some, past
- * blank lines, rules, and underlines. Null at a table or indented code, and at a
- * fence unless `pastCode`, which steps over the whole fenced block instead.
+ * blank lines, rules, and underlines. Null at a table, indented code, or a line
+ * opening a math, comment, or HTML block, and at a fence unless `pastCode`, which
+ * steps over the whole fenced block instead.
  */
 export const nextTextStart = (doc: string, lineEnd: number, pastCode: boolean): number | null => {
 	const fences = fencedRanges(doc);
@@ -128,8 +132,10 @@ export const nextTextStart = (doc: string, lineEnd: number, pastCode: boolean): 
 			continue;
 		}
 		if (lineText.trim() && !STRUCTURAL_LINE.test(lineText)) {
-			if (rows(line.from) || CODE_INDENT.test(lineText)) return null;
-			return skipGuard(doc, line.from + leadingMarkup(lineText).end);
+			const text = line.from + leadingMarkup(lineText).end;
+			if (rows(line.from) || CODE_INDENT.test(lineText) || BLOCK_OPENER.test(doc.slice(text, line.to)))
+				return null;
+			return skipGuard(doc, text);
 		}
 		cursor = doc.indexOf("\n", line.from);
 	}

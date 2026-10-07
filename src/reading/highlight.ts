@@ -134,10 +134,15 @@ export const highlightPostProcessor = (
 		}
 		const range = anchorRange(c);
 		if (!range) continue;
-		// A comment can run over several rendered blocks, and each highlights its part.
+		// A comment can run over several rendered blocks. Obsidian keeps a block whose
+		// source hasn't changed, so only one holding a marker re-renders when the
+		// comment changes: the blocks in between go unhighlighted rather than stale.
 		const from = Math.max(range.from, sectionFrom);
 		const to = Math.min(range.to, sectionTo);
-		if (from >= to) continue;
+		const holdsMarker = [c.open, c.close].some(
+			(marker) => !!marker && marker.from >= sectionFrom && marker.from < sectionTo,
+		);
+		if (from >= to || !holdsMarker) continue;
 		const quote = text.slice(range.from, range.to);
 		if (!quote.trim()) continue;
 		const whole = range.from >= sectionFrom && range.to <= sectionTo;

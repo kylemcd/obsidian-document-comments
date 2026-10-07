@@ -563,6 +563,18 @@ describe("comments that start a line", () => {
 		expect(out.startsWith(`- One\n\n- ${G}<!--c:a1-->Two<!--/c:a1-->`)).toBe(true);
 	});
 
+	// A marker in front of `$$` or `%%` stops the line opening a math or comment
+	// block, which then shows as text and swallows what follows its closing line.
+	it.each([
+		["a math block", "Intro paragraph.\n\n$$\nE = mc^2\n$$\n\nThe equation is famous.\n"],
+		["a comment block", "Intro paragraph.\n\n%%\nhidden note\n%%\n\nThe equation is famous.\n"],
+		["an HTML block", "Intro paragraph.\n\n<div>\nboxed\n</div>\n\nThe equation is famous.\n"],
+	])("keeps a start on a blank line above %s on the blank line", (_label, doc) => {
+		const out = addAt(doc, doc.indexOf("\n\n") + 1, doc.indexOf("famous") + 6);
+
+		expect(out).toContain("Intro paragraph.\n<!--c:a1-->\n");
+	});
+
 	it("keeps a start on a blank line above a fence, where the marker stays invisible", () => {
 		const doc = "Intro\n\n```\ncode\n```\nAfter\n";
 		const out = addAt(doc, doc.indexOf("\n\n") + 1, doc.indexOf("After") + 5);
