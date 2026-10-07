@@ -1,4 +1,5 @@
 import type { TextRange } from "./types";
+import { fencedRanges } from "./parse";
 import { lineIndexAt, sourceLines, sourceTables } from "./table";
 
 /**
@@ -28,8 +29,14 @@ const HEADING = /^[ \t]*#{1,6}(?:[ \t]+|$)/;
 const CALLOUT = /^\[![^\]\n]*\][-+]?(?:[ \t]+|$)/;
 const FOOTNOTE = /^\[\^[^\]\n]+\]:(?:[ \t]+|$)/;
 const INDENT = /^[ \t]*/;
-// A fence, rule, or setext underline: a marker at the end of one breaks the line.
+// A fence, rule, setext underline, or empty bullet: a line with no text of its own,
+// where a marker at either end breaks the line.
 const STRUCTURAL_LINE = /^[ \t]*(?:`{3,}|~{3,}|(?:[-*_=][ \t]*)+$)/;
+// Four columns of indentation, a tab counting as four, start an indented code block.
+const CODE_INDENT = /^(?: {4}| {0,3}\t)/;
+
+/** A fence, rule, setext underline, or empty bullet: a line with no text of its own. */
+export const isStructuralLine = (line: string): boolean => STRUCTURAL_LINE.test(line);
 
 /** Where a line's text starts: past its indentation, quote markers, list bullet
  *  and task box, then a heading's `#`s, a callout's `[!type]`, or a footnote label. */
@@ -65,39 +72,85 @@ export const lineAround = (doc: string, pos: number): TextRange => {
 };
 
 /**
- * Keep an anchor's ends off the block markup a line opens with. In front of a
- * list bullet, quote marker, or heading's `#`s, the open marker stops the line
- * being a list item, quote, or heading at all, and a triple-clicked line put it
- * exactly there. At or before the text of a later line, the close marker starts
- * that line's text, so it comes back to the text the selection ends on.
+ * Keep an anchor's ends on text, off the markup and the lines around it.
  *
- * On a line of nothing but whitespace, a marker goes at the line's start, where
- * it is an invisible HTML block. Past four columns of indentation it would start
- * a code block instead, or join the paragraphs on either side.
+ * In front of a list bullet, quote marker, or heading's `#`s, the open marker
+ * stops the line being a list item, quote, or heading at all, and a triple-clicked
+ * line put it exactly there. At or before the text of a later line, the close
+ * marker starts that line's text, so it comes back to the text the selection ends
+ * on. Neither end stays on a rule, setext underline, or fence line, which a marker
+ * anywhere on breaks, and a start on a blank line moves on to the text after it,
+ * so a loose list keeps its blank lines.
  */
 export const anchorOffBlockMarkup = (doc: string, from: number, to: number): TextRange => {
 	const start = textStart(doc, from);
+	if (start >= to) return { from: start, to: start };
 	return { from: start, to: Math.max(start, textEnd(doc, start, to)) };
 };
 
 const textStart = (doc: string, from: number): number => {
 	const line = lineAround(doc, from);
 	const lineText = doc.slice(line.from, line.to);
-	if (!lineText.trim()) return line.from;
+	if (!lineText.trim() || STRUCTURAL_LINE.test(lineText)) {
+		const blank = !lineText.trim();
+		const next = nextTextStart(doc, line.to, !blank);
+		if (next !== null) return next;
+		// Before a fence, table, or indented code, a blank line keeps the marker at its
+		// start, an invisible HTML block of its own. Past four columns of indentation it
+		// would start a code block instead, or join the paragraphs on either side. A
+		// rule has no such place, so nothing gets anchored.
+		return blank ? line.from : doc.length;
+	}
 	const text = line.from + leadingMarkup(lineText).end;
 	if (from > text) return from;
-	// Behind an existing guard, the new marker shares it instead of adding another.
-	return doc.charAt(text) === MARKER_GUARD ? text + 1 : text;
+	return skipGuard(doc, text);
+};
+
+/** Behind an existing guard, a new marker shares it instead of adding another. */
+const skipGuard = (doc: string, pos: number): number => (doc.charAt(pos) === MARKER_GUARD ? pos + 1 : pos);
+
+/**
+ * Where the text starts on the first line after `lineEnd` that has some, past
+ * blank lines, rules, and underlines. Null at a table or indented code, and at a
+ * fence unless `pastCode`, which steps over the whole fenced block instead.
+ */
+export const nextTextStart = (doc: string, lineEnd: number, pastCode: boolean): number | null => {
+	const fences = fencedRanges(doc);
+	const rows = tableLines(doc);
+	// A scan with two ways to stop and one to skip ahead, which no array method expresses.
+	for (let cursor = doc.indexOf("\n", lineEnd); cursor >= 0 && cursor < doc.length;) {
+		const line = lineAround(doc, cursor + 1);
+		const lineText = doc.slice(line.from, line.to);
+		const fence = fences.find(([fenceFrom, fenceTo]) => line.from >= fenceFrom && line.from <= fenceTo);
+		if (fence) {
+			if (!pastCode) return null;
+			cursor = doc.indexOf("\n", fence[1]);
+			continue;
+		}
+		if (lineText.trim() && !STRUCTURAL_LINE.test(lineText)) {
+			if (rows(line.from) || CODE_INDENT.test(lineText)) return null;
+			return skipGuard(doc, line.from + leadingMarkup(lineText).end);
+		}
+		cursor = doc.indexOf("\n", line.from);
+	}
+	return null;
 };
 
 const textEnd = (doc: string, from: number, to: number): number => {
 	const line = lineAround(doc, to);
+	if (line.from <= from) return to;
 	const lineText = doc.slice(line.from, line.to);
+	const structural = STRUCTURAL_LINE.test(lineText);
 	const text = line.from + leadingMarkup(lineText).end;
-	if (line.from <= from || to > text) return to;
+	if (!structural && to > text) return to;
+	const back = endOfTextBefore(doc, from, line.from);
+	if (back !== null) return back;
+	// A rule or fence line has no place for the marker at all, so it goes back past
+	// whatever stopped it to the last line of text, or the selection held none.
+	if (structural) return endOfPlainTextBefore(doc, from, line.from) ?? from;
 	// Where it can't go back, it goes past the markup instead, to start the text
 	// with a guard rather than stop the line being a list item, quote, or heading.
-	return endOfTextBefore(doc, from, line.from) ?? (lineText.trim() ? text : line.from);
+	return lineText.trim() ? text : line.from;
 };
 
 /** Where a marker leaving the start of the line at `lineFrom` can go: the end of
@@ -107,9 +160,36 @@ export const endOfTextBefore = (doc: string, floor: number, lineFrom: number): n
 	const end = floor + doc.slice(floor, lineFrom).trimEnd().length;
 	const landed = lineAround(doc, end);
 	if (STRUCTURAL_LINE.test(doc.slice(landed.from, landed.to))) return null;
+	return tableLines(doc)(landed.from) ? null : end;
+};
+
+/** The end of the last line of plain text before `lineFrom`, past fences, rules,
+ *  and table rows, if it comes after `floor`. */
+export const endOfPlainTextBefore = (doc: string, floor: number, lineFrom: number): number | null => {
+	const fences = fencedRanges(doc);
+	const rows = tableLines(doc);
+	// Walks back a line at a time and stops at the first that qualifies.
+	for (let cursor = lineFrom - 1; cursor > floor;) {
+		const line = lineAround(doc, cursor);
+		const lineText = doc.slice(line.from, line.to);
+		const inFence = fences.some(([fenceFrom, fenceTo]) => line.from >= fenceFrom && line.from <= fenceTo);
+		if (lineText.trim() && !inFence && !STRUCTURAL_LINE.test(lineText) && !rows(line.from)) {
+			const end = line.from + lineText.trimEnd().length;
+			return end > floor ? end : null;
+		}
+		cursor = line.from - 1;
+	}
+	return null;
+};
+
+/** A test for whether the line starting at an offset is part of a table. */
+const tableLines = (doc: string): ((lineFrom: number) => boolean) => {
 	const lines = sourceLines(doc);
-	const index = lineIndexAt(lines, landed.from);
-	return sourceTables(lines).some((table) => index >= table.start && index < table.end) ? null : end;
+	const tables = sourceTables(lines);
+	return (lineFrom) => {
+		const index = lineIndexAt(lines, lineFrom);
+		return tables.some((table) => index >= table.start && index < table.end);
+	};
 };
 
 /**

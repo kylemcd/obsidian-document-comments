@@ -231,7 +231,7 @@ Use the [Document Comments project](https://github.com/users/kylemcd/projects/1)
 
 ## Known limitations
 
-- Reading view comments work best with plain text inside one paragraph.
+- Adding a comment in Reading view works best with plain text inside one paragraph.
 - Reading view cannot add a comment to text inside an embed.
 - Avoid overlapping comment anchors because comments on the same words can be difficult to manage.
 - The sidebar shows an orphaned comment when no matching selected text remains.

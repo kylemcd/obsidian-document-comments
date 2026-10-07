@@ -152,7 +152,8 @@ describe("anchoring inside a table", () => {
 	])("keeps a heading above a table when a selection starts %s", (_label, from) => {
 		const out = addComment(underHeading, from, underHeading.indexOf("spec") + "spec".length) ?? "";
 
-		expect(headingAbove(out)).toContain("\n## Plan\n");
+		// A start on the blank line now moves on to the heading's text, past its `## `.
+		expect(headingAbove(out)).toMatch(/\n## (?:<!--c:aa11-->)?Plan\n/);
 		expect(renderedRows(out)).toBe(renderedRows(underHeading));
 	});
 

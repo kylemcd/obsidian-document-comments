@@ -9,8 +9,9 @@ Usage:
     python3 validate_comments.py FILE.md [FILE.md ...]
 
 Exit status is non-zero if any definite problem is found (invalid ID, a
-marker with no body, a duplicated ID, or a marker starting a line's text
-without a zero-width space in front of it), so it can gate an agent's work.
+marker with no body, a duplicated ID, a marker starting a line's text
+without a zero-width space in front of it, or a marker on a rule or underline),
+so it can gate an agent's work.
 No third-party dependencies — Python 3 standard library only.
 """
 
@@ -28,6 +29,9 @@ BODY_LOOSE = re.compile(r"<!--co:([^\s]*)([^\n]*)\n?([\s\S]*?)-->")
 # label, with more text after it on the line. Markdown reads such a line as raw
 # HTML, so Reading view shows it unformatted unless a zero-width space comes first.
 # A heading's text is inline, and a marker alone on its line is invisible anyway.
+MARKER = re.compile(r"<!--/?c:[A-Za-z0-9]+-->")
+# A thematic break or setext underline; a marker anywhere on one breaks it.
+RULE = re.compile(r"^ {0,3}(?:([-*_])(?:[ \t]*\1){2,}|=+|-{2,})[ \t]*$")
 LINE_START = re.compile(
     r"^(?:[ \t]*(?:>[ \t]?|(?:[-+*]|\d{1,9}[.)])(?:[ \t]+(?:\[[^\]\n]\](?:[ \t]+|$))?|$)))*"
     r"(?:\[![^\]\n]*\][-+]?[ \t]*|\[\^[^\]\n]+\]:[ \t]*)?[ \t]*"
@@ -103,6 +107,11 @@ def analyze(doc):
     line_starts = [
         m.group(1)[:40] for m in LINE_START.finditer(doc) if not is_masked(spans, m.start(1))
     ]
+    rule_lines = []
+    for line in doc.split("\n"):
+        bare = MARKER.sub("", line)
+        if bare != line and RULE.match(bare):
+            rule_lines.append(line.strip()[:40])
 
     comments = []
     for cid in ids:
@@ -124,7 +133,7 @@ def analyze(doc):
                 "quote": quote_of(header),
             }
         )
-    return comments, problems, line_starts
+    return comments, problems, line_starts, rule_lines
 
 
 def main(argv):
@@ -141,7 +150,7 @@ def main(argv):
             any_problem = True
             continue
 
-        comments, problems, line_starts = analyze(doc)
+        comments, problems, line_starts, rule_lines = analyze(doc)
         print(f"\n{path} — {len(comments)} comment(s)")
         for c in comments:
             note = ""
@@ -157,6 +166,13 @@ def main(argv):
             print(
                 f"  INVALID ID   in {kind} marker: {snippet!r} — "
                 f'id "{raw}" has characters outside [A-Za-z0-9]; the parser ignores this marker'
+            )
+
+        for snippet in rule_lines:
+            any_problem = True
+            print(
+                f"  ON A RULE    {snippet!r} sits on a horizontal rule or setext underline, which stops it "
+                "rendering as one — anchor the text on the line before or after instead"
             )
 
         for snippet in line_starts:

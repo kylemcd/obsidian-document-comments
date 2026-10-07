@@ -539,18 +539,66 @@ describe("comments that start a line", () => {
 		expect(anchorDamage(out).size).toBe(0);
 	});
 
-	// Past four columns of indentation, a marker on a line of nothing but whitespace
-	// starts a code block, or joins the paragraphs that line kept apart.
+	// A marker after a whitespace-only line's indentation starts a code block past four
+	// columns, or joins the paragraphs that line kept apart. The start moves on to
+	// the text instead, leaving the line as it was.
 	it.each([
 		["four spaces between paragraphs", "Para one\n    \nNext para\n", "    "],
 		["a tab after a blank line", "Para one\n\n\t\nNext para\n", "\t"],
-	])("starts a selection on a line of %s at the line's start", (_label, doc, space) => {
+	])("starts a selection on a line of %s on the text after it", (_label, doc, space) => {
 		const line = doc.indexOf(`\n${space}\n`) + 1;
 		const end = doc.indexOf("Next para") + "Next para".length;
 
 		for (const from of [line, line + space.length]) {
-			expect(addAt(doc, from, end)).toContain(`\n<!--c:a1-->${space}\nNext para`);
+			expect(addAt(doc, from, end)).toContain(`\n${space}\n${G}<!--c:a1-->Next para<!--/c:a1-->`);
 		}
+	});
+
+	// Obsidian keeps one list either way, but the blank line is what makes it loose,
+	// and other Markdown tools split the list at a comment line between items.
+	it("starts a selection on the blank line between list items on the next item's text", () => {
+		const doc = "- One\n\n- Two\n";
+		const out = addAt(doc, doc.indexOf("\n\n") + 1, doc.indexOf("Two") + 3);
+
+		expect(out.startsWith(`- One\n\n- ${G}<!--c:a1-->Two<!--/c:a1-->`)).toBe(true);
+	});
+
+	it("keeps a start on a blank line above a fence, where the marker stays invisible", () => {
+		const doc = "Intro\n\n```\ncode\n```\nAfter\n";
+		const out = addAt(doc, doc.indexOf("\n\n") + 1, doc.indexOf("After") + 5);
+
+		expect(out).toContain("Intro\n<!--c:a1-->\n```");
+	});
+
+	it.each([
+		["a rule", "Para\n\n---\nNext text\n", "---"],
+		["a setext underline", "Title\n=====\nNext text\n", "====="],
+		["an empty bullet", "- \n- Next text\n", "- "],
+	])("starts a selection on %s on the text after it", (_label, doc, line) => {
+		const at = doc.indexOf(`${line}\n`);
+		for (const from of [at, at + 1, at + line.length]) {
+			const out = addAt(doc, from, doc.indexOf("text") + 4);
+			expect(out).toContain(`${line}\n`);
+			expect(out).toMatch(/\n(?:- )?\u200b<!--c:a1-->Next text<!--\/c:a1-->/);
+		}
+	});
+
+	it.each([
+		["a rule", "Para text\n\n---\n"],
+		["a setext underline", "Title text\n=====\n"],
+	])("ends a selection on %s on the text before it", (_label, doc) => {
+		for (const to of [doc.length - 1, doc.length - 3, doc.lastIndexOf("\n", doc.length - 2) + 1]) {
+			const out = addAt(doc, 0, to);
+			expect(out).toMatch(/^\u200b<!--c:a1-->\w+ text<!--\/c:a1-->\n/);
+		}
+	});
+
+	it("errs on a selection of nothing but a rule", () => {
+		const doc = "Para\n\n---\n\nNext\n";
+		const from = doc.indexOf("---");
+		const result = computeAddComment(doc, from, from + 3, { id: "a1", createdAt: "t", author: "me", text: "x" });
+
+		expect(result.isErr() && result.error).toBe("Select some text to comment on.");
 	});
 
 	it("ends a selection on a whitespace line after a fence at the line's start", () => {
@@ -560,12 +608,36 @@ describe("comments that start a line", () => {
 		expect(out).toContain("```\n<!--/c:a1-->    \nNext");
 	});
 
-	it("starts a selection on an empty list item after its bullet", () => {
+	it("starts a selection on an empty list item on the next item's text", () => {
 		const doc = "- \n- Next item\n";
 		const out = addAt(doc, 0, doc.indexOf("\n", 3));
 
-		expect(out.startsWith("- <!--c:a1-->\n- Next item<!--/c:a1-->")).toBe(true);
+		expect(out.startsWith(`- \n- ${G}<!--c:a1-->Next item<!--/c:a1-->`)).toBe(true);
 		expect(anchorDamage(out).size).toBe(0);
+	});
+
+	it("puts a comment's body after a code block that follows its paragraph, not inside it", () => {
+		const doc = "Para text\n```\ncode\n\nmore\n```\n\nNext\n";
+		const out = addAt(doc, 0, 4);
+
+		expect(out).toContain("\nmore\n```\n<!--co:a1");
+		expect(parseComments(out)[0]?.body).not.toBeNull();
+	});
+
+	it("puts a comment's body before a code block with no closing fence", () => {
+		const doc = "Para text\n```\ncode\n\nmore\n";
+		const out = addAt(doc, 0, 4);
+
+		expect(out).toContain("Para<!--/c:a1--> text\n<!--co:a1");
+		expect(out.indexOf("<!--co:a1")).toBeLessThan(out.indexOf("```"));
+	});
+
+	it("errs on a comment in a code block with no closing fence", () => {
+		const doc = "Intro\n\n```\ncode line\n";
+		const at = doc.indexOf("code");
+		const result = computeAddComment(doc, at, at + 4, { id: "a1", createdAt: "t", author: "me", text: "x" });
+
+		expect(result.isErr() && result.error).toBe("Close the code block before commenting on it.");
 	});
 
 	it("shares a guard already starting the line", () => {

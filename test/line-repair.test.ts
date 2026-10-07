@@ -76,6 +76,35 @@ describe("brokenLineAnchors and its repair", () => {
 		expect(repair(doc)).toContain("---\r\n- \u200b<!--/c:aa11-->Item");
 	});
 
+	test.each([
+		[
+			"the start of a rule",
+			"Para text\n\n<!--c:aa11-->---\nNext text<!--/c:aa11-->",
+			"Para text\n\n---\nG<!--c:aa11-->Next text<!--/c:aa11-->",
+		],
+		[
+			"the end of a rule",
+			"Para text\n\n---<!--c:aa11-->\nNext text<!--/c:aa11-->",
+			"Para text\n\n---\nG<!--c:aa11-->Next text<!--/c:aa11-->",
+		],
+		[
+			"a setext underline",
+			"Intro <!--c:aa11-->Title text\n=====<!--/c:aa11-->",
+			"Intro <!--c:aa11-->Title text<!--/c:aa11-->\n=====",
+		],
+	])("moves a marker off %s", (_label, line, fixed) => {
+		const doc = `${line}\n${body("aa11")}`;
+
+		expect([...brokenLineAnchors(doc)]).toEqual(["aa11"]);
+		expect(repair(doc)).toBe(`${fixed.replace("G", G)}\n${body("aa11")}`);
+	});
+
+	test("leaves a marker after an empty bullet alone", () => {
+		const doc = `- <!--c:aa11-->\n- Next<!--/c:aa11-->\n${body("aa11")}`;
+
+		expect([...brokenLineAnchors(doc)]).toEqual([]);
+	});
+
 	test("guards a run once, in front of its first marker", () => {
 		const doc = `<!--c:aa11--><!--c:bb22-->Hello<!--/c:bb22--><!--/c:aa11-->\n${body("aa11")}\n${body("bb22")}`;
 

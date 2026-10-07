@@ -54,9 +54,9 @@ describe("anchorOffBlockMarkup", () => {
 		expect(anchorOffBlockMarkup(doc, 6, 10)).toEqual({ from: 6, to: 10 });
 	});
 
-	test("leaves a start on a blank line where the selection put it", () => {
+	test("moves a start on a blank line on to the text after it", () => {
 		const doc = "Above\n\nBelow";
-		expect(anchorOffBlockMarkup(doc, 6, doc.length)).toEqual({ from: 6, to: doc.length });
+		expect(anchorOffBlockMarkup(doc, 6, doc.length)).toEqual({ from: 7, to: doc.length });
 	});
 
 	test("steps over a guard already starting the line, so the new marker shares it", () => {

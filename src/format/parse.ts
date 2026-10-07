@@ -175,6 +175,22 @@ export const fencedRanges = (doc: string): Array<[number, number]> => {
 	return ranges;
 };
 
+/** Whether the fenced block opening at `fenceStart` has a closing fence. Without
+ *  one it runs to the end of the note, so everything after its first line is code. */
+export const hasClosingFence = (doc: string, fenceStart: number): boolean => {
+	const openEnd = doc.indexOf("\n", fenceStart);
+	if (openEnd < 0) return false;
+	const fenceChar = (line: string): string | undefined => /^[ \t]*(`{3,}|~{3,})/.exec(line)?.[1]?.[0];
+	const char = fenceChar(doc.slice(fenceStart, openEnd));
+	return (
+		!!char &&
+		doc
+			.slice(openEnd + 1)
+			.split("\n")
+			.some((line) => fenceChar(line) === char)
+	);
+};
+
 /** True when `pos` sits inside a fenced code block — anchoring a comment there
  *  would write literal marker text into the code, so creation refuses it. */
 export const isInFencedCode = (doc: string, pos: number): boolean => {

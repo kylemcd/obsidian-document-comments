@@ -1,6 +1,14 @@
 import { Result } from "better-result";
 import { CommentData, ParsedComment, Reaction, ReactionTarget, TextRange } from "../format/types";
-import { anchorRange, isAnchored, isHighlight, isInFencedCode, parseComments } from "../format/parse";
+import {
+	anchorRange,
+	fencedRanges,
+	hasClosingFence,
+	isAnchored,
+	isHighlight,
+	isInFencedCode,
+	parseComments,
+} from "../format/parse";
 import { codeSelectionTarget, isCodeComment, resolveCodeAnchor } from "../format/code-anchor";
 import { closeMarker, openMarker, serializeBody } from "../format/serialize";
 import { clampToTableCells } from "../format/table";
@@ -144,6 +152,9 @@ const computeAddCodeComment = (
 ): Result<Change[], string> => {
 	const target = codeSelectionTarget(doc, from, to);
 	if (!target) return Result.err("Couldn't map that selection to code lines.");
+	// With no closing fence the block runs to the end of the note, so the closing
+	// marker and the comment would both land in the code and show as text.
+	if (!hasClosingFence(doc, target.fenceStart)) return Result.err("Close the code block before commenting on it.");
 	const data: CommentData = {
 		author: input.author,
 		createdAt: input.createdAt,
@@ -389,12 +400,23 @@ export const applyChanges = (doc: string, changes: Change[]): string => {
 	return out + doc.slice(last);
 };
 
-/** End offset of the contiguous (non-blank) block of lines containing `pos`. */
+/** End offset of the contiguous (non-blank) block of lines containing `pos`. A
+ *  fenced block counts as one piece, blank lines and all: a comment written at a
+ *  blank line inside one shows as code. One with no closing fence runs to the end
+ *  of the note, so the block ends before it instead. */
 export const blockEnd = (doc: string, pos: number): number => {
+	const fences = fencedRanges(doc);
 	let lineEnd = doc.indexOf("\n", pos);
 	if (lineEnd === -1) return doc.length;
 	for (;;) {
 		const nextStart = lineEnd + 1;
+		const fence = fences.find(([fenceStart]) => fenceStart === nextStart);
+		if (fence) {
+			if (!hasClosingFence(doc, fence[0])) return lineEnd;
+			lineEnd = fence[1];
+			if (lineEnd >= doc.length) return doc.length;
+			continue;
+		}
 		let nextEnd = doc.indexOf("\n", nextStart);
 		if (nextEnd === -1) nextEnd = doc.length;
 		if (doc.slice(nextStart, nextEnd).trim() === "") return lineEnd;

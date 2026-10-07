@@ -155,6 +155,20 @@ line, write a zero-width space (U+200B) immediately before `<!--c:ID-->`:
 The parser ignores the zero-width space; it is not part of the marker or the
 anchored text. Deleting a comment removes it along with the markers.
 
+### Lines with no text of their own
+
+Never put a marker on a horizontal rule (`---`, `***`), a setext underline
+(`===` or `---` under a line of text), or a fence line. Anywhere on one, start or
+end, a marker stops it rendering as a rule, a heading's underline, or a code fence.
+Anchor the text next to it instead: start on the line after, end on the line
+before. A marker on a blank line is invisible, but between list items it can split
+the list in some Markdown tools, so prefer anchoring the item's text.
+
+When a code block follows the anchored paragraph with no blank line between, put
+the body block after the closing fence, never inside the code. Don't comment
+inside a code block that has no closing fence: everything after its opening line
+is code, so the markers and the body would show as text.
+
 ## Comment states
 
 - **Anchored**: both `<!--c:ID-->` and `<!--/c:ID-->` are present and ordered

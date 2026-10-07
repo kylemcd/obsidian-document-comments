@@ -2,7 +2,16 @@ import { Result } from "better-result";
 import { isCodeComment } from "../format/code-anchor";
 import { parseComments } from "../format/parse";
 import type { ParsedComment, TextRange } from "../format/types";
-import { MARKER_GUARD, endOfTextBefore, leadingMarkup, lineAround, tableBodyRows } from "../format/line-start";
+import {
+	MARKER_GUARD,
+	endOfPlainTextBefore,
+	endOfTextBefore,
+	leadingMarkup,
+	lineAround,
+	needsMarkerGuard,
+	nextTextStart,
+	tableBodyRows,
+} from "../format/line-start";
 import type { Change } from "./edits";
 
 /**
@@ -17,6 +26,10 @@ import type { Change } from "./edits";
  */
 
 type Marker = TextRange & { id: string; closing: boolean };
+
+// A thematic break or setext underline, which a marker anywhere on stops being one.
+// A lone bullet is left out: a marker after it only fills an empty list item.
+const RULE = /^ {0,3}(?:([-*_])(?:[ \t]*\1){2,}|=+|-{2,})[ \t]*$/;
 type RunRepair = { ids: string[]; changes: Change[] };
 
 /** The anchor markers the parser recognized, in document order. A code comment's
@@ -58,9 +71,11 @@ const repairRun = (
 	const text = doc.slice(first.from, last.to);
 	const offset = first.from - line.from;
 	const lineText = doc.slice(line.from, line.to);
+	const bare = lineText.slice(0, offset) + lineText.slice(offset + text.length);
+	if (RULE.test(bare)) return offRule(doc, run, line, comments);
 	// Where the line's text would start without the run. Past the run means the run
 	// is mid-line (or behind a guard, which counts as text), and fine.
-	const markup = leadingMarkup(lineText.slice(0, offset) + lineText.slice(offset + text.length));
+	const markup = leadingMarkup(bare);
 	if (offset > markup.end) return null;
 	const rest = doc.slice(last.to, line.to);
 	// Alone on its line, the run is an invisible HTML block already. In front of a
@@ -97,6 +112,41 @@ const repairRun = (
 		},
 	];
 	if (back !== null && leaving.length > 0) changes.push({ from: back, to: back, insert: textOf(leaving) });
+	return changes;
+};
+
+/** Move a run off a rule or underline: its openers on to the text after it, and its
+ *  closers back to the text before it. Null when either would empty a comment. */
+const offRule = (
+	doc: string,
+	run: readonly Marker[],
+	line: TextRange,
+	comments: ReadonlyMap<string, ParsedComment>,
+): Change[] | null => {
+	const first = run[0];
+	const last = run[run.length - 1];
+	if (!first || !last) return null;
+	const openers = run.filter((marker) => !marker.closing);
+	const closers = run.filter((marker) => marker.closing);
+	const ahead = openers.length > 0 ? nextTextStart(doc, line.to, true) : null;
+	const back = closers.length > 0 ? endOfPlainTextBefore(doc, 0, line.from) : null;
+	const opensAhead = openers.every((marker) => {
+		const close = comments.get(marker.id)?.close;
+		return ahead !== null && !!close && close.from > ahead;
+	});
+	const closesBack = closers.every((marker) => {
+		const open = comments.get(marker.id)?.open;
+		return back !== null && !!open && open.to < back;
+	});
+	if (!opensAhead || !closesBack) return null;
+	const textOf = (markers: readonly Marker[]): string =>
+		markers.map((marker) => doc.slice(marker.from, marker.to)).join("");
+	const changes: Change[] = [{ from: first.from, to: last.to, insert: "" }];
+	if (ahead !== null) {
+		const guard = needsMarkerGuard(doc, ahead) ? MARKER_GUARD : "";
+		changes.push({ from: ahead, to: ahead, insert: guard + textOf(openers) });
+	}
+	if (back !== null) changes.push({ from: back, to: back, insert: textOf(closers) });
 	return changes;
 };
 
