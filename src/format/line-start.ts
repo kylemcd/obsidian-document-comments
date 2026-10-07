@@ -70,6 +70,10 @@ export const lineAround = (doc: string, pos: number): TextRange => {
  * being a list item, quote, or heading at all, and a triple-clicked line put it
  * exactly there. At or before the text of a later line, the close marker starts
  * that line's text, so it comes back to the text the selection ends on.
+ *
+ * On a line of nothing but whitespace, a marker goes at the line's start, where
+ * it is an invisible HTML block. Past four columns of indentation it would start
+ * a code block instead, or join the paragraphs on either side.
  */
 export const anchorOffBlockMarkup = (doc: string, from: number, to: number): TextRange => {
 	const start = textStart(doc, from);
@@ -78,7 +82,9 @@ export const anchorOffBlockMarkup = (doc: string, from: number, to: number): Tex
 
 const textStart = (doc: string, from: number): number => {
 	const line = lineAround(doc, from);
-	const text = line.from + leadingMarkup(doc.slice(line.from, line.to)).end;
+	const lineText = doc.slice(line.from, line.to);
+	if (!lineText.trim()) return line.from;
+	const text = line.from + leadingMarkup(lineText).end;
 	if (from > text) return from;
 	// Behind an existing guard, the new marker shares it instead of adding another.
 	return doc.charAt(text) === MARKER_GUARD ? text + 1 : text;
@@ -86,11 +92,12 @@ const textStart = (doc: string, from: number): number => {
 
 const textEnd = (doc: string, from: number, to: number): number => {
 	const line = lineAround(doc, to);
-	const text = line.from + leadingMarkup(doc.slice(line.from, line.to)).end;
+	const lineText = doc.slice(line.from, line.to);
+	const text = line.from + leadingMarkup(lineText).end;
 	if (line.from <= from || to > text) return to;
 	// Where it can't go back, it goes past the markup instead, to start the text
 	// with a guard rather than stop the line being a list item, quote, or heading.
-	return endOfTextBefore(doc, from, line.from) ?? text;
+	return endOfTextBefore(doc, from, line.from) ?? (lineText.trim() ? text : line.from);
 };
 
 /** Where a marker leaving the start of the line at `lineFrom` can go: the end of

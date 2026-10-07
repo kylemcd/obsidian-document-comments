@@ -539,6 +539,27 @@ describe("comments that start a line", () => {
 		expect(anchorDamage(out).size).toBe(0);
 	});
 
+	// Past four columns of indentation, a marker on a line of nothing but whitespace
+	// starts a code block, or joins the paragraphs that line kept apart.
+	it.each([
+		["four spaces between paragraphs", "Para one\n    \nNext para\n", "    "],
+		["a tab after a blank line", "Para one\n\n\t\nNext para\n", "\t"],
+	])("starts a selection on a line of %s at the line's start", (_label, doc, space) => {
+		const line = doc.indexOf(`\n${space}\n`) + 1;
+		const end = doc.indexOf("Next para") + "Next para".length;
+
+		for (const from of [line, line + space.length]) {
+			expect(addAt(doc, from, end)).toContain(`\n<!--c:a1-->${space}\nNext para`);
+		}
+	});
+
+	it("ends a selection on a whitespace line after a fence at the line's start", () => {
+		const doc = "Intro\n```\ncode\n```\n    \nNext\n";
+		const out = addAt(doc, 0, doc.indexOf("    \nNext") + 4);
+
+		expect(out).toContain("```\n<!--/c:a1-->    \nNext");
+	});
+
 	it("starts a selection on an empty list item after its bullet", () => {
 		const doc = "- \n- Next item\n";
 		const out = addAt(doc, 0, doc.indexOf("\n", 3));
