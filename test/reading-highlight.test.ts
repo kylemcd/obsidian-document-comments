@@ -7,7 +7,13 @@
 // Reading view walks the rendered DOM and *can*.
 import { describe, expect, test } from "vitest";
 import type { MarkdownPostProcessorContext } from "obsidian";
-import { findSectionRange, highlightPostProcessor, mapReadingSelection, visibleText } from "../src/reading/highlight";
+import {
+	findSectionRange,
+	highlightPostProcessor,
+	mapReadingSelection,
+	syncHighlights,
+	visibleText,
+} from "../src/reading/highlight";
 import { anchorRange, parseComments } from "../src/format/parse";
 
 Node.prototype.createSpan ??= function (o?: string | { cls?: string; text?: string; attr?: Record<string, string> }) {
@@ -384,6 +390,49 @@ describe("visibleText", () => {
 		expect(at[4]).toBe(2);
 		expect(at[5]).toBe(3);
 		expect(at[9]).toBe(5);
+	});
+});
+
+// Obsidian keeps a rendered block whose own source didn't change, so its highlight
+// can outlive a change made elsewhere in the note.
+describe("syncHighlights", () => {
+	const doc = (status: string) =>
+		[
+			"Ship <!--c:s1-->Friday<!--/c:s1-->.",
+			`<!--co:s1 by:me status:${status} quote:"Friday"`,
+			"me: ok",
+			"-->",
+		].join("\n");
+	const rendered = () => {
+		const el = document.createElement("div");
+		el.innerHTML =
+			'<p>Ship <span class="doc-comment-span" data-cid="s1" title="me: ok">Friday</span>. ' +
+			'<span class="doc-comment-span" data-cid="gone">Later</span></p>' +
+			'<div class="markdown-embed"><span class="doc-comment-span" data-cid="other">Embedded</span></div>';
+		return el;
+	};
+
+	test("unwraps a highlight whose comment is gone and keeps the text", () => {
+		const el = rendered();
+		syncHighlights(el, doc("open"));
+
+		expect(el.querySelector("[data-cid='gone']")).toBeNull();
+		expect(el.querySelector("p")?.textContent).toBe("Ship Friday. Later");
+		expect(el.querySelector("[data-cid='s1']")).not.toBeNull();
+	});
+
+	test("picks up a comment's resolved status", () => {
+		const el = rendered();
+		syncHighlights(el, doc("resolved"));
+
+		expect(el.querySelector("[data-cid='s1']")?.classList.contains("is-resolved")).toBe(true);
+	});
+
+	test("leaves an embed's highlights alone", () => {
+		const el = rendered();
+		syncHighlights(el, doc("open"));
+
+		expect(el.querySelector("[data-cid='other']")?.textContent).toBe("Embedded");
 	});
 });
 

@@ -34,9 +34,14 @@ const INDENT = /^[ \t]*/;
 const STRUCTURAL_LINE = /^[ \t]*(?:`{3,}|~{3,}|(?:[-*_=][ \t]*)+$)/;
 // Four columns of indentation, a tab counting as four, start an indented code block.
 const CODE_INDENT = /^(?: {4}| {0,3}\t)/;
-// A math block, a comment block, or raw HTML. With a marker in front, the line no
-// longer opens its block, which then shows as text.
-const BLOCK_OPENER = /^(?:\$\$|%%|<)/;
+// A math block, a comment block, or a line Markdown reads as the start of an HTML
+// block. With a marker in front, the line no longer opens its block, which then
+// shows as text. Inline HTML followed by text (`<b>Note:</b> …`) isn't one.
+const BLOCK_OPENER =
+	/^(?:\$\$|%%|<(?:(?:script|pre|style|textarea)(?:\s|>|$)|\?|![A-Za-z]|!\[CDATA\[|\/?(?:address|article|aside|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|link|main|menu|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul)(?:\s|\/?>|$)))/i;
+// A whole tag alone on its line, which Markdown also reads as an HTML block.
+const LONE_TAG = /^<\/?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?\/?>\s*$/;
+const HTML_COMMENT = /<!--[\s\S]*?-->/g;
 
 /** A fence, rule, setext underline, or empty bullet: a line with no text of its own. */
 export const isStructuralLine = (line: string): boolean => STRUCTURAL_LINE.test(line);
@@ -131,10 +136,14 @@ export const nextTextStart = (doc: string, lineEnd: number, pastCode: boolean): 
 			cursor = doc.indexOf("\n", fence[1]);
 			continue;
 		}
-		if (lineText.trim() && !STRUCTURAL_LINE.test(lineText)) {
-			const text = line.from + leadingMarkup(lineText).end;
-			if (rows(line.from) || CODE_INDENT.test(lineText) || BLOCK_OPENER.test(doc.slice(text, line.to)))
-				return null;
+		const text = line.from + leadingMarkup(lineText).end;
+		const rest = doc.slice(text, line.to);
+		// A line of nothing but comments is invisible, so look past it. One that opens
+		// a comment and doesn't close it on the line is a block like any other.
+		const visible = rest.replace(HTML_COMMENT, "");
+		if (lineText.trim() && !STRUCTURAL_LINE.test(lineText) && visible.trim()) {
+			const opensBlock = BLOCK_OPENER.test(rest) || LONE_TAG.test(rest) || visible.includes("<!--");
+			if (rows(line.from) || CODE_INDENT.test(lineText) || opensBlock) return null;
 			return skipGuard(doc, text);
 		}
 		cursor = doc.indexOf("\n", line.from);

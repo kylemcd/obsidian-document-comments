@@ -15,6 +15,7 @@ import {
 } from "../editor/edits";
 import { applyCommentEdit, insertComment as routeInsertComment } from "../editor/routing";
 import { AnchorDamage, anchorDamage, computeRepairAnchors } from "../editor/anchor-repair";
+import { syncHighlights } from "./highlight";
 import { highlightsShown } from "../editor/config";
 import { closestSpanId, spanSelector } from "../util/css";
 import { stackTops } from "../ui/stack";
@@ -113,6 +114,7 @@ class ReadingMargin {
 		} catch {
 			return; // file vanished or unreadable — keep the last render
 		}
+		syncHighlights(this.readingView, data);
 		const parsed = parseComments(data);
 		const all = parsed.filter(hasMarginAnchor);
 		// Sidebar open → inline cards step aside (the panel lists them instead).
@@ -455,6 +457,7 @@ export class ReadingMarginManager {
 				const draftColor = authorColorCss(this.deps.highlightColorForAuthor(this.deps.getAuthor()));
 				rv.style.setProperty("--dc-highlight-color", draftColor);
 				rv.style.setProperty("--dc-draft-highlight-color", draftColor);
+				void this.syncFromFile(view, rv);
 				continue;
 			}
 			let margin = this.margins.get(rv);
@@ -469,6 +472,16 @@ export class ReadingMarginManager {
 				margin.destroy();
 				this.margins.delete(rv);
 			}
+		}
+	}
+
+	/** Bring a reading view's highlights up to date with its file (see syncHighlights). */
+	private async syncFromFile(view: MarkdownView, rv: HTMLElement): Promise<void> {
+		if (!view.file) return;
+		try {
+			syncHighlights(rv, await this.deps.app.vault.read(view.file));
+		} catch {
+			// The file vanished or can't be read; the next refresh tries again.
 		}
 	}
 

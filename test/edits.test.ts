@@ -575,6 +575,50 @@ describe("comments that start a line", () => {
 		expect(out).toContain("Intro paragraph.\n<!--c:a1-->\n");
 	});
 
+	it.each([
+		["a lone tag", "Intro paragraph.\n\n<details>\nmore\n</details>\n\nThe equation is famous.\n"],
+		["an unclosed comment", "Intro paragraph.\n\n<!--\nnote\n-->\n\nThe equation is famous.\n"],
+	])("keeps a start on a blank line above %s on the blank line", (_label, doc) => {
+		const out = addAt(doc, doc.indexOf("\n\n") + 1, doc.indexOf("famous") + 6);
+
+		expect(out).toContain("Intro paragraph.\n<!--c:a1-->\n");
+	});
+
+	// Inline HTML followed by text is an ordinary line of text, not an HTML block.
+	it.each([
+		[
+			"a list item's second paragraph",
+			"- item one\n\n  <b>Note:</b> continued para\n",
+			"  ",
+			"<b>Note:</b> continued para",
+		],
+		["a loose list's next item", "- One\n\n- <b>Two</b> item\n", "- ", "<b>Two</b> item"],
+		[
+			"an ordered item's second paragraph",
+			"1. First\n\n   <kbd>Ctrl</kbd> then C\n",
+			"   ",
+			"<kbd>Ctrl</kbd> then C",
+		],
+	])("moves a start on a blank line on to %s that opens with inline HTML", (_label, doc, markup, text) => {
+		const out = addAt(doc, doc.indexOf("\n\n") + 1, doc.length - 1);
+
+		expect(out).toContain(`\n\n${markup}${G}<!--c:a1-->${text}<!--/c:a1-->`);
+	});
+
+	it("looks past a line of nothing but a comment", () => {
+		const doc = "Intro\n\n<!-- note -->\nText here\n";
+		const out = addAt(doc, doc.indexOf("\n\n") + 1, doc.length - 1);
+
+		expect(out).toContain(`<!-- note -->\n${G}<!--c:a1-->Text here<!--/c:a1-->`);
+	});
+
+	it("anchors a start on a rule on the inline HTML line after it", () => {
+		const doc = "Para\n\n---\n<b>Bold</b> start of next\n";
+		const out = addAt(doc, doc.indexOf("---"), doc.length - 1);
+
+		expect(out).toContain(`---\n${G}<!--c:a1--><b>Bold</b> start of next<!--/c:a1-->`);
+	});
+
 	it("keeps a start on a blank line above a fence, where the marker stays invisible", () => {
 		const doc = "Intro\n\n```\ncode\n```\nAfter\n";
 		const out = addAt(doc, doc.indexOf("\n\n") + 1, doc.indexOf("After") + 5);

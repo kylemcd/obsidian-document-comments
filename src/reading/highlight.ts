@@ -457,6 +457,34 @@ const highlightSpan = (root: HTMLElement, attrs: HighlightAttrs): HTMLElement =>
 	return span;
 };
 
+/**
+ * Bring the highlights in a rendered note up to date with its source. Obsidian
+ * keeps a rendered block whose own source didn't change, so a block can outlive a
+ * change to its comment made elsewhere: the comment deleted, its other end edited
+ * away, or its thread resolved. Highlights for comments no longer anchored are
+ * unwrapped, and the rest pick up their comment's status and preview. An embed's
+ * highlights belong to another note and are left alone.
+ */
+export const syncHighlights = (root: HTMLElement, doc: string): void => {
+	const comments = new Map(
+		parseComments(doc)
+			.filter((c) => (isCodeComment(c) ? !!resolveCodeAnchor(doc, c) : !!anchorRange(c)))
+			.map((c) => [c.id, c]),
+	);
+	root.querySelectorAll<HTMLElement>(".doc-comment-span[data-cid]").forEach((span) => {
+		if (span.closest(".markdown-embed, .internal-embed")) return;
+		const comment = comments.get(span.dataset.cid ?? "");
+		if (!comment) {
+			span.replaceWith(...Array.from(span.childNodes));
+			return;
+		}
+		span.classList.toggle("is-resolved", comment.status === "resolved");
+		const title = commentPreview(comment);
+		if (title) span.setAttribute("title", title);
+		else span.removeAttribute("title");
+	});
+};
+
 /** Convert one complete Markdown code span to the text that Reading view renders. */
 const inlineCodeText = (source: string): string | null => {
 	const delimiter = /^`+/.exec(source)?.[0];
