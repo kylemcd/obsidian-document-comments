@@ -712,6 +712,26 @@ describe("comments that start a line", () => {
 		expect(applyChanges(out, computeDeleteComment(out, "a1").unwrap())).toBe(doc);
 	});
 
+	// A marker line where a blank line was would change the list around the code,
+	// pulling the next paragraph into the item. Checked in the app, a marker at the
+	// item's text column keeps the code's line in the item, showing as text.
+	it("keeps the markers of a comment on indented code in a list item on the code's line", () => {
+		const doc = "- Install the tools:\n\n      npm install\n\nThen run the build.\n";
+		const line = doc.indexOf("      npm");
+		const out = addAt(doc, line, line + "      npm install".length);
+
+		expect(out).toContain("\n\n  <!--c:a1-->    npm install<!--/c:a1-->\n");
+		expect(out).toContain("-->\n\nThen run the build.");
+		expect(applyChanges(out, computeDeleteComment(out, "a1").unwrap())).toBe(doc);
+	});
+
+	it("ends a comment on indented code in a list item on a comment line right after it", () => {
+		const doc = "- Item text\n\n      code line\n<!-- note -->\n";
+		const out = addAt(doc, 2, doc.indexOf("code line") + "code line".length);
+
+		expect(out).toContain("\n\n      code line\n<!--/c:a1--><!-- note -->");
+	});
+
 	it("finds the empty comment it made on a line of indented code when the line is selected again", () => {
 		const doc = "Intro paragraph.\n\n    npm run build\n\nAfter.\n";
 		const line = doc.indexOf("    npm");

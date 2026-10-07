@@ -69,6 +69,14 @@ describe("brokenLineAnchors and its repair", () => {
 		expect(repair(doc)).toContain(`\n\`\`\`\n- ${G}<!--/c:aa11-->Next\n`);
 	});
 
+	// A guard in front of the run doesn't make the line a list item again.
+	test("repairs a run behind a guard in front of a bullet", () => {
+		const doc = `Intro\n\n${G}<!--c:bb22--><!--c:aa11-->- First item<!--/c:aa11-->\n- Second<!--/c:bb22-->\n${body("aa11")}\n${body("bb22")}`;
+
+		expect([...brokenLineAnchors(doc)].sort()).toEqual(["aa11", "bb22"]);
+		expect(repair(doc)).toContain(`\n- ${G}<!--c:bb22--><!--c:aa11-->First item<!--/c:aa11-->\n`);
+	});
+
 	test("brings a closer back in front of a hard break's backslash", () => {
 		const doc = `<!--c:aa11-->- first item\\\n<!--/c:aa11-->- second item\n${body("aa11")}`;
 

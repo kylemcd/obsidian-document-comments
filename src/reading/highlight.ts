@@ -142,7 +142,11 @@ export const highlightPostProcessor = (
 		const holdsMarker = [c.open, c.close].some(
 			(marker) => !!marker && marker.from >= sectionFrom && marker.from < sectionTo,
 		);
-		if (from >= to || !holdsMarker) continue;
+		// A comment on indented code has its markers on the lines just above and
+		// below the block, each a section of its own.
+		const bordersMarker =
+			(!!c.open && /^\r?\n$/.test(text.slice(c.open.to, sectionFrom))) || c.close?.from === sectionTo;
+		if (from >= to || !(holdsMarker || bordersMarker)) continue;
 		const quote = text.slice(range.from, range.to);
 		if (!quote.trim()) continue;
 		const whole = range.from >= sectionFrom && range.to <= sectionTo;
@@ -152,7 +156,12 @@ export const highlightPostProcessor = (
 			if (code) wrapFirstMatch(code, codeText, attrs);
 			continue;
 		}
-		if (wrapSourceRange(el, sectionSource, from - sectionFrom, to - sectionFrom, attrs)) continue;
+		// Between its markers' lines, what's commented on is the block's own text, not
+		// the line breaks around it.
+		const span = text.slice(from, to);
+		const lo = holdsMarker ? from : to - span.trimStart().length;
+		const hi = holdsMarker ? to : from + span.trimEnd().length;
+		if (wrapSourceRange(el, sectionSource, lo - sectionFrom, hi - sectionFrom, attrs)) continue;
 		if (whole) wrapFirstMatch(el, quote, attrs);
 	}
 };

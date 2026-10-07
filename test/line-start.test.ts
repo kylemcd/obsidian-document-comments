@@ -146,6 +146,7 @@ describe("indentedCodeLines", () => {
 		["after a blank line in the code", "Intro\n\n    one\n\n    two", "    two"],
 		["indented by a tab", "Intro\n\n\tcode", "\tcode"],
 		["four columns past a list item's text", "- Item\n\n      code", "      code"],
+		["eight columns into an ordered item", "1. Step\n\n        code", "        code"],
 		["after a comment alone on its line", "Intro\n<!--c:aa11-->\n    code", "    code"],
 		["behind a marker in front of it", "Intro\n\n<!--c:aa11-->    code", "<!--c:aa11-->    code"],
 		["after code that looks like a list item", "Intro\n\n    - not an item\n      more code", "      more code"],
@@ -169,6 +170,8 @@ describe("indentedCodeLines", () => {
 	test.each([
 		["a paragraph's next line", "Intro\n    more intro", "    more intro"],
 		["a list item's next line", "1. Item\n    more item", "    more item"],
+		// Checked in the app, an ordered item's text sits at least four columns in.
+		["an ordered item's paragraph seven columns in", "1. Step\n\n       more", "       more"],
 		["a list item's second paragraph", "- Item\n\n    second para", "    second para"],
 		["a nested item's paragraph", "- One\n\t- Two\n\n\t\tpara in two", "\t\tpara in two"],
 		["a list item's paragraph after a lazy line", "- Item\nlazy line\n\n    para in item", "    para in item"],

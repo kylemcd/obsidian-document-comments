@@ -365,6 +365,15 @@ describe("highlighting rendered text", () => {
 		expect(highlighted(el, "k1")).toBe("const a = 1;");
 	});
 
+	// The markers sit on the lines around the code, each a section of its own.
+	test("highlights indented code between the lines holding its markers", () => {
+		const doc = ["Intro.", "<!--c:i1-->", "    npm run build", "<!--/c:i1-->", "After.", body("i1")].join("\n");
+		const el = render("<pre><code>npm run build\n</code></pre>");
+		highlightPostProcessor(el, ctxFor(doc, 2, 2));
+
+		expect(highlighted(el, "i1")).toBe("npm run build");
+	});
+
 	test("highlights a code comment's line holding an HTML comment, which code shows as written", () => {
 		const code = "```\n<!-- Navigation -->\n<nav>Home</nav>\n```\n";
 		const from = code.indexOf("<!--");

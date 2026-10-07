@@ -112,7 +112,8 @@ export const anchorOffBlockMarkup = (doc: string, from: number, to: number): Tex
  * line, as it always did, and that line shows as text instead.
  */
 const outOfCode = (doc: string, from: number, to: number): TextRange => {
-	const code = indentedCodeLines(doc);
+	const shapes = codeShapes(doc);
+	const code = (lineFrom: number): boolean => shapes(lineFrom).code;
 	const first = lineAround(doc, from);
 	const last = lineAround(doc, to);
 	// From the end of a code line, none of its code is selected, so the start goes
@@ -124,6 +125,21 @@ const outOfCode = (doc: string, from: number, to: number): TextRange => {
 	const opens = code(first.from);
 	const closes = to > last.from && code(last.from);
 	if (!opens && !closes) return { from, to };
+	// In a list item, a marker line where a blank line was changes the list around
+	// the code, pulling what follows into the item. Checked in the app, a marker at
+	// the item's text column keeps the code's line in the item, showing as text.
+	const margin = Math.max(opens ? shapes(first.from).margin : 0, closes ? shapes(last.from).margin : 0);
+	if (margin > 0) {
+		const start = opens ? atColumn(doc, first, margin) : from;
+		if (!closes || (opens && first.from === last.from)) return { from: start, to };
+		const back = opens ? null : endOfPlainTextBefore(doc, from, last.from);
+		// A line of nothing but comments right after the code takes the closer
+		// without changing anything around it.
+		const next = neighborLine(doc, last, 1);
+		const joins =
+			next && /^ {0,3}<!--/.test(doc.slice(next.from, next.to)) && !showsText(doc.slice(next.from, next.to));
+		return { from: start, to: joins ? next.from : (back ?? atColumn(doc, last, margin)) };
+	}
 	const above = opens ? openerAbove(doc, blockEdge(doc, first, code, -1)) : null;
 	const below = closes ? pastCodeLine(doc, blockEdge(doc, last, code, 1), code) : null;
 	const clearBelow = below !== null && !code(lineAround(doc, below).from);
@@ -136,6 +152,13 @@ const outOfCode = (doc: string, from: number, to: number): TextRange => {
 	if (!closes || (opens && first.from === last.from)) return { from: start, to };
 	const back = opens ? null : endOfPlainTextBefore(doc, from, last.from);
 	return { from: start, to: back ?? pastCodeLine(doc, last, code) ?? last.from };
+};
+
+/** Where `line`'s indentation reaches `column`, or its text if sooner. */
+const atColumn = (doc: string, line: TextRange, column: number): number => {
+	const indent = INDENT.exec(doc.slice(line.from, line.to))?.[0] ?? "";
+	const at = [...indent].findIndex((_, index) => columnsOf(indent.slice(0, index)) >= column);
+	return line.from + (at < 0 ? indent.length : at);
 };
 
 /** The first or last line of the indented code block holding `line`, past any
@@ -334,6 +357,13 @@ export const endOfPlainTextBefore = (doc: string, floor: number, lineFrom: numbe
  * throughout, which differs from CommonMark around comments, quotes, and lists.
  */
 export const indentedCodeLines = (doc: string): ((lineFrom: number) => boolean) => {
+	const shape = codeShapes(doc);
+	return (lineFrom) => shape(lineFrom).code;
+};
+
+/** `indentedCodeLines`, with the column the text of the list item holding each
+ *  line starts at, or 0 outside a list. */
+const codeShapes = (doc: string): ((lineFrom: number) => CodeShape) => {
 	const lines = sourceLines(doc);
 	const fences = fencedRanges(doc);
 	const fenced = (pos: number): boolean => fences.some(([from, to]) => pos >= from && pos <= to);
@@ -421,7 +451,7 @@ export const indentedCodeLines = (doc: string): ((lineFrom: number) => boolean) 
 		return null;
 	};
 
-	return (lineFrom) => shapeOf(lineIndexAt(lines, lineFrom)).code;
+	return (lineFrom) => shapeOf(lineIndexAt(lines, lineFrom));
 };
 
 /** The column `prefix` ends at, a tab moving on to the next multiple of four. */
@@ -438,8 +468,10 @@ const itemContent = (line: string): number | null => {
 	const markerEnd = columnsOf(marker);
 	// With nothing after the bullet, or more than four columns of space before the
 	// text, the item's text starts one column past the bullet.
-	if (!line.slice(spaced.length).trim() || columnsOf(spaced) - markerEnd > 4) return markerEnd + 1;
-	return columnsOf(spaced);
+	const content =
+		!line.slice(spaced.length).trim() || columnsOf(spaced) - markerEnd > 4 ? markerEnd + 1 : columnsOf(spaced);
+	// Checked in the app, an ordered item's text sits at least four columns in.
+	return /\d[.)]$/.test(marker) ? Math.max(content, indentColumns(line) + 4) : content;
 };
 
 /** A test for whether the line starting at an offset is part of a table. */

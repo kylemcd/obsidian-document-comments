@@ -73,13 +73,15 @@ const repairRun = (
 	if (!first || !last) return null;
 	if (isEscaped(doc, first.from)) return outOfEscape(doc, run, comments);
 	const line = lineAround(doc, first.from);
-	const text = doc.slice(first.from, last.to);
-	const offset = first.from - line.from;
+	// A guard right before the run goes with it: in front of a bullet, `>`, or `#`s,
+	// it doesn't make the line a list item, quote, or heading again.
+	const lead = first.from > line.from && doc.charAt(first.from - 1) === MARKER_GUARD ? first.from - 1 : first.from;
+	const offset = lead - line.from;
 	const lineText = doc.slice(line.from, line.to);
-	const bare = lineText.slice(0, offset) + lineText.slice(offset + text.length);
-	if (RULE.test(bare)) return offRule(doc, run, line, comments);
+	const bare = lineText.slice(0, offset) + lineText.slice(last.to - line.from);
+	if (RULE.test(bare)) return offRule(doc, run, line, comments, lead);
 	// Where the line's text would start without the run. Past the run means the run
-	// is mid-line (or behind a guard, which counts as text), and fine.
+	// is mid-line, and fine.
 	const markup = leadingMarkup(bare);
 	if (offset > markup.end) return null;
 	const rest = doc.slice(last.to, line.to);
@@ -87,15 +89,16 @@ const repairRun = (
 	// invisible HTML block already. In front of a row's leading pipe, it's the
 	// table repair's to put right.
 	if (!showsText(rest) || rest.trimStart().startsWith("|") || bodyRow(line.from)) return null;
-	if (codeLine(line.from)) return offCodeLine(doc, run, line, comments);
+	if (codeLine(line.from)) return offCodeLine(doc, run, line, comments, lead);
 
 	if (offset === markup.end) {
-		return markup.heading ? null : [{ from: first.from, to: first.from, insert: MARKER_GUARD }];
+		if (lead < first.from || markup.heading) return null;
+		return [{ from: first.from, to: first.from, insert: MARKER_GUARD }];
 	}
 
 	// The run sits in front of block markup. Openers move past it. A closer goes
 	// back to the end of the text it closes on, unless that's a fence or rule.
-	const target = line.from + markup.end + text.length;
+	const target = line.from + markup.end + (last.to - lead);
 	const back = endOfTextBefore(doc, 0, line.from);
 	const leaving = back === null ? [] : run.filter((marker) => marker.closing);
 	const staying = run.filter((marker) => !leaving.includes(marker));
@@ -113,7 +116,7 @@ const repairRun = (
 	const guarded = staying.length > 0 && !markup.heading && doc.slice(target, line.to).trim() !== "";
 	const changes: Change[] = [
 		{
-			from: first.from,
+			from: lead,
 			to: target,
 			insert: doc.slice(last.to, target) + (guarded ? MARKER_GUARD : "") + textOf(staying),
 		},
@@ -148,6 +151,7 @@ const offCodeLine = (
 	run: readonly Marker[],
 	line: TextRange,
 	comments: ReadonlyMap<string, ParsedComment>,
+	lead: number,
 ): Change[] | null => {
 	const first = run[0];
 	const last = run[run.length - 1];
@@ -160,7 +164,7 @@ const offCodeLine = (
 	if (!closesBack) return null;
 	return [
 		{ from: back, to: back, insert: doc.slice(first.from, last.to) },
-		{ from: first.from, to: last.to, insert: "" },
+		{ from: lead, to: last.to, insert: "" },
 	];
 };
 
@@ -171,6 +175,7 @@ const offRule = (
 	run: readonly Marker[],
 	line: TextRange,
 	comments: ReadonlyMap<string, ParsedComment>,
+	lead: number,
 ): Change[] | null => {
 	const first = run[0];
 	const last = run[run.length - 1];
@@ -190,7 +195,7 @@ const offRule = (
 	if (!opensAhead || !closesBack) return null;
 	const textOf = (markers: readonly Marker[]): string =>
 		markers.map((marker) => doc.slice(marker.from, marker.to)).join("");
-	const changes: Change[] = [{ from: first.from, to: last.to, insert: "" }];
+	const changes: Change[] = [{ from: lead, to: last.to, insert: "" }];
 	if (ahead !== null) {
 		const guard = needsMarkerGuard(doc, ahead) ? MARKER_GUARD : "";
 		changes.push({ from: ahead, to: ahead, insert: guard + textOf(openers) });
