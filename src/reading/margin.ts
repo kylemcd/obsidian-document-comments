@@ -114,7 +114,6 @@ class ReadingMargin {
 		} catch {
 			return; // file vanished or unreadable — keep the last render
 		}
-		syncHighlights(this.readingView, data);
 		const parsed = parseComments(data);
 		const all = parsed.filter(hasMarginAnchor);
 		// Sidebar open → inline cards step aside (the panel lists them instead).
@@ -447,6 +446,10 @@ export class ReadingMarginManager {
 			const rv = view.containerEl.querySelector(".markdown-reading-view");
 			if (!isHtmlElement(rv)) continue;
 			active.add(rv);
+			// Against the text this pane shows, not the file: an editing pane on the same
+			// note is ahead of the file until it saves, and this pane shows its text.
+			const shown = view.getViewData();
+			if (shown) syncHighlights(rv, shown);
 			if (mobile) {
 				// Mobile: no floating cards or reserved column. Just keep the in-text
 				// highlights' visibility in sync with the toggles (no `dc-has`, so the
@@ -457,7 +460,6 @@ export class ReadingMarginManager {
 				const draftColor = authorColorCss(this.deps.highlightColorForAuthor(this.deps.getAuthor()));
 				rv.style.setProperty("--dc-highlight-color", draftColor);
 				rv.style.setProperty("--dc-draft-highlight-color", draftColor);
-				void this.syncFromFile(view, rv);
 				continue;
 			}
 			let margin = this.margins.get(rv);
@@ -472,16 +474,6 @@ export class ReadingMarginManager {
 				margin.destroy();
 				this.margins.delete(rv);
 			}
-		}
-	}
-
-	/** Bring a reading view's highlights up to date with its file (see syncHighlights). */
-	private async syncFromFile(view: MarkdownView, rv: HTMLElement): Promise<void> {
-		if (!view.file) return;
-		try {
-			syncHighlights(rv, await this.deps.app.vault.read(view.file));
-		} catch {
-			// The file vanished or can't be read; the next refresh tries again.
 		}
 	}
 
