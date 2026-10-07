@@ -732,6 +732,81 @@ describe("comments that start a line", () => {
 		expect(out).toContain("\n\n      code line\n<!--/c:a1--><!-- note -->");
 	});
 
+	// The plugin's table repair reads a marker line right above a table as one stopping it.
+	it("keeps a comment on indented code off the blank line above a table", () => {
+		const doc = "Intro\n\n    npm run build\n\n| a | b |\n|---|---|\n| c | d |\n";
+		const line = doc.indexOf("    npm");
+		const out = addAt(doc, line, line + "    npm run build".length);
+
+		expect(out).toContain("\n\n| a | b |");
+		expect(anchorDamage(out).size).toBe(0);
+	});
+
+	it.each([
+		["into indented code in a list item", "- Install the tools:\n\n      npm install\n", "tools:", "npm install"],
+		[
+			"into indented code before a rule",
+			"Intro paragraph.\n\n    npm run build\n---\n",
+			"paragraph.",
+			"npm run build",
+		],
+	])("errs on a selection of nothing but line breaks %s", (_label, doc, from, to) => {
+		const result = computeAddComment(doc, doc.indexOf(from) + from.length, doc.indexOf(to) + to.length, {
+			id: "a1",
+			createdAt: "t",
+			author: "me",
+			text: "x",
+		});
+
+		expect(result.isErr() && result.error).toBe("Select some text to comment on.");
+	});
+
+	it("finds the empty comment it made on indented code in a list item when it's selected again", () => {
+		const doc = "- Install the tools:\n\n      npm install\n";
+		const line = doc.indexOf("      npm");
+		const out = addAt(doc, line, line + "      npm install".length, "");
+		const range = anchorRange(parseComments(out)[0]!)!;
+
+		expect(findHighlightAtSelection(out, range.from, range.to)?.id).toBe("a1");
+		expect(findHighlightAtSelection(out, out.indexOf("npm"), out.indexOf("install") + 7)?.id).toBe("a1");
+	});
+
+	it("finds an empty comment on indented code from its exact range once its thread follows the code", () => {
+		const doc = "Intro\n<!-- note -->\n\tcode with tab\n```\n";
+		const line = doc.indexOf("\tcode");
+		const out = addAt(doc, line, line + "\tcode with tab".length, "");
+		const range = anchorRange(parseComments(out)[0]!)!;
+
+		expect(findHighlightAtSelection(out, range.from, range.to)?.id).toBe("a1");
+	});
+
+	it("keeps the opener of a selection from top-level code into a list's code out of the code", () => {
+		const doc = "Intro\n\n\tone\n\n- parent\n\n      code in item\n";
+		const out = addAt(doc, doc.indexOf("one"), doc.indexOf("code in") + 4);
+
+		expect(out).not.toContain(`\t${G}<!--c:a1-->one`);
+		expect(anchorDamage(out).size).toBe(0);
+	});
+
+	// In front of a raw HTML block's opening tag, a marker makes the line a comment
+	// block instead, which ends there and leaves the lines after it to render as
+	// something else, and a guard makes it a paragraph. After the tag, it's neither.
+	it.each([
+		[
+			"with a blank line after it",
+			"Intro\n\n<details><summary>More</summary>\n\nHidden **text**\n\n</details>\n\nAfter\n",
+		],
+		[
+			"running on to the next lines",
+			"Intro\n\n<details><summary>More</summary>\n    indented line\n</details>\n\nAfter\n",
+		],
+	])("starts a comment on a raw HTML block %s after its opening tag", (_label, doc) => {
+		const out = addAt(doc, doc.indexOf("<details>"), doc.indexOf("</details>") + "</details>".length);
+
+		expect(out).toContain("\n\n<details><!--c:a1--><summary>More</summary>");
+		expect(anchorDamage(out).size).toBe(0);
+	});
+
 	it("finds the empty comment it made on a line of indented code when the line is selected again", () => {
 		const doc = "Intro paragraph.\n\n    npm run build\n\nAfter.\n";
 		const line = doc.indexOf("    npm");

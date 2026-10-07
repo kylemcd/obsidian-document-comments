@@ -158,6 +158,7 @@ describe("indentedCodeLines", () => {
 		["after a quote", "> Quote\n    code", "    code"],
 		["after a bullet that carries on a paragraph", "Para\n    - x\n\n      deeper", "      deeper"],
 		["after a heading that ends a list", "- Item\n## Heading\n    code", "    code"],
+		["after a raw HTML block a blank line ends", "<details>\nText\n1. Item\n\n    code", "    code"],
 		["four columns past a footnote's text", "[^1]: First\n\n        code", "        code"],
 		// Checked against Obsidian's own rendering.
 		["after a comment that ends a footnote", "Text[^1]\n\n[^1]: Note\n<!-- c -->\n    code", "    code"],
@@ -176,6 +177,16 @@ describe("indentedCodeLines", () => {
 		["a nested item's paragraph", "- One\n\t- Two\n\n\t\tpara in two", "\t\tpara in two"],
 		["a list item's paragraph after a lazy line", "- Item\nlazy line\n\n    para in item", "    para in item"],
 		["a list item's paragraph behind its marker", "<!--c:aa11-->- Item\n\n    para in item", "    para in item"],
+		[
+			"a line in a raw HTML block",
+			"Intro\n\n<details><summary>More</summary>\n    indented line\n</details>",
+			"    indented line",
+		],
+		[
+			"a line in a raw HTML block after a rule in it",
+			"Intro\n\n<details>\n---\n      deeper\n\nAfter",
+			"      deeper",
+		],
 		["a nested item after a comment in its list", "- Item\n<!-- note -->\n    - nested", "    - nested"],
 		["a list item's paragraph after its thread", "- Item\n<!--co:aa11 by:me\nme: hi\n-->\n\n    para", "    para"],
 		["a quote's text in a list item", "- Item\n> quote\n    more", "    more"],

@@ -132,14 +132,18 @@ export const findHighlightAtSelection = (doc: string, from: number, to: number):
 		);
 	}
 
-	({ from, to } = anchorSelection(doc, from, to));
-	return (
+	const at = (start: number, end: number): ParsedComment | undefined =>
 		comments.find((comment) => {
 			if (isCodeComment(comment)) return false;
 			const range = anchorRange(comment);
-			return !!range && range.from === from && range.to === to;
-		}) ?? null
-	);
+			return !!range && range.from === start && range.to === end;
+		});
+	// A selection of exactly a highlight's text is that highlight, wherever moving
+	// its ends off markup or out of code would take them now that it's written.
+	const exact = at(from, to);
+	if (exact) return exact;
+	const anchor = anchorSelection(doc, from, to);
+	return at(anchor.from, anchor.to) ?? null;
 };
 
 /** Anchor a code selection: wrap the whole fenced block with own-line markers and

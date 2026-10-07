@@ -77,6 +77,13 @@ describe("brokenLineAnchors and its repair", () => {
 		expect(repair(doc)).toContain(`\n- ${G}<!--c:bb22--><!--c:aa11-->First item<!--/c:aa11-->\n`);
 	});
 
+	test("moves a run from in front of a raw HTML block's opening tag to after it", () => {
+		const doc = `Intro\n\n<!--c:aa11--></details>\n    - item<!--/c:aa11-->\n${body("aa11")}`;
+
+		expect([...brokenLineAnchors(doc)]).toEqual(["aa11"]);
+		expect(repair(doc)).toContain("\n</details><!--c:aa11-->\n    - item<!--/c:aa11-->\n");
+	});
+
 	test("brings a closer back in front of a hard break's backslash", () => {
 		const doc = `<!--c:aa11-->- first item\\\n<!--/c:aa11-->- second item\n${body("aa11")}`;
 
@@ -171,6 +178,7 @@ describe("brokenLineAnchors and its repair", () => {
 		["starting a heading's text", "## <!--c:aa11-->Heading<!--/c:aa11-->"],
 		["alone on its line", "<!--c:aa11-->\nText<!--/c:aa11-->"],
 		["with nothing but a comment after it", "<!--c:aa11--><!-- note --><!--/c:aa11-->"],
+		["right after a raw HTML block's opening tag", '<div align="center"><!--c:aa11-->Text</div><!--/c:aa11-->'],
 		["starting a table's body row", "a | b\n--|--\n<!--c:aa11-->c<!--/c:aa11--> | d"],
 		["in front of a table row's pipe", "| A | B |\n| - | - |\n<!--c:aa11-->| 1 | 2 |<!--/c:aa11-->"],
 		["in front of a line of indented code", "Intro\n\n<!--c:aa11-->    npm run build<!--/c:aa11-->"],

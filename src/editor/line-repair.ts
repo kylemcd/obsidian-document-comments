@@ -6,6 +6,7 @@ import {
 	MARKER_GUARD,
 	endOfPlainTextBefore,
 	endOfTextBefore,
+	htmlBlockTag,
 	indentedCodeLines,
 	isEscaped,
 	leadingMarkup,
@@ -80,10 +81,12 @@ const repairRun = (
 	const lineText = doc.slice(line.from, line.to);
 	const bare = lineText.slice(0, offset) + lineText.slice(last.to - line.from);
 	if (RULE.test(bare)) return offRule(doc, run, line, comments, lead);
-	// Where the line's text would start without the run. Past the run means the run
-	// is mid-line, and fine.
+	// Where the line's text would start without the run, past a raw HTML block's
+	// opening tag too. Past the run means the run is mid-line, and fine.
 	const markup = leadingMarkup(bare);
-	if (offset > markup.end) return null;
+	const tag = htmlBlockTag(bare.slice(markup.end));
+	const textAt = markup.end + tag;
+	if (offset > textAt) return null;
 	const rest = doc.slice(last.to, line.to);
 	// Alone on its line, or with nothing but comments after it, the run is an
 	// invisible HTML block already. In front of a row's leading pipe, it's the
@@ -91,14 +94,15 @@ const repairRun = (
 	if (!showsText(rest) || rest.trimStart().startsWith("|") || bodyRow(line.from)) return null;
 	if (codeLine(line.from)) return offCodeLine(doc, run, line, comments, lead);
 
-	if (offset === markup.end) {
-		if (lead < first.from || markup.heading) return null;
+	if (offset === textAt) {
+		if (lead < first.from || markup.heading || tag > 0) return null;
 		return [{ from: first.from, to: first.from, insert: MARKER_GUARD }];
 	}
 
-	// The run sits in front of block markup. Openers move past it. A closer goes
-	// back to the end of the text it closes on, unless that's a fence or rule.
-	const target = line.from + markup.end + (last.to - lead);
+	// The run sits in front of block markup or a raw HTML block's opening tag.
+	// Openers move past it. A closer goes back to the end of the text it closes on,
+	// unless that's a fence or rule.
+	const target = line.from + textAt + (last.to - lead);
 	const back = endOfTextBefore(doc, 0, line.from);
 	const leaving = back === null ? [] : run.filter((marker) => marker.closing);
 	const staying = run.filter((marker) => !leaving.includes(marker));
@@ -113,7 +117,7 @@ const repairRun = (
 
 	const textOf = (markers: readonly Marker[]): string =>
 		markers.map((marker) => doc.slice(marker.from, marker.to)).join("");
-	const guarded = staying.length > 0 && !markup.heading && doc.slice(target, line.to).trim() !== "";
+	const guarded = staying.length > 0 && !markup.heading && tag === 0 && doc.slice(target, line.to).trim() !== "";
 	const changes: Change[] = [
 		{
 			from: lead,

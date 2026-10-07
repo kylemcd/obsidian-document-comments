@@ -101,7 +101,10 @@ export const anchorOffBlockMarkup = (doc: string, from: number, to: number): Tex
 	const end = textEnd(doc, start, to);
 	if (end <= start) return { from: start, to: start };
 	const anchor = outOfCode(doc, start, end);
-	return { from: outOfEscape(doc, anchor.from), to: outOfEscape(doc, anchor.to) };
+	const range = { from: outOfEscape(doc, anchor.from), to: outOfEscape(doc, anchor.to) };
+	// Kept out of indented code, an anchor can be left holding nothing but white space.
+	const moved = anchor.from !== start || anchor.to !== end;
+	return moved && !doc.slice(range.from, range.to).trim() ? { from: start, to: start } : range;
 };
 
 /**
@@ -126,32 +129,48 @@ const outOfCode = (doc: string, from: number, to: number): TextRange => {
 	const closes = to > last.from && code(last.from);
 	if (!opens && !closes) return { from, to };
 	// In a list item, a marker line where a blank line was changes the list around
-	// the code, pulling what follows into the item. Checked in the app, a marker at
-	// the item's text column keeps the code's line in the item, showing as text.
-	const margin = Math.max(opens ? shapes(first.from).margin : 0, closes ? shapes(last.from).margin : 0);
-	if (margin > 0) {
-		const start = opens ? atColumn(doc, first, margin) : from;
-		if (!closes || (opens && first.from === last.from)) return { from: start, to };
-		const back = opens ? null : endOfPlainTextBefore(doc, from, last.from);
-		// A line of nothing but comments right after the code takes the closer
-		// without changing anything around it.
-		const next = neighborLine(doc, last, 1);
-		const joins =
-			next && /^ {0,3}<!--/.test(doc.slice(next.from, next.to)) && !showsText(doc.slice(next.from, next.to));
-		return { from: start, to: joins ? next.from : (back ?? atColumn(doc, last, margin)) };
+	// the code, pulling what follows into the item, so only top-level code is
+	// wrapped. Each end goes by its own code line's list.
+	const openMargin = opens ? shapes(first.from).margin : 0;
+	const closeMargin = closes ? shapes(last.from).margin : 0;
+	if (openMargin === 0 && closeMargin === 0) {
+		const above = opens ? openerAbove(doc, blockEdge(doc, first, code, -1)) : null;
+		const below = closes ? pastCodeLine(doc, blockEdge(doc, last, code, 1), code) : null;
+		const clearBelow = below !== null && !code(lineAround(doc, below).from);
+		if ((!opens || above !== null) && (!closes || clearBelow)) {
+			return { from: above ?? from, to: closes ? (below ?? to) : to };
+		}
 	}
-	const above = opens ? openerAbove(doc, blockEdge(doc, first, code, -1)) : null;
-	const below = closes ? pastCodeLine(doc, blockEdge(doc, last, code, 1), code) : null;
-	const clearBelow = below !== null && !code(lineAround(doc, below).from);
-	if ((!opens || above !== null) && (!closes || clearBelow)) {
-		return { from: above ?? from, to: closes ? (below ?? to) : to };
-	}
-	// A closer on the opener's code line is hidden with the rest of it, and one that
-	// can go back to the text before the code doesn't touch the code at all.
-	const start = opens ? first.from : from;
+	// Otherwise a marker goes at the start of its code line's text column, where
+	// it's hidden and the line shows as text. Checked in the app, in a list item
+	// that keeps the line in the item. A closer on the opener's line is hidden with
+	// the rest of it.
+	const start = opens ? pastMarkers(doc, atColumn(doc, first, openMargin)) : from;
 	if (!closes || (opens && first.from === last.from)) return { from: start, to };
-	const back = opens ? null : endOfPlainTextBefore(doc, from, last.from);
-	return { from: start, to: back ?? pastCodeLine(doc, last, code) ?? last.from };
+	// A line of nothing but comments right after the code takes the closer without
+	// changing anything around it, and one that can go back to the text before the
+	// code doesn't touch the code at all.
+	const next = neighborLine(doc, last, 1);
+	const nextText = next ? doc.slice(next.from, next.to) : "";
+	if (next && /^ {0,3}<!--/.test(nextText) && !showsText(nextText)) return { from: start, to: next.from };
+	const back = endOfPlainTextBefore(doc, from, last.from);
+	const after = closeMargin === 0 ? pastCodeLine(doc, last, code) : null;
+	return { from: start, to: back ?? after ?? atColumn(doc, last, closeMargin) };
+};
+
+/** Past any markers at `pos`, where a new marker joins them. */
+const pastMarkers = (doc: string, pos: number): number => {
+	const markers = /(?:<!--\/?c:[A-Za-z0-9]+-->)*/y;
+	markers.lastIndex = pos;
+	return pos + (markers.exec(doc)?.[0].length ?? 0);
+};
+
+/** Whether the line past a blank line, in the direction of `step`, is a table's.
+ *  The plugin's table repair reads a marker on that blank line as one breaking
+ *  the table, so it stays blank. */
+const besideTable = (doc: string, blank: TextRange, step: 1 | -1): boolean => {
+	const beyond = neighborLine(doc, blank, step);
+	return !!beyond && tableLines(doc)(beyond.from);
 };
 
 /** Where `line`'s indentation reaches `column`, or its text if sooner. */
@@ -186,9 +205,16 @@ const openerAbove = (doc: string, top: TextRange): number | null => {
 	if (top.from === 0) return null;
 	const above = lineAround(doc, top.from - 1);
 	const text = doc.slice(above.from, above.to);
-	if (!text.trim()) return above.from;
+	if (!text.trim()) return besideTable(doc, above, -1) ? null : above.from;
 	return /^ {0,3}<!--/.test(text) && !showsText(text) ? above.to : null;
 };
+
+/** How far a raw HTML block's opening tag at the start of `text` runs, or 0 when
+ *  `text` opens no such block. In front of the tag, a marker makes the line a
+ *  comment block instead, which ends right there and leaves the lines after it to
+ *  render as something else. After the tag, the block stays as it was. */
+export const htmlBlockTag = (text: string): number =>
+	opensHtmlBlock(text) ? (/^<(?:"[^"]*"|'[^']*'|[^'">])*>/.exec(text)?.[0].length ?? 0) : 0;
 
 const textStart = (doc: string, from: number): number => {
 	const line = lineAround(doc, from);
@@ -203,7 +229,8 @@ const textStart = (doc: string, from: number): number => {
 		// rule has no such place, so nothing gets anchored.
 		return blank ? line.from : doc.length;
 	}
-	const text = line.from + leadingMarkup(lineText).end;
+	const markup = leadingMarkup(lineText).end;
+	const text = line.from + markup + htmlBlockTag(lineText.slice(markup));
 	if (from > text) return from;
 	return skipGuard(doc, text);
 };
@@ -251,7 +278,8 @@ const textEnd = (doc: string, from: number, to: number): number => {
 	if (line.from <= from) return to;
 	const lineText = doc.slice(line.from, line.to);
 	const structural = STRUCTURAL_LINE.test(lineText);
-	const text = line.from + leadingMarkup(lineText).end;
+	const markup = leadingMarkup(lineText).end;
+	const text = line.from + markup + htmlBlockTag(lineText.slice(markup));
 	if (!structural && to > text) return to;
 	const back = endOfTextBefore(doc, from, line.from);
 	if (back !== null) return back;
@@ -282,7 +310,8 @@ const pastCodeLine = (doc: string, line: TextRange, code: (lineFrom: number) => 
 	if (newline < 0) return null;
 	const next = lineAround(doc, newline + 1);
 	const text = doc.slice(next.from, next.to);
-	if (!text.trim() || code(next.from)) return next.from;
+	if (code(next.from)) return next.from;
+	if (!text.trim()) return besideTable(doc, next, 1) ? null : next.from;
 	const markup = leadingMarkup(text).end;
 	const rest = text.slice(markup);
 	if (STRUCTURAL_LINE.test(text) || BLOCK_OPENER.test(rest) || LONE_TAG.test(rest)) return null;
@@ -385,6 +414,17 @@ const codeShapes = (doc: string): ((lineFrom: number) => CodeShape) => {
 	// its own rather than carrying on the list above it. Checked in the app, a quote
 	// right after a list item stays in the item.
 	const startsBlock = (index: number): boolean => blank(index - 1) || BREAKS_BLOCK.test(at(index));
+	// A raw HTML block runs from its opening line to a blank line, and its lines are
+	// its raw text: no list item, paragraph, or code of their own.
+	const html = new Set<number>();
+	// State carried from line to line, which no array method expresses.
+	for (let index = 0, open = false; index < lines.length; index++) {
+		const line = lines[index];
+		if (!line || blank(index)) open = false;
+		else if (!open && !fenced(line.from) && indentColumns(at(index)) < 4)
+			open = opensHtmlBlock(at(index).trimStart());
+		if (open) html.add(index);
+	}
 	const shapes = new Map<number, CodeShape>();
 
 	const shapeOf = (index: number): CodeShape => {
@@ -399,7 +439,8 @@ const codeShapes = (doc: string): ((lineFrom: number) => CodeShape) => {
 		const line = lines[index];
 		const text = at(index);
 		const indent = indentColumns(text);
-		if (!line || fenced(line.from) || indent < 4 || !text.trim()) return { code: false, margin: 0 };
+		if (!line || fenced(line.from) || indent < 4 || !text.trim() || html.has(index))
+			return { code: false, margin: 0 };
 		const margin = marginOf(index, indent);
 		if (indent < margin + 4) return { code: false, margin };
 		// Indented code can't interrupt a paragraph, so the lines indented as far as
@@ -423,6 +464,11 @@ const codeShapes = (doc: string): ((lineFrom: number) => CodeShape) => {
 			if (blank(above)) continue;
 			endsFootnote ||= !text.trim() || QUOTE.test(text);
 			if (columns >= reach) continue;
+			// The block sits where its first line does.
+			if (html.has(above)) {
+				if (!html.has(above - 1) && columns === 0) return 0;
+				continue;
+			}
 			// Code that looks like a list item isn't one, and shares its holder.
 			const shape = shapeOf(above);
 			if (shape.code) return shape.margin;
@@ -488,14 +534,21 @@ const tableLines = (doc: string): ((lineFrom: number) => boolean) => {
  * Whether a marker inserted at `pos` would start its line's text, so it needs
  * the guard. Checked in the app, two places never do: a heading, whose text is
  * inline, and a table's body rows, which stay rows. A marker with nothing but
- * comments after it on the line is already invisible.
+ * comments after it on the line is already invisible, and one in front of a raw
+ * HTML block leaves it a block.
  */
 export const needsMarkerGuard = (doc: string, pos: number): boolean => {
 	const line = lineAround(doc, pos);
 	const markup = leadingMarkup(doc.slice(line.from, line.to));
-	if (pos !== line.from + markup.end || markup.heading || !showsText(doc.slice(pos, line.to))) return false;
+	const rest = doc.slice(pos, line.to);
+	if (pos !== line.from + markup.end || markup.heading || !showsText(rest) || opensHtmlBlock(rest)) return false;
 	return !tableBodyRows(doc)(line.from);
 };
+
+/** Whether text starting a line opens a raw HTML block. A marker in front leaves
+ *  it one, where a guard would make it a paragraph. */
+export const opensHtmlBlock = (text: string): boolean =>
+	text.startsWith("<") && (BLOCK_OPENER.test(text) || LONE_TAG.test(text));
 
 /** Whether a stretch of a line shows anything once its comments are left out. A
  *  line starting with a marker and holding nothing else is an invisible HTML block,
