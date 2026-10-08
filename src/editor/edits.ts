@@ -150,11 +150,19 @@ export const findHighlightAtSelection = (doc: string, from: number, to: number):
 	// thread inside it. Mapped onto the new text, that selection takes them in. It
 	// is still the same selection if it anchors the comment again once the
 	// comment's own markers and thread come back out.
+	const outside = (range: TextRange): number => Math.max(0, range.from - from) + Math.max(0, to - range.to);
 	return (
-		comments.find((comment) => {
-			const range = !isCodeComment(comment) ? anchorRange(comment) : null;
-			return !!range && range.from <= to && range.to >= from && reanchors(doc, comment.id, range, from, to);
-		}) ?? null
+		comments
+			.flatMap((comment) => {
+				const range = isCodeComment(comment) ? null : anchorRange(comment);
+				return range && range.from <= to && range.to >= from ? [{ comment, range }] : [];
+			})
+			// Anchoring only trims an end or widens it to whole code lines, so the
+			// comment a selection made covers nearly all of it. Each check reads the
+			// whole note, so only the few that cover the most get one.
+			.sort((a, b) => outside(a.range) - outside(b.range))
+			.slice(0, 3)
+			.find(({ comment, range }) => reanchors(doc, comment.id, range, from, to))?.comment ?? null
 	);
 };
 
