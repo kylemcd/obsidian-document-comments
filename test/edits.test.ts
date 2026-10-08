@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { ChangeSet, EditorSelection } from "@codemirror/state";
 import {
 	applyChanges,
 	blockEnd,
@@ -769,6 +770,23 @@ describe("comments that start a line", () => {
 
 		expect(findHighlightAtSelection(out, range.from, range.to)?.id).toBe("a1");
 		expect(findHighlightAtSelection(out, out.indexOf("npm"), out.indexOf("install") + 7)?.id).toBe("a1");
+	});
+
+	// The editor maps the selection onto the new text, where the markers moved off
+	// its ends: past a bullet, `>`, `#`s, or a guard, or back to the text it ended on.
+	it.each([
+		["a triple-clicked list item", "- Item one\n", 0, 10],
+		["a triple-clicked quote", "> Quote here\n", 0, 12],
+		["a triple-clicked heading", "## Heading here\n", 0, 15],
+		["a selection ending at the next line's start", "Para one\nPara two\n", 0, 9],
+		["a selection ending at the next paragraph's start", "Para one\n\nPara two\n", 0, 10],
+		["a selection ending at the start of a row after a rule", "Hard break line\\\n---\n| c | d |\n", 14, 21],
+	])("finds the empty comment it made on %s when Add comment runs again", (_label, doc, from, to) => {
+		const changes = computeAddComment(doc, from, to, { id: "a1", createdAt: "t", author: "me", text: "" }).unwrap();
+		const selection = EditorSelection.range(from, to).map(ChangeSet.of(changes, doc.length));
+		const out = applyChanges(doc, changes);
+
+		expect(findHighlightAtSelection(out, selection.from, selection.to)?.id).toBe("a1");
 	});
 
 	it("finds an empty comment on indented code from its exact range once its thread follows the code", () => {

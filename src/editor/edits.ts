@@ -143,7 +143,33 @@ export const findHighlightAtSelection = (doc: string, from: number, to: number):
 	const exact = at(from, to);
 	if (exact) return exact;
 	const anchor = anchorSelection(doc, from, to);
-	return at(anchor.from, anchor.to) ?? null;
+	const found = at(anchor.from, anchor.to);
+	if (found) return found;
+	// Writing a comment can move its markers off the ends of the selection that
+	// made it, past markup or a guard or back to the text it ended on, and put its
+	// thread inside it. Mapped onto the new text, that selection takes them in. It
+	// is still the same selection if it anchors the comment again once the
+	// comment's own markers and thread come back out.
+	return (
+		comments.find((comment) => {
+			const range = !isCodeComment(comment) ? anchorRange(comment) : null;
+			return !!range && range.from <= to && range.to >= from && reanchors(doc, comment.id, range, from, to);
+		}) ?? null
+	);
+};
+
+/** Whether the selection [from, to] anchors comment `id`, which wraps `range`, in
+ *  the text it was written into: `doc` with that comment taken back out. */
+const reanchors = (doc: string, id: string, range: TextRange, from: number, to: number): boolean => {
+	const removal = computeDeleteComment(doc, id);
+	if (removal.isErr()) return false;
+	const cuts = removal.value;
+	// Where a position lands once the cuts are made: back by every cut before it,
+	// and to the start of one it's inside.
+	const map = (pos: number): number =>
+		pos - cuts.reduce((gone, cut) => gone + Math.max(0, Math.min(pos, cut.to) - cut.from), 0);
+	const anchor = anchorSelection(applyChanges(doc, cuts), map(from), map(to));
+	return anchor.from === map(range.from) && anchor.to === map(range.to);
 };
 
 /** Anchor a code selection: wrap the whole fenced block with own-line markers and
