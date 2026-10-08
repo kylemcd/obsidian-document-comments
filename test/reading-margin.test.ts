@@ -111,6 +111,43 @@ describe("reading margin windows", () => {
 		expect(readingView.classList.contains("dc-highlights")).toBe(false);
 	});
 
+	// A split editing pane on the same note is ahead of the file until it saves, and
+	// the reading pane shows its text, so highlights sync against that text.
+	test("syncs highlights with the text the pane shows, not the file", () => {
+		const readingView = document.createElement("div");
+		readingView.className = "markdown-reading-view";
+		readingView.innerHTML =
+			'<p><span class="doc-comment-span" data-cid="new1">Fresh</span> and ' +
+			'<span class="doc-comment-span" data-cid="gone1">stale</span></p>';
+		const view = new MarkdownView();
+		Object.defineProperty(view, "containerEl", { value: { querySelector: () => readingView } });
+		view.getViewData = () =>
+			[
+				"<!--c:new1-->Fresh<!--/c:new1--> and stale",
+				'<!--co:new1 by:me status:open quote:"Fresh"',
+				"me: hi",
+				"-->",
+			].join("\n");
+		const deps = {
+			app: { workspace: { getLeavesOfType: () => [{ view }] }, vault: { read: async () => "" } },
+			getAuthor: () => "Bob",
+			colorForAuthor: () => null,
+			highlightColorForAuthor: () => null,
+			showComments: () => true,
+			showResolved: () => true,
+			showHighlights: () => true,
+			allowEmptyComments: () => false,
+			sidebarOpen: () => false,
+			isMobile: () => true,
+		} as unknown as ReadingDeps;
+
+		new ReadingMarginManager(deps).refresh();
+
+		expect(readingView.querySelector("[data-cid='new1']")).not.toBeNull();
+		expect(readingView.querySelector("[data-cid='gone1']")).toBeNull();
+		expect(readingView.textContent).toBe("Fresh and stale");
+	});
+
 	test("keeps an open nested draft live when the current author's color changes", () => {
 		let currentColor: "#e54d2e" | "#6e56cf" = "#e54d2e";
 		let mobile = false;

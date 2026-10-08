@@ -20,7 +20,7 @@ create/reply/resolve/delete flow in `SKILL.md`.
 
 | Piece | Syntax | Where |
 |---|---|---|
-| Anchor open | `<!--c:ID-->` | Immediately before the commented text. |
+| Anchor open | `<!--c:ID-->` | Immediately before the commented text, behind a zero-width space when that text starts a line (see [Placement](#placement)). |
 | Anchor close | `<!--/c:ID-->` | Immediately after the commented text. |
 | Body | `<!--co:ID <header>` `\n` `<thread…>` `\n` `-->` | After the block holding the anchor. |
 
@@ -123,6 +123,64 @@ readability convention — but following it keeps files clean and diffs sensible
 Do not place the body **inside** the anchored paragraph or mid-sentence; put it
 after the block.
 
+### Markers at the start of a line
+
+Markdown reads a line whose text starts with `<!--` as a raw HTML block, and
+Reading view then shows the whole line as written: `==highlights==`, `**bold**`,
+links, and the rest appear as plain text. So when the commented text starts a
+line, write a zero-width space (U+200B) immediately before `<!--c:ID-->`:
+
+```markdown
+​<!--c:k3f9-->We should ship<!--/c:k3f9--> on ==Friday==.
+- ​<!--c:m2p4-->Ship on Friday<!--/c:m2p4--> **regardless**
+```
+
+(Each line above starts its text with a U+200B you can't see.) The rules:
+
+- **After the markup, never in front of it.** The marker goes after the line's
+  indentation, `>` quote markers, list bullet or number and task box (`- [ ] `),
+  a callout's `[!type]`, or a footnote label. In front of a bullet, `>`, or `#`s,
+  it stops the line being a list item, quote, or heading at all.
+- **Headings need no zero-width space.** Heading text is inline, so
+  `## <!--c:ID-->Title` is fine.
+- **A marker alone on its line needs none either.** It is already invisible, and
+  a zero-width space would turn the line into an empty paragraph.
+- **Table rows need none.** A marker starting a row below the header leaves it a
+  row. A table without outer pipes still needs one on its header row.
+- The same applies to `<!--/c:ID-->` when it ends up starting a line's text, but
+  prefer ending the anchor on the text before the line break.
+- Several markers in a row at the start of a line share one zero-width space, in
+  front of the first.
+
+The parser ignores the zero-width space; it is not part of the marker or the
+anchored text. Deleting a comment removes it along with the markers.
+
+### Lines with no text of their own
+
+Never put a marker on a horizontal rule (`---`, `***`), a setext underline
+(`===` or `---` under a line of text), or a fence line. Anywhere on one, start or
+end, a marker stops it rendering as a rule, a heading's underline, or a code fence.
+Anchor the text next to it instead: start on the line after, end on the line
+before. A marker on a blank line is invisible, but between list items it can split
+the list in some Markdown tools, so prefer anchoring the item's text.
+
+### Backslashes and indented code
+
+- **Never put a marker right after a backslash.** `\<` is an escape, so the marker
+  shows as text, and a backslash ending a line (a hard line break) stops being
+  one. Put the marker in front of the backslash: `Address line one<!--/c:ID-->\`.
+- **Never put a marker inside indented code.** A line indented four spaces or a
+  tab past its list item's text, or past the margin outside a list, after a blank
+  line, is code, and a marker anywhere on it shows as text. Anchor the code's
+  whole lines, with each marker alone on the blank line above or below the
+  block. With no blank line there, a marker at the very start of the code line
+  is hidden, but that line then shows as text instead of code.
+
+When a code block follows the anchored paragraph with no blank line between, put
+the body block after the closing fence, never inside the code. Don't comment
+inside a code block that has no closing fence: everything after its opening line
+is code, so the markers and the body would show as text.
+
 ## Comment states
 
 - **Anchored**: both `<!--c:ID-->` and `<!--/c:ID-->` are present and ordered
@@ -180,6 +238,8 @@ Concrete rules worth knowing when reading or repairing files:
   duplicates are ignored.
 - A comment is "anchored" only if open and close are both present and
   `open` ends at or before `close` begins.
+- A zero-width space (U+200B) in front of a marker is not part of it. It keeps a
+  marker that starts a line from turning that line into raw HTML.
 - The body's `quote:` is the re-anchor fallback: tools locate the commented text
   by the markers first, and fall back to searching for the quote if the markers
   are gone.

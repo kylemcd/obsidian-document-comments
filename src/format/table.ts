@@ -148,7 +148,7 @@ export const tableColumnAt = (line: string, offset: number): number => {
 	return pipes.filter((pipe) => pipe < offset && pipe !== leadingPipe).length;
 };
 
-const unescapedPipes = (line: string): number[] => {
+export const unescapedPipes = (line: string): number[] => {
 	const pipes: number[] = [];
 	for (let i = 0; i < line.length; i++) {
 		if (line[i] !== "|") continue;

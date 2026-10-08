@@ -152,7 +152,8 @@ describe("anchoring inside a table", () => {
 	])("keeps a heading above a table when a selection starts %s", (_label, from) => {
 		const out = addComment(underHeading, from, underHeading.indexOf("spec") + "spec".length) ?? "";
 
-		expect(headingAbove(out)).toContain("\n## Plan\n");
+		// A start on the blank line now moves on to the heading's text, past its `## `.
+		expect(headingAbove(out)).toMatch(/\n## (?:<!--c:aa11-->)?Plan\n/);
 		expect(renderedRows(out)).toBe(renderedRows(underHeading));
 	});
 
@@ -193,11 +194,15 @@ describe("anchoring inside a table", () => {
 		expect(renderedRows(out)).toBe(renderedRows(doc));
 	});
 
+	// Pulled back to the text it ends on, the marker would land after the table's
+	// closing pipe. Starting the item's text instead, it takes a guard so the item
+	// keeps its formatting in Reading view (#94).
 	test("keeps a list item below a table when a selection ends after its bullet", () => {
 		const doc = [normal, "", "- item"].join("\n");
 		const out = addComment(doc, doc.indexOf("write"), doc.indexOf("- item") + "- ".length);
 
-		expect(out).toContain("\n- <!--/c:aa11-->item");
+		expect(out).toContain("\n- \u200b<!--/c:aa11-->item");
+		expect(renderedRows(out ?? "")).toBe(renderedRows(doc));
 	});
 
 	test.each([

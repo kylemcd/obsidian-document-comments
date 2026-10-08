@@ -175,6 +175,41 @@ export const fencedRanges = (doc: string): Array<[number, number]> => {
 	return ranges;
 };
 
+/** The comments `pattern` finds in `source`, apart from those starting where
+ *  `skip` says, such as in code, where they're text. The search resumes just past
+ *  such a start, so one opened in code doesn't run on and swallow a real comment
+ *  after the code. */
+export const commentsOutside = (
+	source: string,
+	pattern: RegExp,
+	skip: (at: number) => boolean,
+): Array<[number, number]> => {
+	const search = new RegExp(pattern.source, "g");
+	const ranges: Array<[number, number]> = [];
+	// Skipping a match restarts the search inside it, which matchAll can't do.
+	for (let match = search.exec(source); match; match = search.exec(source)) {
+		if (skip(match.index)) search.lastIndex = match.index + 1;
+		else ranges.push([match.index, match.index + match[0].length]);
+	}
+	return ranges;
+};
+
+/** Whether the fenced block opening at `fenceStart` has a closing fence. Without
+ *  one it runs to the end of the note, so everything after its first line is code. */
+export const hasClosingFence = (doc: string, fenceStart: number): boolean => {
+	const openEnd = doc.indexOf("\n", fenceStart);
+	if (openEnd < 0) return false;
+	const fenceChar = (line: string): string | undefined => /^[ \t]*(`{3,}|~{3,})/.exec(line)?.[1]?.[0];
+	const char = fenceChar(doc.slice(fenceStart, openEnd));
+	return (
+		!!char &&
+		doc
+			.slice(openEnd + 1)
+			.split("\n")
+			.some((line) => fenceChar(line) === char)
+	);
+};
+
 /** True when `pos` sits inside a fenced code block — anchoring a comment there
  *  would write literal marker text into the code, so creation refuses it. */
 export const isInFencedCode = (doc: string, pos: number): boolean => {

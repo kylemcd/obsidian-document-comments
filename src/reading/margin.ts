@@ -14,6 +14,8 @@ import {
 	computeToggleReaction,
 } from "../editor/edits";
 import { applyCommentEdit, insertComment as routeInsertComment } from "../editor/routing";
+import { AnchorDamage, anchorDamage, computeRepairAnchors } from "../editor/anchor-repair";
+import { syncHighlights } from "./highlight";
 import { highlightsShown } from "../editor/config";
 import { closestSpanId, spanSelector } from "../util/css";
 import { stackTops } from "../ui/stack";
@@ -46,6 +48,7 @@ class ReadingMargin {
 	private scroller: HTMLElement;
 	private cards = new Map<string, Card>();
 	private comments: ParsedComment[] = [];
+	private damage = new Map<string, AnchorDamage>();
 	private activeId: string | null = null;
 	private draft: TextRange | null = null;
 	private draftText = "";
@@ -89,6 +92,7 @@ class ReadingMargin {
 			toggleReaction: ({ id, entry, emoji }) =>
 				void this.edit((doc) => computeToggleReaction({ doc, id, entry, emoji, author: deps.getAuthor() })),
 			openInSidebar: (id) => deps.openInSidebar?.(id),
+			repairAnchor: (id) => void this.edit((doc) => computeRepairAnchors(doc, new Set([id]))),
 		};
 
 		this.scroller.addEventListener("scroll", this.scrollHandler, { passive: true });
@@ -110,9 +114,12 @@ class ReadingMargin {
 		} catch {
 			return; // file vanished or unreadable — keep the last render
 		}
-		const all = parseComments(data).filter(hasMarginAnchor);
+		const parsed = parseComments(data);
+		const all = parsed.filter(hasMarginAnchor);
 		// Sidebar open → inline cards step aside (the panel lists them instead).
 		this.comments = this.deps.showComments() && !this.deps.sidebarOpen() ? all : [];
+		// Reading view is where a broken line shows, so its cards offer the repair too.
+		this.damage = this.comments.length > 0 ? anchorDamage(data, parsed) : new Map<string, AnchorDamage>();
 		this.reconcileCards();
 		this.position();
 	}
@@ -156,9 +163,11 @@ class ReadingMargin {
 				const card = new Card(c, this.cb, cardView);
 				this.cards.set(c.id, card);
 				this.container.appendChild(card.el);
+				card.setAnchorDamage(this.damage.get(c.id) ?? null);
 			} else {
 				if (existing.signature !== cardSignature(c)) existing.update(c);
 				existing.refreshAuthorColors();
+				existing.setAnchorDamage(this.damage.get(c.id) ?? null);
 			}
 		}
 		this.readingView.toggleClass("dc-hide-resolved", !this.deps.showResolved());
@@ -437,6 +446,10 @@ export class ReadingMarginManager {
 			const rv = view.containerEl.querySelector(".markdown-reading-view");
 			if (!isHtmlElement(rv)) continue;
 			active.add(rv);
+			// Against the text this pane shows, not the file: an editing pane on the same
+			// note is ahead of the file until it saves, and this pane shows its text.
+			const shown = view.getViewData();
+			if (shown) syncHighlights(rv, shown);
 			if (mobile) {
 				// Mobile: no floating cards or reserved column. Just keep the in-text
 				// highlights' visibility in sync with the toggles (no `dc-has`, so the

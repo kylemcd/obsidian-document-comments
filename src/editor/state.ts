@@ -6,13 +6,15 @@ import {
 	RangeSet,
 	StateEffect,
 	StateField,
+	Text,
 	Transaction,
 } from "@codemirror/state";
 import { Decoration, DecorationSet, EditorView, ViewPlugin, WidgetType } from "@codemirror/view";
-import { ParsedComment } from "../format/types";
+import { ParsedComment, TextRange } from "../format/types";
 import { anchorRange, parseComments } from "../format/parse";
 import { isCodeComment, resolveCodeAnchor } from "../format/code-anchor";
 import { commentPreview } from "../format/preview";
+import { MARKER_GUARD } from "../format/line-start";
 import { authorColorCss, creatorForComment } from "../author-colors";
 import { commentConfig } from "./config";
 
@@ -67,6 +69,13 @@ class MarkerWidget extends WidgetType {
 	}
 }
 
+/** A marker plus the guard in front of it, when it has one. The guard is invisible,
+ *  so hiding, the caret, and deletion all have to treat the pair as the marker. */
+const withGuard = (doc: Text, marker: TextRange): TextRange => {
+	if (marker.from === 0 || doc.sliceString(marker.from - 1, marker.from) !== MARKER_GUARD) return marker;
+	return { from: marker.from - 1, to: marker.to };
+};
+
 /**
  * Arrow-key handling around hidden markers. Atomic ranges already skip the marker
  * interior; this plugin makes a single Left/Right press land on the far side of a
@@ -80,13 +89,11 @@ const markerNavigationPlugin = (field: StateField<CommentFieldValue>) => {
 
 		const doc = view.state.doc;
 		const markers = value.comments.flatMap((comment) => {
-			const result: Array<{ from: number; to: number }> = [];
-			if (comment.open && doc.sliceString(comment.open.from - 1, comment.open.from) !== " ") {
-				result.push(comment.open);
-			}
-			if (comment.close && doc.sliceString(comment.close.to, comment.close.to + 1) !== " ") {
-				result.push(comment.close);
-			}
+			const result: TextRange[] = [];
+			const open = comment.open && withGuard(doc, comment.open);
+			if (open && doc.sliceString(open.from - 1, open.from) !== " ") result.push(open);
+			const close = comment.close && withGuard(doc, comment.close);
+			if (close && doc.sliceString(close.to, close.to + 1) !== " ") result.push(close);
 			return result;
 		});
 		const entering = (head: number) =>
@@ -260,11 +267,11 @@ const compute = (state: EditorState): CommentFieldValue => {
 		const code = isCodeComment(c);
 		if (c.open) {
 			if (code && isOwnLine(c.open)) blockHideLine(c.open.from, c.open.to);
-			else addMarker(c.open, "before");
+			else addMarker(withGuard(state.doc, c.open), "before");
 		}
 		if (c.close) {
 			if (code && isOwnLine(c.close)) blockHideLine(c.close.from, c.close.to);
-			else addMarker(c.close, "after");
+			else addMarker(withGuard(state.doc, c.close), "after");
 		}
 		if (c.body && code) {
 			blockHideLine(c.body.from, c.body.to);
@@ -327,7 +334,9 @@ const snapSelectionOutOfMarkers = (
 	if (!value) return tr;
 
 	const markers = value.comments.flatMap((comment) =>
-		[comment.open, comment.close].filter((marker) => marker !== null),
+		[comment.open, comment.close]
+			.filter((marker) => marker !== null)
+			.map((marker) => withGuard(tr.startState.doc, marker)),
 	);
 	let changed = false;
 	const snap = (position: number, previous: number): number => {
@@ -371,8 +380,11 @@ const protectMarkersFromUserEdits = (
 	if (!value) return true;
 	const protectedRanges: number[] = [];
 	for (const comment of value.comments) {
-		if (comment.open) protectedRanges.push(comment.open.from, comment.open.to);
-		if (comment.close) protectedRanges.push(comment.close.from, comment.close.to);
+		for (const marker of [comment.open, comment.close]) {
+			if (!marker) continue;
+			const unit = withGuard(tr.startState.doc, marker);
+			protectedRanges.push(unit.from, unit.to);
+		}
 		// The hidden body block is atomic too, so a forward-Delete at the end of the
 		// anchored line expands over it and would silently destroy the whole thread
 		// (the doc looks unchanged, since the body line is invisible). Protect it so

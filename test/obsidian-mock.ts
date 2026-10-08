@@ -69,6 +69,10 @@ export class MarkdownView {
 	getMode(): string {
 		return "preview";
 	}
+
+	getViewData(): string {
+		return "";
+	}
 }
 
 export class Notice {

@@ -84,28 +84,41 @@ const callbacks = (): CardCallbacks => ({
 	toggleReaction: vi.fn(),
 });
 
-describe("broken table anchor notice", () => {
+describe("broken anchor notice", () => {
 	const view = { sourcePath: () => "note.md", colorForAuthor: () => null };
 
 	test("shows the notice and repair action only while the anchor is breaking a table", () => {
-		const repairTableAnchor = vi.fn();
-		const card = new Card(commentWithText(), { ...callbacks(), repairTableAnchor }, view);
+		const repairAnchor = vi.fn();
+		const card = new Card(commentWithText(), { ...callbacks(), repairAnchor }, view);
 
 		expect(card.el.querySelector(".dc-repair")).toBeNull();
 
-		card.setTableAnchorBroken(true);
+		card.setAnchorDamage("table");
 		expect(card.el.querySelector(".dc-repair__text")?.textContent).toBe("This comment is breaking its table.");
 		card.el.querySelector<HTMLElement>(".dc-repair__action")?.click();
-		expect(repairTableAnchor).toHaveBeenCalledWith(commentWithText().id);
+		expect(repairAnchor).toHaveBeenCalledWith(commentWithText().id);
 
-		card.setTableAnchorBroken(false);
+		card.setAnchorDamage(null);
 		expect(card.el.querySelector(".dc-repair")).toBeNull();
+	});
+
+	test("names a broken line, and swaps the text when the damage changes", () => {
+		const card = new Card(commentWithText(), { ...callbacks(), repairAnchor: vi.fn() }, view);
+
+		card.setAnchorDamage("line");
+		expect(card.el.querySelector(".dc-repair__text")?.textContent).toBe(
+			"This comment is breaking its line's formatting.",
+		);
+
+		card.setAnchorDamage("table");
+		expect(card.el.querySelectorAll(".dc-repair")).toHaveLength(1);
+		expect(card.el.querySelector(".dc-repair__text")?.textContent).toBe("This comment is breaking its table.");
 	});
 
 	test("stays silent when no repair action is available, as in the sidebar", () => {
 		const card = new Card(commentWithText(), callbacks(), view);
 
-		card.setTableAnchorBroken(true);
+		card.setAnchorDamage("line");
 
 		expect(card.el.querySelector(".dc-repair")).toBeNull();
 	});
@@ -115,12 +128,12 @@ describe("broken table anchor notice", () => {
 		// reads layout — which throws there, taking the whole margin plugin down with
 		// it. The scheduled measure pass after each reconcile picks the height change
 		// up instead.
-		const cb = { ...callbacks(), repairTableAnchor: vi.fn() };
+		const cb = { ...callbacks(), repairAnchor: vi.fn() };
 		const card = new Card(commentWithText(), cb, view);
 		(cb.onResize as ReturnType<typeof vi.fn>).mockClear();
 
-		card.setTableAnchorBroken(true);
-		card.setTableAnchorBroken(false);
+		card.setAnchorDamage("table");
+		card.setAnchorDamage(null);
 
 		expect(cb.onResize).not.toHaveBeenCalled();
 	});

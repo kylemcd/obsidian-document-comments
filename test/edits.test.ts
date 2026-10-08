@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { ChangeSet, EditorSelection } from "@codemirror/state";
 import {
 	applyChanges,
 	blockEnd,
@@ -8,9 +9,11 @@ import {
 	computeDeleteEntry,
 	computeEditEntry,
 	computeSetResolved,
+	findHighlightAtSelection,
 } from "../src/editor/edits";
 import { anchorRange, parseComments } from "../src/format/parse";
 import { closeMarker, openMarker } from "../src/format/serialize";
+import { anchorDamage } from "../src/editor/anchor-repair";
 
 const DOC = "We should ship on Friday regardless of the QA timeline.\n\nNext paragraph.\n";
 const FROM = DOC.indexOf("ship on Friday");
@@ -466,3 +469,553 @@ describe("blockEnd", () => {
 const stripComments = (s: string): string => {
 	return s.replace(/<!--\/?co?:[A-Za-z0-9]+[\s\S]*?-->/g, "");
 };
+
+// A comment starting a line's text used to put `<!--` first on the line, which
+// Reading view takes for a raw HTML block and shows without formatting (#94).
+describe("comments that start a line", () => {
+	const G = "\u200b";
+	const addAt = (doc: string, from: number, to: number, text = "note"): string => {
+		const changes = computeAddComment(doc, from, to, { id: "a1", createdAt: "t", author: "me", text }).unwrap();
+		return applyChanges(doc, changes);
+	};
+	const anchored = (doc: string): string => {
+		const range = anchorRange(parseComments(doc).find((comment) => comment.id === "a1")!)!;
+		return doc.slice(range.from, range.to);
+	};
+
+	it("guards a comment on a paragraph's first word", () => {
+		const doc = "Hello ==World== and **bold**\n";
+		const out = addAt(doc, 0, 2);
+
+		expect(out.startsWith(`${G}<!--c:a1-->He<!--/c:a1-->llo ==World==`)).toBe(true);
+		expect(anchored(out)).toBe("He");
+		expect(parseComments(out)[0]?.quote).toBe("He");
+	});
+
+	it.each([
+		["a list item", "- One item ==hl==", "- ", G],
+		["a numbered item", "1. One item ==hl==", "1. ", G],
+		["a task", "- [ ] One item ==hl==", "- [ ] ", G],
+		["a quote", "> One item ==hl==", "> ", G],
+		["a callout title", "> [!note] One item ==hl==", "> [!note] ", G],
+		["a heading", "## One item ==hl==", "## ", ""],
+	])("anchors a triple-clicked %s after its markup", (_label, doc, markup, guard) => {
+		const out = addAt(doc, 0, doc.length);
+
+		expect(out.startsWith(`${markup}${guard}<!--c:a1-->One item ==hl==<!--/c:a1-->`)).toBe(true);
+		expect(anchored(out)).toBe("One item ==hl==");
+	});
+
+	it("guards a comment starting a paragraph's second line", () => {
+		const doc = "First line\nSecond line ==hl==\n";
+		const out = addAt(doc, doc.indexOf("Second"), doc.indexOf(" line =="));
+
+		expect(out).toContain(`First line\n${G}<!--c:a1-->Second<!--/c:a1--> line ==hl==`);
+	});
+
+	it("leaves a comment in the middle of a line unguarded", () => {
+		const doc = "Hello ==World==\n";
+		const out = addAt(doc, 6, 15);
+
+		expect(out).not.toContain(G);
+	});
+
+	it("brings an end at the start of the next line back to the text it ends on", () => {
+		const doc = "- One\n- Two\n";
+		const out = addAt(doc, 0, doc.indexOf("- Two"));
+
+		expect(out.startsWith(`- ${G}<!--c:a1-->One<!--/c:a1-->\n`)).toBe(true);
+		expect(out).toContain("\n- Two\n");
+	});
+
+	it.each([
+		["a fence before a list item", "Intro text\n```\ncode\n```\n- Next item\n", "- Next", "- "],
+		["a rule before a quote", "Intro text\n\n---\n> Quote here\n", "> Quote", "> "],
+		["a rule before a heading", "Intro text\n\n---\n## Next\n", "## Next", "## "],
+	])("keeps an end after %s off the markup when it can't move back", (_label, doc, next, markup) => {
+		const out = addAt(doc, 0, doc.indexOf(next));
+		const guard = markup === "## " ? "" : G;
+
+		expect(out).toContain(`\n${markup}${guard}<!--/c:a1-->${next.slice(markup.length)}`);
+		expect(anchorDamage(out).size).toBe(0);
+	});
+
+	// A marker after a whitespace-only line's indentation starts a code block past four
+	// columns, or joins the paragraphs that line kept apart. The start moves on to
+	// the text instead, leaving the line as it was.
+	it.each([
+		["four spaces between paragraphs", "Para one\n    \nNext para\n", "    "],
+		["a tab after a blank line", "Para one\n\n\t\nNext para\n", "\t"],
+	])("starts a selection on a line of %s on the text after it", (_label, doc, space) => {
+		const line = doc.indexOf(`\n${space}\n`) + 1;
+		const end = doc.indexOf("Next para") + "Next para".length;
+
+		for (const from of [line, line + space.length]) {
+			expect(addAt(doc, from, end)).toContain(`\n${space}\n${G}<!--c:a1-->Next para<!--/c:a1-->`);
+		}
+	});
+
+	// Obsidian keeps one list either way, but the blank line is what makes it loose,
+	// and other Markdown tools split the list at a comment line between items.
+	it("starts a selection on the blank line between list items on the next item's text", () => {
+		const doc = "- One\n\n- Two\n";
+		const out = addAt(doc, doc.indexOf("\n\n") + 1, doc.indexOf("Two") + 3);
+
+		expect(out.startsWith(`- One\n\n- ${G}<!--c:a1-->Two<!--/c:a1-->`)).toBe(true);
+	});
+
+	// A marker in front of `$$` or `%%` stops the line opening a math or comment
+	// block, which then shows as text and swallows what follows its closing line.
+	it.each([
+		["a math block", "Intro paragraph.\n\n$$\nE = mc^2\n$$\n\nThe equation is famous.\n"],
+		["a comment block", "Intro paragraph.\n\n%%\nhidden note\n%%\n\nThe equation is famous.\n"],
+		["an HTML block", "Intro paragraph.\n\n<div>\nboxed\n</div>\n\nThe equation is famous.\n"],
+	])("keeps a start on a blank line above %s on the blank line", (_label, doc) => {
+		const out = addAt(doc, doc.indexOf("\n\n") + 1, doc.indexOf("famous") + 6);
+
+		expect(out).toContain("Intro paragraph.\n<!--c:a1-->\n");
+	});
+
+	it.each([
+		["a lone tag", "Intro paragraph.\n\n<details>\nmore\n</details>\n\nThe equation is famous.\n"],
+		["an unclosed comment", "Intro paragraph.\n\n<!--\nnote\n-->\n\nThe equation is famous.\n"],
+	])("keeps a start on a blank line above %s on the blank line", (_label, doc) => {
+		const out = addAt(doc, doc.indexOf("\n\n") + 1, doc.indexOf("famous") + 6);
+
+		expect(out).toContain("Intro paragraph.\n<!--c:a1-->\n");
+	});
+
+	// Inline HTML followed by text is an ordinary line of text, not an HTML block.
+	it.each([
+		[
+			"a list item's second paragraph",
+			"- item one\n\n  <b>Note:</b> continued para\n",
+			"  ",
+			"<b>Note:</b> continued para",
+		],
+		["a loose list's next item", "- One\n\n- <b>Two</b> item\n", "- ", "<b>Two</b> item"],
+		[
+			"an ordered item's second paragraph",
+			"1. First\n\n   <kbd>Ctrl</kbd> then C\n",
+			"   ",
+			"<kbd>Ctrl</kbd> then C",
+		],
+	])("moves a start on a blank line on to %s that opens with inline HTML", (_label, doc, markup, text) => {
+		const out = addAt(doc, doc.indexOf("\n\n") + 1, doc.length - 1);
+
+		expect(out).toContain(`\n\n${markup}${G}<!--c:a1-->${text}<!--/c:a1-->`);
+	});
+
+	it("looks past a line of nothing but a comment", () => {
+		const doc = "Intro\n\n<!-- note -->\nText here\n";
+		const out = addAt(doc, doc.indexOf("\n\n") + 1, doc.length - 1);
+
+		expect(out).toContain(`<!-- note -->\n${G}<!--c:a1-->Text here<!--/c:a1-->`);
+	});
+
+	it("anchors a start on a rule on the inline HTML line after it", () => {
+		const doc = "Para\n\n---\n<b>Bold</b> start of next\n";
+		const out = addAt(doc, doc.indexOf("---"), doc.length - 1);
+
+		expect(out).toContain(`---\n${G}<!--c:a1--><b>Bold</b> start of next<!--/c:a1-->`);
+	});
+
+	it("keeps a start on a blank line above a fence, where the marker stays invisible", () => {
+		const doc = "Intro\n\n```\ncode\n```\nAfter\n";
+		const out = addAt(doc, doc.indexOf("\n\n") + 1, doc.indexOf("After") + 5);
+
+		expect(out).toContain("Intro\n<!--c:a1-->\n```");
+	});
+
+	it.each([
+		["a rule", "Para\n\n---\nNext text\n", "---"],
+		["a setext underline", "Title\n=====\nNext text\n", "====="],
+		["an empty bullet", "- \n- Next text\n", "- "],
+	])("starts a selection on %s on the text after it", (_label, doc, line) => {
+		const at = doc.indexOf(`${line}\n`);
+		for (const from of [at, at + 1, at + line.length]) {
+			const out = addAt(doc, from, doc.indexOf("text") + 4);
+			expect(out).toContain(`${line}\n`);
+			expect(out).toMatch(/\n(?:- )?\u200b<!--c:a1-->Next text<!--\/c:a1-->/);
+		}
+	});
+
+	it.each([
+		["a rule", "Para text\n\n---\n"],
+		["a setext underline", "Title text\n=====\n"],
+	])("ends a selection on %s on the text before it", (_label, doc) => {
+		for (const to of [doc.length - 1, doc.length - 3, doc.lastIndexOf("\n", doc.length - 2) + 1]) {
+			const out = addAt(doc, 0, to);
+			expect(out).toMatch(/^\u200b<!--c:a1-->\w+ text<!--\/c:a1-->\n/);
+		}
+	});
+
+	it("errs on a selection of nothing but a rule", () => {
+		const doc = "Para\n\n---\n\nNext\n";
+		const from = doc.indexOf("---");
+		const result = computeAddComment(doc, from, from + 3, { id: "a1", createdAt: "t", author: "me", text: "x" });
+
+		expect(result.isErr() && result.error).toBe("Select some text to comment on.");
+	});
+
+	// `\<` is an escape, so a marker right after the backslash would show as text.
+	// Obsidian's triple-click stops at the line's end; CodeMirror's takes the break.
+	it.each([
+		["the line's end", "Address line one\\".length],
+		["the next line's start", "Address line one\\\n".length],
+	])("ends a line selected to %s in front of its hard break's backslash", (_label, to) => {
+		const doc = "Address line one\\\nAddress line two\n";
+
+		expect(addAt(doc, 0, to)).toContain("Address line one<!--/c:a1-->\\\nAddress line two");
+	});
+
+	it("starts a selection right after a backslash in front of it", () => {
+		const doc = "Hello \\*world*\n";
+		const out = addAt(doc, doc.indexOf("*world"), doc.indexOf("\n"));
+
+		expect(out).toContain("Hello <!--c:a1-->\\*world*<!--/c:a1-->");
+	});
+
+	// A marker anywhere in indented code shows as text in the code.
+	it.each([
+		["to the line's end", "    npm run build".length],
+		["through the line break", "    npm run build\n".length],
+		["part of it", "    npm".length],
+	])("keeps a selection of a line of indented code %s out of the code", (_label, length) => {
+		const doc = "Intro paragraph.\n\n    npm run build\n\nAfter.\n";
+		const line = doc.indexOf("    npm");
+		const out = addAt(doc, length === "    npm".length ? line + 4 : line, line + length);
+
+		expect(out).toContain("Intro paragraph.\n<!--c:a1-->\n    npm run build\n<!--/c:a1-->\n");
+		expect(out).not.toContain(G);
+	});
+
+	// No place inside a code block hides a marker without splitting the block, so
+	// the comment takes in the whole block, blank lines and all.
+	it.each([
+		["a middle line", "Intro\n\n    one\n    two\n    three\n\nAfter\n", "    two"],
+		["a line before a blank line in the block", "Intro\n\n    one\n\n    two\n\nAfter\n", "    one"],
+		["a line after a blank line in the block", "Intro\n\n    one\n\n    two\n\nAfter\n", "    two"],
+	])("takes in the whole block around a comment on %s of indented code", (_label, doc, text) => {
+		const line = doc.indexOf(text);
+		const out = addAt(doc, line, line + text.length);
+		const block = doc.slice(doc.indexOf("    one"), doc.indexOf("\n\nAfter"));
+
+		expect(out).toContain(`Intro\n<!--c:a1-->\n${block}\n<!--/c:a1-->\nAfter`);
+	});
+
+	it.each([
+		["a line of indented code", "Intro paragraph.\n\n    npm run build\n\nAfter.\n", "    npm run build"],
+		["a blank line above a fence", "Intro\n\n```\ncode\n```\nAfter\n", "\n```\ncode"],
+	])("deletes a comment starting on %s back to the original document", (_label, doc, text) => {
+		const out = addAt(doc, doc.indexOf(text), doc.indexOf("After") + "After".length);
+
+		expect(applyChanges(out, computeDeleteComment(out, "a1").unwrap())).toBe(doc);
+	});
+
+	// A marker line where a blank line was would change the list around the code,
+	// pulling the next paragraph into the item. Checked in the app, a marker at the
+	// item's text column keeps the code's line in the item, showing as text.
+	it("keeps the markers of a comment on indented code in a list item on the code's line", () => {
+		const doc = "- Install the tools:\n\n      npm install\n\nThen run the build.\n";
+		const line = doc.indexOf("      npm");
+		const out = addAt(doc, line, line + "      npm install".length);
+
+		expect(out).toContain("\n\n  <!--c:a1-->    npm install<!--/c:a1-->\n");
+		expect(out).toContain("-->\n\nThen run the build.");
+		expect(applyChanges(out, computeDeleteComment(out, "a1").unwrap())).toBe(doc);
+	});
+
+	it("ends a comment on indented code in a list item on a comment line right after it", () => {
+		const doc = "- Item text\n\n      code line\n<!-- note -->\n";
+		const out = addAt(doc, 2, doc.indexOf("code line") + "code line".length);
+
+		expect(out).toContain("\n\n      code line\n<!--/c:a1--><!-- note -->");
+	});
+
+	// The plugin's table repair reads a marker line right above a table as one stopping it.
+	it("keeps a comment on indented code off the blank line above a table", () => {
+		const doc = "Intro\n\n    npm run build\n\n| a | b |\n|---|---|\n| c | d |\n";
+		const line = doc.indexOf("    npm");
+		const out = addAt(doc, line, line + "    npm run build".length);
+
+		expect(out).toContain("\n\n| a | b |");
+		expect(anchorDamage(out).size).toBe(0);
+	});
+
+	it.each([
+		["into indented code in a list item", "- Install the tools:\n\n      npm install\n", "tools:", "npm install"],
+		[
+			"into indented code before a rule",
+			"Intro paragraph.\n\n    npm run build\n---\n",
+			"paragraph.",
+			"npm run build",
+		],
+	])("errs on a selection of nothing but line breaks %s", (_label, doc, from, to) => {
+		const result = computeAddComment(doc, doc.indexOf(from) + from.length, doc.indexOf(to) + to.length, {
+			id: "a1",
+			createdAt: "t",
+			author: "me",
+			text: "x",
+		});
+
+		expect(result.isErr() && result.error).toBe("Select some text to comment on.");
+	});
+
+	it("finds the empty comment it made on indented code in a list item when it's selected again", () => {
+		const doc = "- Install the tools:\n\n      npm install\n";
+		const line = doc.indexOf("      npm");
+		const out = addAt(doc, line, line + "      npm install".length, "");
+		const range = anchorRange(parseComments(out)[0]!)!;
+
+		expect(findHighlightAtSelection(out, range.from, range.to)?.id).toBe("a1");
+		expect(findHighlightAtSelection(out, out.indexOf("npm"), out.indexOf("install") + 7)?.id).toBe("a1");
+	});
+
+	// The editor maps the selection onto the new text, where the markers moved off
+	// its ends: past a bullet, `>`, `#`s, or a guard, or back to the text it ended on.
+	it.each([
+		["a triple-clicked list item", "- Item one\n", 0, 10],
+		["a triple-clicked quote", "> Quote here\n", 0, 12],
+		["a triple-clicked heading", "## Heading here\n", 0, 15],
+		["a selection ending at the next line's start", "Para one\nPara two\n", 0, 9],
+		["a selection ending at the next paragraph's start", "Para one\n\nPara two\n", 0, 10],
+		["a selection ending at the start of a row after a rule", "Hard break line\\\n---\n| c | d |\n", 14, 21],
+	])("finds the empty comment it made on %s when Add comment runs again", (_label, doc, from, to) => {
+		const changes = computeAddComment(doc, from, to, { id: "a1", createdAt: "t", author: "me", text: "" }).unwrap();
+		const selection = EditorSelection.range(from, to).map(ChangeSet.of(changes, doc.length));
+		const out = applyChanges(doc, changes);
+
+		expect(findHighlightAtSelection(out, selection.from, selection.to)?.id).toBe("a1");
+	});
+
+	it("finds the empty comment it made inside three empty comments around it when Add comment runs again", () => {
+		const around = [
+			["Some intro", "Closing words."],
+			["intro", "Closing"],
+			["sentence", "words"],
+		] as const;
+		const doc = around.reduce((text, [start, end], index) => {
+			const from = text.indexOf(start);
+			const to = text.indexOf(end) + end.length;
+			const input = { id: `o${index}`, createdAt: "t", author: "me", text: "" };
+			return applyChanges(text, computeAddComment(text, from, to, input).unwrap());
+		}, "## Notes\n\nSome intro sentence here.\n\n- First point\n- Second point\n- Third point\n\nClosing words.\n");
+		const from = doc.indexOf("- Second");
+		const to = from + "- Second point".length;
+		const changes = computeAddComment(doc, from, to, { id: "c1", createdAt: "t", author: "me", text: "" }).unwrap();
+		const selection = EditorSelection.range(from, to).map(ChangeSet.of(changes, doc.length));
+
+		expect(findHighlightAtSelection(applyChanges(doc, changes), selection.from, selection.to)?.id).toBe("c1");
+	});
+
+	it("finds an empty comment on indented code from its exact range once its thread follows the code", () => {
+		const doc = "Intro\n<!-- note -->\n\tcode with tab\n```\n";
+		const line = doc.indexOf("\tcode");
+		const out = addAt(doc, line, line + "\tcode with tab".length, "");
+		const range = anchorRange(parseComments(out)[0]!)!;
+
+		expect(findHighlightAtSelection(out, range.from, range.to)?.id).toBe("a1");
+	});
+
+	it("keeps the opener of a selection from top-level code into a list's code out of the code", () => {
+		const doc = "Intro\n\n\tone\n\n- parent\n\n      code in item\n";
+		const out = addAt(doc, doc.indexOf("one"), doc.indexOf("code in") + 4);
+
+		expect(out).not.toContain(`\t${G}<!--c:a1-->one`);
+		expect(anchorDamage(out).size).toBe(0);
+	});
+
+	// In front of a raw HTML block's opening tag, a marker makes the line a comment
+	// block instead, which ends there and leaves the lines after it to render as
+	// something else, and a guard makes it a paragraph. After the tag, it's neither.
+	it.each([
+		[
+			"with a blank line after it",
+			"Intro\n\n<details><summary>More</summary>\n\nHidden **text**\n\n</details>\n\nAfter\n",
+		],
+		[
+			"running on to the next lines",
+			"Intro\n\n<details><summary>More</summary>\n    indented line\n</details>\n\nAfter\n",
+		],
+	])("starts a comment on a raw HTML block %s after its opening tag", (_label, doc) => {
+		const out = addAt(doc, doc.indexOf("<details>"), doc.indexOf("</details>") + "</details>".length);
+
+		expect(out).toContain("\n\n<details><!--c:a1--><summary>More</summary>");
+		expect(anchorDamage(out).size).toBe(0);
+	});
+
+	it("finds the empty comment it made on a line of indented code when the line is selected again", () => {
+		const doc = "Intro paragraph.\n\n    npm run build\n\nAfter.\n";
+		const line = doc.indexOf("    npm");
+		const out = addAt(doc, line, line + "    npm run build".length, "");
+		const again = out.indexOf("    npm");
+
+		expect(findHighlightAtSelection(out, again, again + "    npm run build".length)?.id).toBe("a1");
+	});
+
+	it("keeps a comment on a footnote's indented second paragraph inline", () => {
+		const doc = "Text[^1]\n\n[^1]: First para\n\n    Second para of the note\n";
+		const line = doc.indexOf("    Second");
+		const out = addAt(doc, line, line + "    Second para of the note".length);
+
+		expect(out).toContain(`\n\n    ${G}<!--c:a1-->Second para of the note<!--/c:a1-->`);
+	});
+
+	it("errs on a selection of an indented code line's indentation alone", () => {
+		const doc = "Intro\n\n    npm run build\n";
+		const at = doc.indexOf("    npm");
+		const result = computeAddComment(doc, at + 1, at + 3, { id: "a1", createdAt: "t", author: "me", text: "x" });
+
+		expect(result.isErr() && result.error).toBe("Select some text to comment on.");
+	});
+
+	it.each([
+		["the break after a line of indented code", "\n    two"],
+		["the breaks between indented code and a list item", "\n\n1. Item"],
+	])("errs on a selection of %s", (_label, after) => {
+		const doc = `Intro\n\n    one${after}\n`;
+		const at = doc.indexOf("one") + 3;
+		const result = computeAddComment(doc, at, at + after.indexOf(after.trim()), {
+			id: "a1",
+			createdAt: "t",
+			author: "me",
+			text: "x",
+		});
+
+		expect(result.isErr() && result.error).toBe("Select some text to comment on.");
+	});
+
+	it("starts a selection from the end of a line of indented code on the line after it", () => {
+		const doc = "Intro\n\n    code\n---\nNext text\n";
+		const out = addAt(doc, doc.indexOf("\n---"), doc.indexOf("Next text") + "Next text".length);
+
+		expect(out).toContain(`\n    code\n---\n${G}<!--c:a1-->Next text<!--/c:a1-->`);
+	});
+
+	it("keeps the markers of a comment on indented code before a rule on the line's start and end", () => {
+		const doc = "Intro\n\n    code\n---\n";
+		const line = doc.indexOf("    code");
+		const out = addAt(doc, line, doc.indexOf("---"));
+
+		expect(out).toContain("\n<!--c:a1-->    code<!--/c:a1-->\n---\n");
+	});
+
+	it("ends a selection at indented code after a rule on the text before the rule", () => {
+		const doc = "Para text\n\n---\n    code\n";
+		const out = addAt(doc, 0, doc.indexOf("    code"));
+
+		expect(out).toContain(`${G}<!--c:a1-->Para text<!--/c:a1-->\n`);
+		expect(out).toContain("\n---\n    code\n");
+	});
+
+	// A marker alone on the blank line after another would end the list there.
+	it("starts a selection on the blank lines above an item's indented text on that text", () => {
+		const doc = "- One\n\n\n    more of one\n";
+		const out = addAt(doc, doc.indexOf("\n\n\n") + 2, doc.length - 1);
+
+		expect(out).toContain(`\n\n\n    ${G}<!--c:a1-->more of one<!--/c:a1-->`);
+	});
+
+	it("errs on a selection of the space after a code line's dash", () => {
+		const doc = "Intro\n\n    - code\n";
+		const at = doc.indexOf("- code") + 1;
+		const result = computeAddComment(doc, at, at + 1, { id: "a1", createdAt: "t", author: "me", text: "x" });
+
+		expect(result.isErr() && result.error).toBe("Select some text to comment on.");
+	});
+
+	it("leaves a comment on a line of nothing but an HTML comment unguarded", () => {
+		const doc = "Intro\n\n<!-- note -->\n";
+		const at = doc.indexOf("<!--");
+		const out = addAt(doc, at, at + "<!-- note -->".length);
+
+		expect(out).toContain("\n<!--c:a1--><!-- note --><!--/c:a1-->\n");
+	});
+
+	it("keeps an end after a line of indented code off the end of the code", () => {
+		const doc = "Intro.\n\n    npm run build\n- Next item\n";
+		const out = addAt(doc, 0, doc.indexOf("- Next"));
+
+		expect(out).toContain(`\n    npm run build\n- ${G}<!--/c:a1-->Next item`);
+	});
+
+	it("ends a selection on a whitespace line after a fence at the line's start", () => {
+		const doc = "Intro\n```\ncode\n```\n    \nNext\n";
+		const out = addAt(doc, 0, doc.indexOf("    \nNext") + 4);
+
+		expect(out).toContain("```\n<!--/c:a1-->    \nNext");
+	});
+
+	it("starts a selection on an empty list item on the next item's text", () => {
+		const doc = "- \n- Next item\n";
+		const out = addAt(doc, 0, doc.indexOf("\n", 3));
+
+		expect(out.startsWith(`- \n- ${G}<!--c:a1-->Next item<!--/c:a1-->`)).toBe(true);
+		expect(anchorDamage(out).size).toBe(0);
+	});
+
+	it("puts a comment's body after a code block that follows its paragraph, not inside it", () => {
+		const doc = "Para text\n```\ncode\n\nmore\n```\n\nNext\n";
+		const out = addAt(doc, 0, 4);
+
+		expect(out).toContain("\nmore\n```\n<!--co:a1");
+		expect(parseComments(out)[0]?.body).not.toBeNull();
+	});
+
+	it("puts a comment's body before a code block with no closing fence", () => {
+		const doc = "Para text\n```\ncode\n\nmore\n";
+		const out = addAt(doc, 0, 4);
+
+		expect(out).toContain("Para<!--/c:a1--> text\n<!--co:a1");
+		expect(out.indexOf("<!--co:a1")).toBeLessThan(out.indexOf("```"));
+	});
+
+	it("errs on a comment in a code block with no closing fence", () => {
+		const doc = "Intro\n\n```\ncode line\n";
+		const at = doc.indexOf("code");
+		const result = computeAddComment(doc, at, at + 4, { id: "a1", createdAt: "t", author: "me", text: "x" });
+
+		expect(result.isErr() && result.error).toBe("Close the code block before commenting on it.");
+	});
+
+	it("shares a guard already starting the line", () => {
+		const doc = `- ${G}<!--c:zz99-->Item<!--/c:zz99-->\n<!--co:zz99 by:me status:open quote:"Item"\nme: hi\n-->\n`;
+		const out = addAt(doc, 0, doc.indexOf("\n"));
+
+		const line = out.slice(0, out.indexOf("\n"));
+		expect(line).toBe(`- ${G}<!--c:a1--><!--c:zz99-->Item<!--/c:zz99--><!--/c:a1-->`);
+	});
+
+	it("errs on a selection of nothing but block markup", () => {
+		const doc = "- Item\n";
+		const result = computeAddComment(doc, 0, 2, { id: "a1", createdAt: "t", author: "me", text: "x" });
+
+		expect(result.isErr() && result.error).toBe("Select some text to comment on.");
+	});
+
+	it("finds the highlight it made when the same line is selected again", () => {
+		const doc = "Hello world\n";
+		const out = addAt(doc, 0, 5, "");
+		const range = anchorRange(parseComments(out)[0]!)!;
+
+		expect(findHighlightAtSelection(out, range.from, range.to)?.id).toBe("a1");
+	});
+
+	it.each([
+		["a paragraph's first word", "Hello world\n\nNext.\n", 0, 5],
+		["a triple-clicked list item", "- One\n- Two\n", 0, 5],
+		["a quote", "> Quote\n", 0, 7],
+	])("deletes a comment on %s back to the original document", (_label, doc, from, to) => {
+		const out = addAt(doc, from, to);
+
+		expect(applyChanges(out, computeDeleteComment(out, "a1").unwrap())).toBe(doc);
+	});
+
+	it("keeps a shared guard while another comment's marker still starts the line", () => {
+		const doc = `${G}<!--c:a1--><!--c:b2-->Hello<!--/c:b2--><!--/c:a1-->\n`;
+		const out = applyChanges(doc, computeDeleteComment(doc, "a1").unwrap());
+
+		expect(out).toBe(`${G}<!--c:b2-->Hello<!--/c:b2-->\n`);
+	});
+});

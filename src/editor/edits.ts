@@ -1,9 +1,18 @@
 import { Result } from "better-result";
 import { CommentData, ParsedComment, Reaction, ReactionTarget, TextRange } from "../format/types";
-import { anchorRange, isAnchored, isHighlight, isInFencedCode, parseComments } from "../format/parse";
+import {
+	anchorRange,
+	fencedRanges,
+	hasClosingFence,
+	isAnchored,
+	isHighlight,
+	isInFencedCode,
+	parseComments,
+} from "../format/parse";
 import { codeSelectionTarget, isCodeComment, resolveCodeAnchor } from "../format/code-anchor";
 import { closeMarker, openMarker, serializeBody } from "../format/serialize";
 import { clampToTableCells } from "../format/table";
+import { MARKER_GUARD, anchorOffBlockMarkup, needsMarkerGuard } from "../format/line-start";
 
 /** A document edit in original coordinates (matches CodeMirror's ChangeSpec shape). */
 export type Change = {
@@ -81,8 +90,10 @@ export const computeAddComment = (
 	if (isInFencedCode(doc, from) || isInFencedCode(doc, to - 1)) {
 		return computeAddCodeComment(doc, from, to, input);
 	}
-	({ from, to } = anchorSelection(doc, from, to));
-	if (to === from) return Result.err("Select the text inside a table cell, not its borders.");
+	const cell = clampToTableCells(doc, from, to);
+	if (cell.to === cell.from) return Result.err("Select the text inside a table cell, not its borders.");
+	({ from, to } = anchorText(doc, cell));
+	if (to === from) return Result.err("Select some text to comment on.");
 
 	const quote = doc.slice(from, to);
 	const data: CommentData = {
@@ -95,11 +106,13 @@ export const computeAddComment = (
 	};
 	const paraEnd = blockEnd(doc, to);
 	return Result.ok([
-		{ from, to: from, insert: openMarker(input.id) },
-		{ from: to, to, insert: closeMarker(input.id) },
+		{ from, to: from, insert: guardFor(doc, from) + openMarker(input.id) },
+		{ from: to, to, insert: guardFor(doc, to) + closeMarker(input.id) },
 		{ from: paraEnd, to: paraEnd, insert: "\n" + serializeBody(input.id, data) },
 	]);
 };
+
+const guardFor = (doc: string, pos: number): string => (needsMarkerGuard(doc, pos) ? MARKER_GUARD : "");
 
 /** Find an empty-thread highlight whose complete target matches the selection. */
 export const findHighlightAtSelection = (doc: string, from: number, to: number): ParsedComment | null => {
@@ -119,14 +132,74 @@ export const findHighlightAtSelection = (doc: string, from: number, to: number):
 		);
 	}
 
-	({ from, to } = anchorSelection(doc, from, to));
-	return (
+	const at = (start: number, end: number): ParsedComment | undefined =>
 		comments.find((comment) => {
 			if (isCodeComment(comment)) return false;
 			const range = anchorRange(comment);
-			return !!range && range.from === from && range.to === to;
-		}) ?? null
+			return !!range && range.from === start && range.to === end;
+		});
+	// A selection of exactly a highlight's text is that highlight, wherever moving
+	// its ends off markup or out of code would take them now that it's written.
+	const exact = at(from, to);
+	if (exact) return exact;
+	const anchor = anchorSelection(doc, from, to);
+	const found = at(anchor.from, anchor.to);
+	if (found) return found;
+	// Writing a comment can move its markers off the ends of the selection that
+	// made it, past markup or a guard or back to the text it ended on, and put its
+	// thread inside it. Mapped onto the new text, that selection takes them in. It
+	// is still the same selection if it anchors the comment again once the
+	// comment's own markers and thread come back out.
+	// Anchoring only trims an end or widens it to whole code lines, so the comment
+	// a selection made has ends close to the selection's in the text that shows,
+	// with its markers and thread left out. Each check reads the whole note, so
+	// only the few closest get one.
+	const shown = shownCounts(doc);
+	const apart = (a: number, b: number): number => Math.abs((shown[b] ?? 0) - (shown[a] ?? 0));
+	return (
+		comments
+			.flatMap((comment) => {
+				const range = isCodeComment(comment) ? null : anchorRange(comment);
+				return range && range.from <= to && range.to >= from ? [{ comment, range }] : [];
+			})
+			.map((candidate) => ({
+				...candidate,
+				distance: apart(from, candidate.range.from) + apart(candidate.range.to, to),
+			}))
+			.sort((a, b) => a.distance - b.distance)
+			.slice(0, 3)
+			.find(({ comment, range }) => reanchors(doc, comment.id, range, from, to))?.comment ?? null
 	);
+};
+
+/** How much of `doc` shows up to each offset: all of it but white space and
+ *  comments, markers and threads included. */
+const shownCounts = (doc: string): number[] => {
+	const hidden = Array.from({ length: doc.length }, () => false);
+	[...doc.matchAll(/<!--[\s\S]*?-->/g)].forEach((match) =>
+		hidden.fill(true, match.index, match.index + match[0].length),
+	);
+	return doc.split("").reduce(
+		(counts, char, at) => {
+			counts.push((counts[at] ?? 0) + (hidden[at] || /\s/.test(char) ? 0 : 1));
+			return counts;
+		},
+		[0],
+	);
+};
+
+/** Whether the selection [from, to] anchors comment `id`, which wraps `range`, in
+ *  the text it was written into: `doc` with that comment taken back out. */
+const reanchors = (doc: string, id: string, range: TextRange, from: number, to: number): boolean => {
+	const removal = computeDeleteComment(doc, id);
+	if (removal.isErr()) return false;
+	const cuts = removal.value;
+	// Where a position lands once the cuts are made: back by every cut before it,
+	// and to the start of one it's inside.
+	const map = (pos: number): number =>
+		pos - cuts.reduce((gone, cut) => gone + Math.max(0, Math.min(pos, cut.to) - cut.from), 0);
+	const anchor = anchorSelection(applyChanges(doc, cuts), map(from), map(to));
+	return anchor.from === map(range.from) && anchor.to === map(range.to);
 };
 
 /** Anchor a code selection: wrap the whole fenced block with own-line markers and
@@ -139,6 +212,9 @@ const computeAddCodeComment = (
 ): Result<Change[], string> => {
 	const target = codeSelectionTarget(doc, from, to);
 	if (!target) return Result.err("Couldn't map that selection to code lines.");
+	// With no closing fence the block runs to the end of the note, so the closing
+	// marker and the comment would both land in the code and show as text.
+	if (!hasClosingFence(doc, target.fenceStart)) return Result.err("Close the code block before commenting on it.");
 	const data: CommentData = {
 		author: input.author,
 		createdAt: input.createdAt,
@@ -162,8 +238,14 @@ const computeAddCodeComment = (
  *  write and the "is this already a highlight?" lookup have to agree, or running
  *  Add comment twice on the same text stops finding the comment it just made. */
 const anchorSelection = (doc: string, from: number, to: number): TextRange => {
-	const cell = clampToTableCells(doc, from, to);
-	return expandInlineCodeSelection(doc, cell.from, cell.to);
+	return anchorText(doc, clampToTableCells(doc, from, to));
+};
+
+/** Everything anchorSelection does after the table clamp, split out so creation
+ *  can tell a selection of table borders from one of block markup. */
+const anchorText = (doc: string, cell: TextRange): TextRange => {
+	const text = anchorOffBlockMarkup(doc, cell.from, cell.to);
+	return expandInlineCodeSelection(doc, text.from, text.to);
 };
 
 /** HTML comments inside a Markdown code span render as literal code. When a
@@ -308,7 +390,8 @@ const reactionsAfterEntryDelete = (reactions: Reaction[], deletedEntry: number):
 };
 
 export const computeDeleteComment = (doc: string, id: string): Result<Change[], string> => {
-	if (!parseComments(doc).some((x) => x.id === id)) return Result.err("Comment not found.");
+	const comment = parseComments(doc).find((x) => x.id === id);
+	if (!comment) return Result.err("Comment not found.");
 	// Remove EVERY occurrence of this id's markers/body, not just the first the
 	// parser records. Copy-pasting a commented span duplicates the markers; deleting
 	// only the first pair used to leave invisible, UI-unremovable leftovers behind.
@@ -322,10 +405,13 @@ export const computeDeleteComment = (doc: string, id: string): Result<Change[], 
 		doc.charCodeAt(p - 1) === 10 ? (doc.charCodeAt(p - 2) === 13 ? 2 : 1) : 0;
 	const trailingTerm = (p: number): number =>
 		doc.charCodeAt(p) === 13 && doc.charCodeAt(p + 1) === 10 ? 2 : doc.charCodeAt(p) === 10 ? 1 : 0;
-	// A marker alone on its line (code-comment block wrap) takes its line terminator
-	// with it, so deleting the comment doesn't leave a blank line around the code block.
+	// A code comment's markers sit on lines of their own that it added around the
+	// block, so they take their line terminator with them, and deleting the comment
+	// leaves no blank line there. Any other comment's marker alone on its line was
+	// written onto a line that was blank already, which stays.
+	const ownLines = isCodeComment(comment);
 	const aloneOnLine = (from: number, to: number): boolean =>
-		(from === 0 || leadingTerm(from) > 0) && (to === doc.length || trailingTerm(to) > 0);
+		ownLines && (from === 0 || leadingTerm(from) > 0) && (to === doc.length || trailingTerm(to) > 0);
 	scanAll(doc, new RegExp(`<!--c:${id}-->`, "g"), (from, to) => {
 		const end = aloneOnLine(from, to) ? to + trailingTerm(to) : to;
 		ranges.push({ from, to: end, insert: "" });
@@ -334,14 +420,28 @@ export const computeDeleteComment = (doc: string, id: string): Result<Change[], 
 		const start = aloneOnLine(from, to) ? from - leadingTerm(from) : from;
 		ranges.push({ from: start, to, insert: "" });
 	});
+	const markers = ranges.length;
 	scanAll(doc, new RegExp(`<!--co:${id}(?![A-Za-z0-9])[\\s\\S]*?-->`, "g"), (from, to) => {
 		// Swallow the whole line terminator before the body so its line disappears
 		// cleanly, CR included, leaving no stray blank line.
 		ranges.push({ from: from - leadingTerm(from), to, insert: "" });
 	});
 	if (ranges.length === 0) return Result.err("Nothing to delete.");
-	ranges.sort((a, b) => a.from - b.from);
-	return Result.ok(ranges);
+	// A guard belongs to the marker right after it, so it goes with that marker
+	// unless another comment's marker is left behind it to guard.
+	const pastRemoved = (pos: number): number => {
+		const next = ranges.find((range) => range.from === pos && range.to > pos);
+		return next ? pastRemoved(next.to) : pos;
+	};
+	const guarded = ranges.map((range, index) => {
+		if (index >= markers || doc.charAt(range.from - 1) !== MARKER_GUARD) return range;
+		const next = pastRemoved(range.to);
+		return doc.startsWith("<!--c:", next) || doc.startsWith("<!--/c:", next)
+			? range
+			: { ...range, from: range.from - 1 };
+	});
+	guarded.sort((a, b) => a.from - b.from);
+	return Result.ok(guarded);
 };
 
 /** Invoke `fn(from, to)` for every match of a global regex. Stateful cursor scan. */
@@ -364,12 +464,23 @@ export const applyChanges = (doc: string, changes: Change[]): string => {
 	return out + doc.slice(last);
 };
 
-/** End offset of the contiguous (non-blank) block of lines containing `pos`. */
+/** End offset of the contiguous (non-blank) block of lines containing `pos`. A
+ *  fenced block counts as one piece, blank lines and all: a comment written at a
+ *  blank line inside one shows as code. One with no closing fence runs to the end
+ *  of the note, so the block ends before it instead. */
 export const blockEnd = (doc: string, pos: number): number => {
+	const fences = fencedRanges(doc);
 	let lineEnd = doc.indexOf("\n", pos);
 	if (lineEnd === -1) return doc.length;
 	for (;;) {
 		const nextStart = lineEnd + 1;
+		const fence = fences.find(([fenceStart]) => fenceStart === nextStart);
+		if (fence) {
+			if (!hasClosingFence(doc, fence[0])) return lineEnd;
+			lineEnd = fence[1];
+			if (lineEnd >= doc.length) return doc.length;
+			continue;
+		}
 		let nextEnd = doc.indexOf("\n", nextStart);
 		if (nextEnd === -1) nextEnd = doc.length;
 		if (doc.slice(nextStart, nextEnd).trim() === "") return lineEnd;
