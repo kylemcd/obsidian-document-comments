@@ -5,6 +5,8 @@ matching the pushed tag as that GitHub release's notes, so add an entry here bef
 
 ## Unreleased
 
+## 0.1.17
+
 - Fixed Reading view showing a whole line's formatting as plain text (`==highlights==`, bold, links and the rest) when a comment starts at the beginning of a paragraph, list item, quote, callout, or footnote. Markdown reads a line that starts with an HTML comment as raw HTML, so the plugin now writes an invisible zero-width space in front of the comment's marker there ([#94](https://github.com/kylemcd/obsidian-document-comments/issues/94)).
 - Commenting on a whole list item, quote, or heading, as a triple-click selects it, no longer stops the line being a list item, quote, or heading in both views. The comment now starts after the bullet, `>`, or `#`s instead of in front of them. A selection that ends at the start of the next line, or just after its bullet, now ends on the text it covers.
 - A selection that starts or ends on a horizontal rule, a setext underline (`===`), an empty bullet, or a blank line now anchors on the text next to it. A marker anywhere on a rule or underline stopped it rendering as one, and a selection holding nothing but a rule is now refused with an explanation.
