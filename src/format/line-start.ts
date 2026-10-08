@@ -1,6 +1,6 @@
 import type { TextRange } from "./types";
 import { commentsOutside, fencedRanges } from "./parse";
-import { lineIndexAt, sourceLines, sourceTables } from "./table";
+import { isDelimiterLine, lineIndexAt, sourceLines, sourceTables, unescapedPipes } from "./table";
 
 /**
  * Markdown reads a line whose text starts with `<!--` as a raw HTML block, and
@@ -45,6 +45,9 @@ const LONE_TAG = /^<\/?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?\/?>\s*$/;
 const HTML_COMMENT = /<!--[\s\S]*?-->/g;
 // A list item's bullet or number, which its content starts after.
 const ITEM_MARKER = /^[ \t]*(?:[-+*]|\d{1,9}[.)])(?=[ \t]|$)/;
+// A list item that can break into a paragraph: a bullet, or a number 1, with text
+// after it.
+const INTERRUPTING_ITEM = /^[ \t]*(?:[-+*]|0*1[.)])[ \t]+\S/;
 // A heading, rule, or fence, which no paragraph or list carries on into.
 const BREAKS_BLOCK = new RegExp(`${HEADING.source}|${STRUCTURAL_LINE.source}`);
 
@@ -564,3 +567,58 @@ export const tableBodyRows = (doc: string): ((lineFrom: number) => boolean) => {
 		return tables.some((table) => index > table.start && index < table.end);
 	};
 };
+
+/**
+ * A lookup from a line's index to the source of the footnote defined on it, from
+ * past its label, which shows nowhere, or null when none is. Checked in the app, a
+ * footnote takes in the lines indented four columns further than its label, with
+ * any blank lines between, and the lines right after its text that don't start a
+ * block of their own. A comment ends it, and so does a marker starting a line
+ * without a guard.
+ */
+export const footnoteRanges = (doc: string): ((index: number) => TextRange | null) => {
+	const lines = sourceLines(doc);
+	const text = (index: number): string => (lines[index]?.text ?? "").replace(/\r$/, "");
+	return (index) => {
+		const first = lines[index];
+		const label = text(index);
+		const body = label.trimStart();
+		const markup = FOOTNOTE.exec(body)?.[0];
+		if (!first || markup === undefined || indentColumns(label) > 3) return null;
+		const from = first.from + label.length - body.length + markup.length;
+		const margin = indentColumns(label) + 4;
+		let end = index;
+		// Whether the last line was a paragraph's, which a lazy line carries on.
+		let paragraph = showsText(body.slice(markup.length));
+		// State carried from line to line, up to the first line outside, which no
+		// array method does.
+		for (let next = index + 1; next < lines.length; next++) {
+			const line = text(next);
+			if (!line.trim()) {
+				paragraph = false;
+				continue;
+			}
+			const indent = indentColumns(line);
+			if (indent >= margin) {
+				// Four columns further in after a blank line, it's code.
+				paragraph ||= indent < margin + 4;
+				end = next;
+				continue;
+			}
+			if (!paragraph || interruptsParagraph(line.trimStart(), text(next + 1))) break;
+			end = next;
+		}
+		return { from, to: lines[end + 1]?.from ?? doc.length };
+	};
+};
+
+/** Whether a line right after a paragraph's starts a block of its own rather than
+ *  carrying the paragraph on, given the line after it. */
+const interruptsParagraph = (line: string, next: string): boolean =>
+	line.startsWith("<!--") ||
+	BREAKS_BLOCK.test(line) ||
+	QUOTE.test(line) ||
+	FOOTNOTE.test(line) ||
+	BLOCK_OPENER.test(line) ||
+	INTERRUPTING_ITEM.test(line) ||
+	(unescapedPipes(line).length > 0 && isDelimiterLine(next));

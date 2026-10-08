@@ -3,6 +3,7 @@ import {
 	anchorOffBlockMarkup,
 	endOfPlainTextBefore,
 	endOfTextBefore,
+	footnoteRanges,
 	indentedCodeLines,
 	leadingMarkup,
 	needsMarkerGuard,
@@ -196,6 +197,73 @@ describe("indentedCodeLines", () => {
 		["a line three spaces in", "Intro\n\n   text", "   text"],
 	])("reads %s as text", (_label, doc, line) => {
 		expect(isCode(doc, line)).toBe(false);
+	});
+});
+
+describe("footnoteRanges", () => {
+	const G = String.fromCharCode(0x200b);
+	const TEXT = "First line";
+	const NOTE = `A[^1].\n\n[^1]: ${TEXT}`;
+	const footnote = (doc: string, line: number): string | null => {
+		const range = footnoteRanges(doc)(line);
+		return range ? doc.slice(range.from, range.to).replace(/\r?\n$/, "") : null;
+	};
+
+	// Each checked against Obsidian's own rendering.
+	test.each([
+		["a lazy line", "\nlazy second line"],
+		["a guarded marker's line", `\n${G}<!--c:aa11-->second<!--/c:aa11--> line`],
+		["a numbered line that can't start a list here", "\n2. item"],
+		["a paragraph four columns in", "\n\n    indented para"],
+		["a paragraph after two blank lines", "\n\n\n    after two blanks"],
+		["an indented line right after", "\n    indented directly"],
+		["a line indented by a tab", "\n\n\ttab indented"],
+		["a lazy line of its second paragraph", "\n\n    Second para\nlazy after second"],
+		["code eight columns in", "\n\n        code"],
+		["a line right after a fence in it", "\n\n    ```\n    code\n    ```\nlazy after fence"],
+		["a line right after a heading in it", "\n\n    # Heading\nlazy after heading"],
+	])("takes in %s", (_label, rest) => {
+		expect(footnote(NOTE + rest, 2)).toBe(TEXT + rest);
+	});
+
+	test.each([
+		["a paragraph after a blank line", "\n\nunindented para"],
+		["an unguarded marker's line", "\n<!--c:aa11-->second<!--/c:aa11--> line"],
+		["a comment", "\n<!-- note -->\n    indented after comment"],
+		["a comment's thread", '\n<!--co:aa11 by:me status:open quote:"a"\nme: hi\n-->\n\n    after thread'],
+		["a quote", "\n> quote"],
+		["a bullet", "\n- item"],
+		["a list numbered from one", "\n1. item"],
+		["a heading", "\n# Heading"],
+		["the next footnote", "\n[^2]: Second"],
+		["a table", "\n| a | b |\n|---|---|\n| c | d |"],
+		["a table without outer pipes", "\na | b\n--- | ---\nc | d"],
+		["a rule", "\n***"],
+		["a fence", "\n```\ncode\n```"],
+		["an HTML block", "\n<div>x</div>"],
+		["a math block", "\n$$\nx\n$$"],
+	])("stops at %s", (_label, rest) => {
+		expect(footnote(NOTE + rest, 2)).toBe(TEXT);
+	});
+
+	test("takes in the text under an empty label", () => {
+		expect(footnote("A[^1].\n\n[^1]:\n    Content", 2)).toBe("\n    Content");
+	});
+
+	test("takes in text four columns past an indented label", () => {
+		expect(footnote("A[^1].\n\n   [^1]: Note\n\n       more", 2)).toBe("Note\n\n       more");
+	});
+
+	test("reads Windows line endings", () => {
+		expect(footnote("A[^1].\r\n\r\n[^1]: First\r\n\r\n    Second\r\n\r\nAfter", 2)).toBe("First\r\n\r\n    Second");
+	});
+
+	test.each([
+		["a line with no footnote", "A[^1].\n\n[^1]: Note", 0],
+		["a label four columns in, which is code", "A[^1].\n\n    [^1]: Note", 2],
+		["a line past the end", "A[^1].\n\n[^1]: Note", 5],
+	])("finds nothing on %s", (_label, doc, line) => {
+		expect(footnote(doc, line)).toBeNull();
 	});
 });
 

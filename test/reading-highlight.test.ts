@@ -390,6 +390,132 @@ describe("highlighting rendered text", () => {
 	});
 });
 
+// Obsidian renders every footnote in one section, on the line after the note's
+// last, and each footnote's `data-line` counts from there to the line its
+// definition starts on. Checked in the app.
+describe("footnotes", () => {
+	const G = String.fromCharCode(0x200b);
+	const body = (id: string) => [`<!--co:${id} by:me status:open quote:"x"`, "me: ok", "-->"].join("\n");
+	const highlighted = (el: HTMLElement, id: string): string =>
+		[...el.querySelectorAll(`.doc-comment-span[data-cid='${id}']`)].map((span) => span.textContent).join("");
+	// The footnotes section as Obsidian renders it, run through the post-processor.
+	const footnotes = (doc: string, items: Array<[label: string, html: string]>): HTMLElement => {
+		const lines = doc.split("\n");
+		const after = doc.endsWith("\n") ? lines.length - 1 : lines.length;
+		const el = document.createElement("div");
+		el.className = "el-section";
+		el.innerHTML = `<section class="footnotes"><hr><ol>${items
+			.map(([label, html], index) => {
+				const line = lines.findIndex((text) => text.trimStart().startsWith(`[^${label}]:`)) - after;
+				const id = `fn-${index + 1}-x`;
+				return `<li data-line="${line}" data-footnote-id="${id}" id="${id}"><p>${html}<a href="#fnref-${index + 1}-x" class="footnote-backref footnote-link">↩︎</a></p></li>`;
+			})
+			.join("")}</ol></section>`;
+		highlightPostProcessor(el, ctxFor(doc, after, after));
+		return el;
+	};
+
+	test("highlights a comment in a footnote", () => {
+		const doc = [
+			"Text[^1].",
+			"",
+			"[^1]: Footnote with <!--c:n1-->a highlight<!--/c:n1--> mid-line",
+			body("n1"),
+			"",
+		];
+		const el = footnotes(doc.join("\n"), [["1", "Footnote with a highlight mid-line"]]);
+
+		expect(highlighted(el, "n1")).toBe("a highlight");
+	});
+
+	test("highlights a guarded comment starting a footnote in its own footnote", () => {
+		const doc = [
+			"Text[^1] and[^2].",
+			"",
+			"[^1]: Second thoughts.",
+			"",
+			`[^2]: ${G}<!--c:n2-->Second **bold**<!--/c:n2--> note`,
+		];
+		const el = footnotes([...doc, body("n2"), ""].join("\n"), [
+			["1", "Second thoughts."],
+			["2", `${G}Second <strong>bold</strong> note`],
+		]);
+
+		expect(highlighted(el, "n2")).toBe("Second bold");
+		expect(el.querySelector(".doc-comment-span")?.closest("li")?.id).toBe("fn-2-x");
+	});
+
+	test("highlights a comment in a footnote's second paragraph", () => {
+		const doc = [
+			"Text[^long].",
+			"",
+			"[^long]: First paragraph.",
+			"",
+			"    Second <!--c:n3-->paragraph<!--/c:n3--> here.",
+		];
+		const el = footnotes([...doc, body("n3"), ""].join("\n"), [
+			["long", "First paragraph.</p><p>Second paragraph here."],
+		]);
+
+		expect(highlighted(el, "n3")).toBe("paragraph");
+		expect(el.querySelector(".doc-comment-span")?.closest("p")?.textContent).toMatch(/^Second/);
+	});
+
+	test("highlights each footnote's own comment on a word they share", () => {
+		const doc = [
+			"Intro[^a] and[^b].",
+			"",
+			"[^a]: Alpha <!--c:n4-->note<!--/c:n4--> text",
+			body("n4"),
+			"",
+			"[^b]: Beta note <!--c:n6-->note<!--/c:n6--> text",
+			body("n6"),
+			"",
+			"A last line with no line break after it",
+		].join("\n");
+		const el = footnotes(doc, [
+			["a", "Alpha note text"],
+			["b", "Beta note note text"],
+		]);
+		const [alpha, beta] = [...el.querySelectorAll("li")];
+
+		expect(alpha && highlighted(alpha, "n4")).toBe("note");
+		expect(beta && highlighted(beta, "n6")).toBe("note");
+		expect(beta?.querySelector(".doc-comment-span")?.previousSibling?.textContent).toBe("Beta note ");
+	});
+
+	test.each([
+		["its text", "1", "Footnote with <!--c:n5-->a highlight<!--/c:n5-->", "Footnote with a highlight", "Footnote"],
+		["a word its label shares", "note", "A note here", "A note here", "note"],
+	])("maps a selection of %s to its definition", (_label, label, definition, shown, word) => {
+		const doc = [`Text[^${label}].`, "", `[^${label}]: ${definition}`, ""].join("\n");
+		const el = footnotes(doc, [[label, shown]]);
+		document.body.appendChild(el);
+		const text = el.querySelector("li p")?.firstChild;
+		const selection = window.getSelection();
+		const section = text ? findSectionRange(text) : null;
+
+		expect(section).not.toBeNull();
+		if (text && selection && section) {
+			const at = shown.indexOf(word);
+			const range = document.createRange();
+			range.setStart(text, at);
+			range.setEnd(text, at + word.length);
+			selection.removeAllRanges();
+			selection.addRange(range);
+			const from = doc.indexOf(definition) + definition.indexOf(word);
+
+			expect(mapReadingSelection(selection, section, doc)).toEqual({
+				from,
+				to: from + word.length,
+				expected: word,
+			});
+			selection.removeAllRanges();
+		}
+		el.remove();
+	});
+});
+
 describe("visibleText", () => {
 	test.each([
 		["highlight and bold", "Hello ==World== and **bold**", "Hello World and bold"],

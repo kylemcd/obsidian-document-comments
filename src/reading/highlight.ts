@@ -1,9 +1,9 @@
-import type { MarkdownPostProcessorContext } from "obsidian";
+import type { MarkdownPostProcessorContext, MarkdownSectionInformation } from "obsidian";
 import { ParsedComment } from "../format/types";
 import { anchorRange, commentsOutside, fencedRanges, isHighlight, parseComments } from "../format/parse";
 import { isCodeComment, resolveCodeAnchor } from "../format/code-anchor";
 import { commentPreview } from "../format/preview";
-import { MARKER_GUARD, isStructuralLine, leadingMarkup } from "../format/line-start";
+import { MARKER_GUARD, footnoteRanges, isStructuralLine, leadingMarkup } from "../format/line-start";
 import { sourceLines, sourceTables, unescapedPipes } from "../format/table";
 import { spanSelector } from "../util/css";
 import {
@@ -91,18 +91,16 @@ export const highlightPostProcessor = (
 ): void => {
 	const info = ctx.getSectionInfo(el);
 	if (!info) return;
-	const { text, lineStart, lineEnd } = info;
-
-	const lines = text.split("\n");
-	const sectionFrom = offsetOfLine(lines, lineStart);
-	const sectionTo = offsetOfLine(lines, lineEnd + 1);
-	const sectionSource = text.slice(sectionFrom, sectionTo);
-	// Remember this block's source range for selection → markdown mapping.
-	sectionRanges.set(el, {
-		from: sectionFrom,
-		source: sectionSource,
-		sourcePath: ctx.sourcePath,
-	});
+	const { text } = info;
+	const blocks = renderedBlocks(el, info);
+	// Remember each block's source range for selection → markdown mapping.
+	blocks.forEach((block) =>
+		sectionRanges.set(block.el, {
+			from: block.from,
+			source: text.slice(block.from, block.to),
+			sourcePath: ctx.sourcePath,
+		}),
+	);
 
 	const comments = commentsFor(text);
 	if (comments.length === 0) return;
@@ -116,54 +114,82 @@ export const highlightPostProcessor = (
 			author,
 			color: colorForAuthor?.(author),
 		};
-		// A code comment highlights its resolved target lines within this block's
-		// <pre>, across the token spans a syntax-highlighted block splits them into.
-		if (isCodeComment(c)) {
-			const target = resolveCodeAnchor(text, c);
-			if (!target || target.from < sectionFrom || target.from >= sectionTo) continue;
-			const wrap = (): void => {
-				if (wrapSourceRange(el, sectionSource, target.from - sectionFrom, target.to - sectionFrom, attrs))
-					return;
-				for (const lineText of text.slice(target.from, target.to).split("\n")) {
-					if (lineText.trim()) wrapFirstMatch(el, lineText, attrs);
-				}
-			};
-			wrap();
-			keepAfterHighlighting(el, c.id, wrap);
-			continue;
-		}
-		const range = anchorRange(c);
-		if (!range) continue;
-		// A comment can run over several rendered blocks. Obsidian keeps a block whose
-		// source hasn't changed, so only one holding a marker re-renders when the
-		// comment changes: the blocks in between go unhighlighted rather than stale.
-		const from = Math.max(range.from, sectionFrom);
-		const to = Math.min(range.to, sectionTo);
-		const holdsMarker = [c.open, c.close].some(
-			(marker) => !!marker && marker.from >= sectionFrom && marker.from < sectionTo,
-		);
-		// A comment on indented code has its markers on the lines just above and
-		// below the block, each a section of its own.
-		const bordersMarker =
-			(!!c.open && /^\r?\n$/.test(text.slice(c.open.to, sectionFrom))) || c.close?.from === sectionTo;
-		if (from >= to || !(holdsMarker || bordersMarker)) continue;
-		const quote = text.slice(range.from, range.to);
-		if (!quote.trim()) continue;
-		const whole = range.from >= sectionFrom && range.to <= sectionTo;
-		const codeText = whole ? inlineCodeText(quote) : null;
-		if (codeText !== null) {
-			const code = inlineCodeElement(el, sectionSource, range.from - sectionFrom, codeText);
-			if (code) wrapFirstMatch(code, codeText, attrs);
-			continue;
-		}
-		// Between its markers' lines, what's commented on is the block's own text, not
-		// the line breaks around it.
-		const span = text.slice(from, to);
-		const lo = holdsMarker ? from : to - span.trimStart().length;
-		const hi = holdsMarker ? to : from + span.trimEnd().length;
-		if (wrapSourceRange(el, sectionSource, lo - sectionFrom, hi - sectionFrom, attrs)) continue;
-		if (whole) wrapFirstMatch(el, quote, attrs);
+		blocks.forEach((block) => highlightIn(block, text, c, attrs));
 	}
+};
+
+/** A rendered element and the stretch of the source it shows. */
+type Block = { el: HTMLElement; from: number; to: number };
+
+/**
+ * What a rendered section shows of the source. Obsidian renders every footnote in
+ * one section, on the line after the note's last, and each footnote's `data-line`
+ * counts from there to the line its definition starts on, which holds its comments.
+ */
+const renderedBlocks = (el: HTMLElement, info: MarkdownSectionInformation): Block[] => {
+	const { text, lineStart, lineEnd } = info;
+	const footnotes = [...el.querySelectorAll<HTMLElement>("section.footnotes li[data-footnote-id]")];
+	if (footnotes.length === 0) {
+		const lines = text.split("\n");
+		return [{ el, from: offsetOfLine(lines, lineStart), to: offsetOfLine(lines, lineEnd + 1) }];
+	}
+	const footnoteAt = footnoteRanges(text);
+	return footnotes.flatMap((item) => {
+		const range = footnoteAt(lineStart + Number(item.dataset.line));
+		return range ? [{ el: item, ...range }] : [];
+	});
+};
+
+/** Highlight a comment's text where a block shows it. */
+const highlightIn = (block: Block, text: string, c: ParsedComment, attrs: HighlightAttrs): void => {
+	const { el, from: sectionFrom, to: sectionTo } = block;
+	const sectionSource = text.slice(sectionFrom, sectionTo);
+	// A code comment highlights its resolved target lines within this block's
+	// <pre>, across the token spans a syntax-highlighted block splits them into.
+	if (isCodeComment(c)) {
+		const target = resolveCodeAnchor(text, c);
+		if (!target || target.from < sectionFrom || target.from >= sectionTo) return;
+		const wrap = (): void => {
+			if (wrapSourceRange(el, sectionSource, target.from - sectionFrom, target.to - sectionFrom, attrs)) return;
+			for (const lineText of text.slice(target.from, target.to).split("\n")) {
+				if (lineText.trim()) wrapFirstMatch(el, lineText, attrs);
+			}
+		};
+		wrap();
+		keepAfterHighlighting(el, c.id, wrap);
+		return;
+	}
+	const range = anchorRange(c);
+	if (!range) return;
+	// A comment can run over several rendered blocks. Obsidian keeps a block whose
+	// source hasn't changed, so only one holding a marker re-renders when the
+	// comment changes: the blocks in between go unhighlighted rather than stale.
+	const from = Math.max(range.from, sectionFrom);
+	const to = Math.min(range.to, sectionTo);
+	const holdsMarker = [c.open, c.close].some(
+		(marker) => !!marker && marker.from >= sectionFrom && marker.from < sectionTo,
+	);
+	// A comment on indented code has its markers on the lines just above and
+	// below the block, each a section of its own.
+	const bordersMarker =
+		(!!c.open && /^\r?\n$/.test(text.slice(c.open.to, sectionFrom))) || c.close?.from === sectionTo;
+	if (from >= to || !(holdsMarker || bordersMarker)) return;
+	const quote = text.slice(range.from, range.to);
+	if (!quote.trim()) return;
+	const whole = range.from >= sectionFrom && range.to <= sectionTo;
+	const codeText = whole ? inlineCodeText(quote) : null;
+	if (codeText !== null) {
+		const code = inlineCodeElement(el, sectionSource, range.from - sectionFrom, codeText);
+		if (code) wrapFirstMatch(code, codeText, attrs);
+		return;
+	}
+	// Between its markers' lines, what's commented on is the block's own text, not
+	// the line breaks around it.
+	const span = text.slice(from, to);
+	const lo = holdsMarker ? from : to - span.trimStart().length;
+	const hi = holdsMarker ? to : from + span.trimEnd().length;
+	if (wrapSourceRange(el, sectionSource, lo - sectionFrom, hi - sectionFrom, attrs)) return;
+	if (whole) wrapFirstMatch(el, quote, attrs);
 };
 
 /**
