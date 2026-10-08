@@ -150,19 +150,41 @@ export const findHighlightAtSelection = (doc: string, from: number, to: number):
 	// thread inside it. Mapped onto the new text, that selection takes them in. It
 	// is still the same selection if it anchors the comment again once the
 	// comment's own markers and thread come back out.
-	const outside = (range: TextRange): number => Math.max(0, range.from - from) + Math.max(0, to - range.to);
+	// Anchoring only trims an end or widens it to whole code lines, so the comment
+	// a selection made has ends close to the selection's in the text that shows,
+	// with its markers and thread left out. Each check reads the whole note, so
+	// only the few closest get one.
+	const shown = shownCounts(doc);
+	const apart = (a: number, b: number): number => Math.abs((shown[b] ?? 0) - (shown[a] ?? 0));
 	return (
 		comments
 			.flatMap((comment) => {
 				const range = isCodeComment(comment) ? null : anchorRange(comment);
 				return range && range.from <= to && range.to >= from ? [{ comment, range }] : [];
 			})
-			// Anchoring only trims an end or widens it to whole code lines, so the
-			// comment a selection made covers nearly all of it. Each check reads the
-			// whole note, so only the few that cover the most get one.
-			.sort((a, b) => outside(a.range) - outside(b.range))
+			.map((candidate) => ({
+				...candidate,
+				distance: apart(from, candidate.range.from) + apart(candidate.range.to, to),
+			}))
+			.sort((a, b) => a.distance - b.distance)
 			.slice(0, 3)
 			.find(({ comment, range }) => reanchors(doc, comment.id, range, from, to))?.comment ?? null
+	);
+};
+
+/** How much of `doc` shows up to each offset: all of it but white space and
+ *  comments, markers and threads included. */
+const shownCounts = (doc: string): number[] => {
+	const hidden = Array.from({ length: doc.length }, () => false);
+	[...doc.matchAll(/<!--[\s\S]*?-->/g)].forEach((match) =>
+		hidden.fill(true, match.index, match.index + match[0].length),
+	);
+	return doc.split("").reduce(
+		(counts, char, at) => {
+			counts.push((counts[at] ?? 0) + (hidden[at] || /\s/.test(char) ? 0 : 1));
+			return counts;
+		},
+		[0],
 	);
 };
 

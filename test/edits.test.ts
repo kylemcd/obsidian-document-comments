@@ -789,6 +789,26 @@ describe("comments that start a line", () => {
 		expect(findHighlightAtSelection(out, selection.from, selection.to)?.id).toBe("a1");
 	});
 
+	it("finds the empty comment it made inside three empty comments around it when Add comment runs again", () => {
+		const around = [
+			["Some intro", "Closing words."],
+			["intro", "Closing"],
+			["sentence", "words"],
+		] as const;
+		const doc = around.reduce((text, [start, end], index) => {
+			const from = text.indexOf(start);
+			const to = text.indexOf(end) + end.length;
+			const input = { id: `o${index}`, createdAt: "t", author: "me", text: "" };
+			return applyChanges(text, computeAddComment(text, from, to, input).unwrap());
+		}, "## Notes\n\nSome intro sentence here.\n\n- First point\n- Second point\n- Third point\n\nClosing words.\n");
+		const from = doc.indexOf("- Second");
+		const to = from + "- Second point".length;
+		const changes = computeAddComment(doc, from, to, { id: "c1", createdAt: "t", author: "me", text: "" }).unwrap();
+		const selection = EditorSelection.range(from, to).map(ChangeSet.of(changes, doc.length));
+
+		expect(findHighlightAtSelection(applyChanges(doc, changes), selection.from, selection.to)?.id).toBe("c1");
+	});
+
 	it("finds an empty comment on indented code from its exact range once its thread follows the code", () => {
 		const doc = "Intro\n<!-- note -->\n\tcode with tab\n```\n";
 		const line = doc.indexOf("\tcode");
