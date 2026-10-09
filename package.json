@@ -34,7 +34,7 @@
 		"typescript": "^6.0.3",
 		"typescript-7": "npm:typescript@^7.0.2",
 		"typescript-eslint": "^8.66.0",
-		"vitest": "^4.1.10"
+		"vitest": "^5.0.3"
 	},
 	"dependencies": {
 		"better-result": "^3.0.1"
