@@ -274,6 +274,32 @@ describe("commentField decorations", () => {
 		expect(tr.newDoc.toString()).toBe(`gamma <!--c:ab1cd-->g<!--/c:ab1cd-->${body}\nDelta`);
 	});
 
+	// Regression: hiding a callout's last newline with the body made Live Preview
+	// measure that line's hanging indent at the full line width when the callout
+	// opened for editing, so its wrapped text stacked one letter per row.
+	test.each([
+		["on its own lines", "\n", "\n\nDelta"],
+		["followed directly by a heading", "\n", "\n## Delta"],
+		["on the quote's line", "", "\n## Delta"],
+	])("a body next to a quote line hides none of the quote's line breaks (%s)", (_name, before, after) => {
+		const body = '<!--co:ab1cd by:me status:open quote:"g"\nme: hi\n-->';
+		const quote = "> [!note] Title\n> gamma <!--c:ab1cd-->g<!--/c:ab1cd-->";
+		const doc = `${quote}${before}${body}${after}`;
+		const state = EditorState.create({ doc, extensions: [commentField] });
+		const hidden: Array<[number, number]> = [];
+		state.field(commentField).decorations.between(0, doc.length, (from, to) => void hidden.push([from, to]));
+		// Every line break up to the end of the quote's last line, wherever the body starts.
+		const breaks = doc
+			.slice(0, doc.indexOf("\n", quote.length) + 1)
+			.split("")
+			.flatMap((char, at) => (char === "\n" ? [at] : []));
+
+		expect(hidden.filter(([from, to]) => breaks.some((at) => at >= from && at < to))).toEqual([]);
+		// The body still renders as nothing.
+		const shown = [...doc].filter((_char, at) => !hidden.some(([from, to]) => at >= from && at < to)).join("");
+		expect(shown).not.toContain("me: hi");
+	});
+
 	// A code comment wraps the whole fenced block but must highlight only its
 	// target line(s), computed from the stored line range / quote.
 	test("code comment highlights its target line, not the whole block", () => {

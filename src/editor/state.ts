@@ -263,6 +263,18 @@ const compute = (state: EditorState): CommentFieldValue => {
 		hideRanges.push(HIDE_BLOCK.range(from, atomicTo));
 	};
 
+	const isLineStart = (pos: number): boolean => pos === 0 || text.charCodeAt(pos - 1) === 10;
+	const lineEndAt = (pos: number): number => {
+		const end = text.indexOf("\n", pos);
+		return end < 0 ? text.length : end;
+	};
+	const lineAt = (pos: number): string => text.slice(text.lastIndexOf("\n", pos - 1) + 1, lineEndAt(pos));
+	/** Whether a body sits on a quote line, or starts the line right after one. */
+	const nextToQuote = (pos: number): boolean => {
+		if (!isLineStart(pos)) return /^\s*>/.test(lineAt(pos));
+		return pos > 0 && /^\s*>/.test(lineAt(pos - 1));
+	};
+
 	for (const c of comments) {
 		const code = isCodeComment(c);
 		if (c.open) {
@@ -275,6 +287,28 @@ const compute = (state: EditorState): CommentFieldValue => {
 		}
 		if (c.body && code) {
 			blockHideLine(c.body.from, c.body.to);
+		} else if (c.body && nextToQuote(c.body.from)) {
+			// Next to a quote line, hide no line break. Live Preview measures a quote
+			// line's indent when a callout opens for editing; with that line merged into
+			// the lines after it, the measure came out the whole line's width and its
+			// wrapped text stacked one letter per row. So the part of the body on the
+			// quote's line hides up to that line's end, and its own lines as blocks, the
+			// way a code comment's are.
+			const { from, to } = c.body;
+			let rest = from;
+			if (!isLineStart(from)) {
+				const firstEnd = lineEndAt(from);
+				addHide(from, Math.min(to, firstEnd));
+				rest = firstEnd + 1;
+			}
+			if (rest < to) {
+				const lastFrom = text.lastIndexOf("\n", to - 1) + 1;
+				if (lineEndAt(to) === to) blockHideLine(rest, to);
+				else {
+					if (lastFrom > rest) blockHideLine(rest, lastFrom - 1);
+					addHide(lastFrom, to);
+				}
+			}
 		} else if (c.body) {
 			// Swallow the newline before the body so its line disappears cleanly.
 			let from = c.body.from;
