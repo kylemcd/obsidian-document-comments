@@ -3,6 +3,7 @@ import type { Result } from "better-result";
 import type { AuthorColorResolver } from "../author-colors";
 import type { AnchorDamage } from "../editor/anchor-repair";
 import { ParsedComment, ReactionTarget } from "../format/types";
+import { isImeComposing } from "../util/dom";
 import { CardEntry, cardEntries, cardSignature, formatRelativeTime } from "./card-format";
 
 const QUICK_EMOJI = ["👍", "❤️", "😄", "🎉", "😮", "👀", "🙏"];
@@ -401,7 +402,7 @@ export class Card {
 		});
 		ta.addEventListener("keydown", (e) => {
 			if (e.key === "Escape") this.cancelEdit();
-			else if (e.key === "Enter" && !e.shiftKey) {
+			else if (e.key === "Enter" && !e.shiftKey && !isImeComposing(e)) {
 				e.preventDefault();
 				void this.commitEdit(index, ta.value);
 			}
@@ -440,7 +441,7 @@ export class Card {
 			autogrow(ta);
 		});
 		ta.addEventListener("keydown", (e) => {
-			if (e.key === "Enter" && !e.shiftKey) {
+			if (e.key === "Enter" && !e.shiftKey && !isImeComposing(e)) {
 				e.preventDefault();
 				void this.submitReply();
 			}
