@@ -416,3 +416,127 @@ describe("empty comment card", () => {
 		card.destroy();
 	});
 });
+
+const enterKey = (options: { isComposing?: boolean; keyCode?: number } = {}): KeyboardEvent => {
+	const event = new KeyboardEvent("keydown", {
+		key: "Enter",
+		bubbles: true,
+		cancelable: true,
+		isComposing: options.isComposing ?? false,
+	});
+	if (options.isComposing !== undefined && event.isComposing !== options.isComposing) {
+		Object.defineProperty(event, "isComposing", { value: options.isComposing });
+	}
+	if (options.keyCode !== undefined) {
+		Object.defineProperty(event, "keyCode", { value: options.keyCode });
+	}
+	return event;
+};
+
+describe("IME composition on Enter", () => {
+	describe("reply composer", () => {
+		test("does not submit on Enter while IME is composing (isComposing)", async () => {
+			const cb = callbacks();
+			const card = new Card(commentWithText(), cb, { sourcePath: () => "note.md" });
+			card.el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+			const composer = card.el.querySelector<HTMLTextAreaElement>(".dc-field--composer textarea");
+			expect(composer).not.toBeNull();
+			if (composer) composer.value = "日本語";
+
+			const event = enterKey({ isComposing: true });
+			composer?.dispatchEvent(event);
+			await Promise.resolve();
+
+			expect(cb.reply).not.toHaveBeenCalled();
+			expect(event.defaultPrevented).toBe(false);
+			card.destroy();
+		});
+
+		test("does not submit on Enter with IME keyCode 229", async () => {
+			const cb = callbacks();
+			const card = new Card(commentWithText(), cb, { sourcePath: () => "note.md" });
+			card.el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+			const composer = card.el.querySelector<HTMLTextAreaElement>(".dc-field--composer textarea");
+			expect(composer).not.toBeNull();
+			if (composer) composer.value = "日本語";
+
+			const event = enterKey({ keyCode: 229 });
+			composer?.dispatchEvent(event);
+			await Promise.resolve();
+
+			expect(cb.reply).not.toHaveBeenCalled();
+			expect(event.defaultPrevented).toBe(false);
+			card.destroy();
+		});
+
+		test("submits on plain Enter when not composing", async () => {
+			const cb = callbacks();
+			const card = new Card(commentWithText(), cb, { sourcePath: () => "note.md" });
+			card.el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+			const composer = card.el.querySelector<HTMLTextAreaElement>(".dc-field--composer textarea");
+			expect(composer).not.toBeNull();
+			if (composer) composer.value = "Plain reply";
+
+			const event = enterKey();
+			composer?.dispatchEvent(event);
+
+			await vi.waitFor(() => expect(cb.reply).toHaveBeenCalledWith("h1", "Plain reply"));
+			expect(event.defaultPrevented).toBe(true);
+			card.destroy();
+		});
+	});
+
+	describe("edit field", () => {
+		test("does not submit on Enter while IME is composing (isComposing)", async () => {
+			const cb = callbacks();
+			const card = new Card(emptyComment(), cb, { sourcePath: () => "note.md" });
+			card.el.querySelector<HTMLElement>(".dc-entry__text--empty")?.click();
+			const editor = card.el.querySelector<HTMLTextAreaElement>(".dc-field--edit textarea");
+			expect(editor).not.toBeNull();
+			if (editor) editor.value = "日本語";
+
+			const event = enterKey({ isComposing: true });
+			editor?.dispatchEvent(event);
+			await Promise.resolve();
+
+			expect(cb.reply).not.toHaveBeenCalled();
+			expect(cb.editEntry).not.toHaveBeenCalled();
+			expect(event.defaultPrevented).toBe(false);
+			card.destroy();
+		});
+
+		test("does not submit on Enter with IME keyCode 229", async () => {
+			const cb = callbacks();
+			const card = new Card(emptyComment(), cb, { sourcePath: () => "note.md" });
+			card.el.querySelector<HTMLElement>(".dc-entry__text--empty")?.click();
+			const editor = card.el.querySelector<HTMLTextAreaElement>(".dc-field--edit textarea");
+			expect(editor).not.toBeNull();
+			if (editor) editor.value = "日本語";
+
+			const event = enterKey({ keyCode: 229 });
+			editor?.dispatchEvent(event);
+			await Promise.resolve();
+
+			expect(cb.reply).not.toHaveBeenCalled();
+			expect(cb.editEntry).not.toHaveBeenCalled();
+			expect(event.defaultPrevented).toBe(false);
+			card.destroy();
+		});
+
+		test("submits on plain Enter when not composing", async () => {
+			const cb = callbacks();
+			const card = new Card(emptyComment(), cb, { sourcePath: () => "note.md" });
+			card.el.querySelector<HTMLElement>(".dc-entry__text--empty")?.click();
+			const editor = card.el.querySelector<HTMLTextAreaElement>(".dc-field--edit textarea");
+			expect(editor).not.toBeNull();
+			if (editor) editor.value = "First comment";
+
+			const event = enterKey();
+			editor?.dispatchEvent(event);
+
+			await vi.waitFor(() => expect(cb.reply).toHaveBeenCalledWith("h1", "First comment"));
+			expect(event.defaultPrevented).toBe(true);
+			card.destroy();
+		});
+	});
+});

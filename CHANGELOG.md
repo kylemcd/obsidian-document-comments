@@ -5,6 +5,9 @@ matching the pushed tag as that GitHub release's notes, so add an entry here bef
 
 ## Unreleased
 
+- Typing a comment, reply, or edit with an input method (Chinese, Japanese, Korean, and others) no longer sends it when Enter picks a candidate. Enter sends once the text is composed ([#109](https://github.com/kylemcd/obsidian-document-comments/pull/109)).
+- Updated development dependencies (Vite, oxfmt, typescript-eslint, `@codemirror/view`, the Obsidian API types) and the CI's `actions/setup-node`. No change to how the plugin behaves.
+
 ## 0.1.18
 
 - Updated development dependencies (Vitest 5, ESLint, typescript-eslint, `@types/node`, `@codemirror/state`). No change to how the plugin behaves.

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, test } from "vitest";
-import { isHtmlElement } from "../src/util/dom";
+import { isHtmlElement, isImeComposing } from "../src/util/dom";
 
 describe("realm-safe DOM guards", () => {
 	test("accepts an HTMLElement created by another window realm", () => {
@@ -17,5 +17,25 @@ describe("realm-safe DOM guards", () => {
 	test("rejects non-elements", () => {
 		expect(isHtmlElement(null)).toBe(false);
 		expect(isHtmlElement({ nodeType: 3 })).toBe(false);
+	});
+});
+
+describe("isImeComposing", () => {
+	const keydown = (overrides: { isComposing?: boolean; keyCode?: number }): KeyboardEvent => {
+		const event = new KeyboardEvent("keydown", { key: "Enter" });
+		Object.entries(overrides).forEach(([name, value]) => Object.defineProperty(event, name, { value }));
+		return event;
+	};
+
+	test("is true while the IME is composing", () => {
+		expect(isImeComposing(keydown({ isComposing: true }))).toBe(true);
+	});
+
+	test("is true for WebKit's committing Enter, which arrives after composition ends", () => {
+		expect(isImeComposing(keydown({ isComposing: false, keyCode: 229 }))).toBe(true);
+	});
+
+	test("is false for a plain Enter", () => {
+		expect(isImeComposing(keydown({ isComposing: false, keyCode: 13 }))).toBe(false);
 	});
 });
