@@ -249,6 +249,10 @@ export class Component {
 	unload(): void {}
 }
 
+export const Keymap = {
+	isModEvent: (event?: MouseEvent | KeyboardEvent | null): boolean => !!event && (event.metaKey || event.ctrlKey),
+};
+
 export const MarkdownRenderer = {
 	render: async (): Promise<void> => {},
 };
