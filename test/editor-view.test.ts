@@ -409,6 +409,47 @@ describe("editor extensions open every note without crashing", () => {
 		expect(openWith(mixedDoc, hideResolved)).toContain("dc-has");
 	});
 
+	// With "Shift text to make room for comments" off, `dc-centered` keeps the text
+	// centered. The stylesheet keys it on `.dc-has.dc-centered`, so it only matters
+	// while the column shows and must never appear without a comment.
+	test("dc-centered sits beside dc-has only when the text should stay centered", () => {
+		const configWith = (centerText: boolean) =>
+			commentConfig.of({
+				author: () => "me",
+				showComments: () => true,
+				showResolved: () => true,
+				centerText: () => centerText,
+				allowEmptyComments: () => false,
+				sidebarOpen: () => false,
+			});
+		const openWith = (doc: string, centerText: boolean): string => {
+			const parent = document.createElement("div");
+			document.body.appendChild(parent);
+			const view = new EditorView({
+				state: EditorState.create({
+					doc,
+					extensions: [commentField, draftField, configWith(centerText), editorLayoutField],
+				}),
+				parent,
+			});
+			const className = view.dom.className;
+			view.destroy();
+			return className;
+		};
+		const withComment = [
+			"Ship on <!--c:aaa-->Friday<!--/c:aaa--> regardless.",
+			'<!--co:aaa by:me at:2026-06-17T00:00:00.000Z status:open quote:"Friday"',
+			"me: sounds good",
+			"-->",
+			"",
+		].join("\n");
+
+		expect(openWith(withComment, true)).toContain("dc-centered");
+		expect(openWith(withComment, false)).toContain("dc-has");
+		expect(openWith(withComment, false)).not.toContain("dc-centered");
+		expect(openWith("Just plain text.\n", true)).not.toContain("dc-centered");
+	});
+
 	// Regression for issue #15: opening the transient "new comment" composer must
 	// NOT reserve the column. It used to toggle `dc-has`, which caps the sizer
 	// width and reflows/re-centers the whole document every time you start (and

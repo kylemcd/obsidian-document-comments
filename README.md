@@ -181,6 +181,8 @@ Use **Toggle comments** to show or hide the comment cards. Use **Toggle resolved
 
 Highlights have their own switch. Use **Toggle highlights**, or **Show highlights** in **Settings → Document Comments**, to hide the highlighted text and keep the cards. Turn off **Toggle comments** to hide the cards and keep the highlights. Read and manage the hidden cards in the sidebar.
 
+By default the note moves left to make room for the comment column. Turn off **Shift text to make room for comments** in **Settings → Document Comments** to keep the note centered. The note then moves only as far as the column needs when the pane is too narrow for both.
+
 A comment whose markers break the note around it, such as a table or the formatting of the line it starts, says so on its card and offers **Repair**. Use **Repair comments in this note** to repair every one at once, from any view.
 
 ### Set the author

@@ -95,13 +95,14 @@ export default class DocCommentsPlugin extends Plugin {
 				showComments: () => this.settings.showComments,
 				showResolved: () => this.settings.showResolved,
 				showHighlights: () => this.settings.showHighlights,
+				centerText: () => !this.settings.shiftTextForComments,
 				allowEmptyComments: () => this.settings.allowEmptyComments,
 				sidebarOpen: () => this.sidebarOpen,
 				openInSidebar: (id) => void this.revealComment(id),
 				isMobile: () => Platform.isMobile,
 			}),
-			// Reflects dc-has / dc-highlights / dc-hide-resolved onto .cm-editor so the
-			// stylesheet caps the text column without a :has() selector.
+			// Reflects dc-has / dc-centered / dc-highlights / dc-hide-resolved onto
+			// .cm-editor so the stylesheet caps the text column without a :has() selector.
 			editorLayoutField,
 			// The floating margin column needs horizontal room mobile doesn't have, so
 			// there we skip it entirely — comments live in the sidebar, highlights stay,
@@ -119,6 +120,7 @@ export default class DocCommentsPlugin extends Plugin {
 			showComments: () => this.settings.showComments,
 			showResolved: () => this.settings.showResolved,
 			showHighlights: () => this.settings.showHighlights,
+			centerText: () => !this.settings.shiftTextForComments,
 			allowEmptyComments: () => this.settings.allowEmptyComments,
 			sidebarOpen: () => this.sidebarOpen,
 			openInSidebar: (id) => void this.revealComment(id),

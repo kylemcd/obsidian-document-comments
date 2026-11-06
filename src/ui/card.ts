@@ -1,8 +1,9 @@
-import { App, Component, MarkdownRenderer, Menu, setIcon } from "obsidian";
+import { App, Component, Keymap, MarkdownRenderer, Menu, setIcon } from "obsidian";
 import type { Result } from "better-result";
 import type { AuthorColorResolver } from "../author-colors";
 import type { AnchorDamage } from "../editor/anchor-repair";
 import { ParsedComment, ReactionTarget } from "../format/types";
+import { isImeComposing } from "../util/dom";
 import { CardEntry, cardEntries, cardSignature, formatRelativeTime } from "./card-format";
 
 const QUICK_EMOJI = ["👍", "❤️", "😄", "🎉", "😮", "👀", "🙏"];
@@ -368,7 +369,19 @@ export class Card {
 	 *  plain text when no App is available (unit tests). */
 	private renderText(el: HTMLElement, text: string): void {
 		if (this.view.app) {
-			void MarkdownRenderer.render(this.view.app, text, el, this.view.sourcePath(), this.md);
+			const app = this.view.app;
+			void MarkdownRenderer.render(app, text, el, this.view.sourcePath(), this.md);
+			// Rendered outside a note view, internal links get no click handler of
+			// their own (#108): open them like Obsidian does, Mod-click in a new tab.
+			el.addEventListener("click", (event) => {
+				const link = (event.target as HTMLElement).closest("a.internal-link");
+				if (!link) return;
+				const href = link.getAttribute("data-href") ?? link.getAttribute("href");
+				if (!href) return;
+				event.preventDefault();
+				event.stopPropagation();
+				void app.workspace.openLinkText(href, this.view.sourcePath(), Keymap.isModEvent(event));
+			});
 		} else {
 			el.setText(text);
 		}
@@ -401,7 +414,7 @@ export class Card {
 		});
 		ta.addEventListener("keydown", (e) => {
 			if (e.key === "Escape") this.cancelEdit();
-			else if (e.key === "Enter" && !e.shiftKey) {
+			else if (e.key === "Enter" && !e.shiftKey && !isImeComposing(e)) {
 				e.preventDefault();
 				void this.commitEdit(index, ta.value);
 			}
@@ -440,7 +453,7 @@ export class Card {
 			autogrow(ta);
 		});
 		ta.addEventListener("keydown", (e) => {
-			if (e.key === "Enter" && !e.shiftKey) {
+			if (e.key === "Enter" && !e.shiftKey && !isImeComposing(e)) {
 				e.preventDefault();
 				void this.submitReply();
 			}

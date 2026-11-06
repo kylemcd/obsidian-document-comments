@@ -12,6 +12,11 @@ export type DocCommentsSettings = {
 	/** Show the in-text highlights. Independent of the comment column, so the
 	 *  underlines can stay while the cards are hidden. */
 	showHighlights: boolean;
+	/** Move the text left so the [text + column] block is centered as a unit. Off
+	 *  keeps the text where Obsidian centers it and moves it only as far as the
+	 *  column needs. Off adds `dc-centered` next to `dc-has` (see editor/layout.ts
+	 *  and reading/margin.ts). */
+	shiftTextForComments: boolean;
 	/** Allow a blank comment to persist with an empty comment card. */
 	allowEmptyComments: boolean;
 	/** Apply stored per-author colors to highlights and author names. */
@@ -27,6 +32,7 @@ export const DEFAULT_SETTINGS: DocCommentsSettings = {
 	showComments: true,
 	showResolved: false,
 	showHighlights: true,
+	shiftTextForComments: true,
 	allowEmptyComments: false,
 	authorColorsEnabled: false,
 	authorColors: {},
@@ -75,6 +81,13 @@ const SETTING_META: ReadonlyArray<{
 		name: "Show highlights",
 		desc: "Show the highlighted text. Stays on when the comment column is hidden.",
 		aliases: ["text highlights", "underlines"],
+		control: { type: "toggle" },
+	},
+	{
+		key: "shiftTextForComments",
+		name: "Shift text to make room for comments",
+		desc: "Move the note left so the comment column fits beside it. When off, the note stays centered and moves only if the column doesn't fit.",
+		aliases: ["center text", "text position", "comment column layout"],
 		control: { type: "toggle" },
 	},
 	{
@@ -293,6 +306,7 @@ export class DocCommentsSettingTab extends PluginSettingTab {
 		else if (key === "showComments") this.plugin.settings.showComments = Boolean(value);
 		else if (key === "showResolved") this.plugin.settings.showResolved = Boolean(value);
 		else if (key === "showHighlights") this.plugin.settings.showHighlights = Boolean(value);
+		else if (key === "shiftTextForComments") this.plugin.settings.shiftTextForComments = Boolean(value);
 		else if (key === "allowEmptyComments") this.plugin.settings.allowEmptyComments = Boolean(value);
 		else if (key === "authorColorsEnabled") this.plugin.settings.authorColorsEnabled = Boolean(value);
 	}

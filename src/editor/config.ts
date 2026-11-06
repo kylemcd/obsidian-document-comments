@@ -21,6 +21,9 @@ export type CommentConfig = {
 	showResolved: () => boolean;
 	/** Whether the in-text highlights render at all. Independent of showComments. */
 	showHighlights: () => boolean;
+	/** Keep the text where Obsidian centers it while the column shows, instead of
+	 *  shifting it left so the [text + column] block is centered. */
+	centerText: () => boolean;
 	/** Whether the new-comment composer accepts an empty comment. */
 	allowEmptyComments: () => boolean;
 	/** Whether the comments sidebar panel is open. While it is, the inline
@@ -41,6 +44,7 @@ const DEFAULT: CommentConfig = {
 	showComments: () => true,
 	showResolved: () => true,
 	showHighlights: () => true,
+	centerText: () => false,
 	allowEmptyComments: () => false,
 	sidebarOpen: () => false,
 };
