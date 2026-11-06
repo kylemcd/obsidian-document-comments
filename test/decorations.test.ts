@@ -16,6 +16,24 @@ const decorationAttributes = (state: EditorState): Array<Record<string, string>>
 	return attributes;
 };
 
+/** Ranges a replace decoration hides. Marks only paint over text, so they don't count. */
+const hiddenRanges = (state: EditorState): Array<[number, number]> => {
+	const hidden: Array<[number, number]> = [];
+	state.field(commentField).decorations.between(0, state.doc.length, (from, to, value) => {
+		if (value.point) hidden.push([from, to]);
+	});
+	return hidden;
+};
+
+const visibleText = (doc: string, hidden: Array<[number, number]>): string =>
+	doc
+		.split("")
+		.filter((_char, at) => !hidden.some(([from, to]) => at >= from && at < to))
+		.join("");
+
+// A callout whose last line holds a comment's anchor.
+const CALLOUT = "> [!note] Title\n> gamma <!--c:ab1cd-->g<!--/c:ab1cd-->";
+
 // Two comments anchored on overlapping text — `xoua6` sits nested inside `zz1q`,
 // both covering "resolved". This is the shape that crashed CodeMirror's
 // decoration build (RangeSetBuilder can't take overlapping ranges).
@@ -274,20 +292,44 @@ describe("commentField decorations", () => {
 		expect(tr.newDoc.toString()).toBe(`gamma <!--c:ab1cd-->g<!--/c:ab1cd-->${body}\nDelta`);
 	});
 
+	// After a quote line the body's line break stays visible, so forward-Delete at the
+	// quote's end removes just that break. The body then sits on the quote's line,
+	// where it must still be hidden, and a delete across the whole hidden range must
+	// still keep the thread.
+	test("forward deletion after a quote line keeps the hidden comment body", () => {
+		const body = '<!--co:ab1cd by:me status:open quote:"g"\nme: precious thread text\n-->';
+		const doc = `${CALLOUT}\n${body}\n\nDelta`;
+		const bodyFrom = doc.indexOf("<!--co:");
+		const state = EditorState.create({ doc, extensions: [commentField] });
+
+		const across = state.update({
+			changes: { from: bodyFrom - 1, to: bodyFrom + body.length + 1 },
+			userEvent: "delete.forward",
+		});
+		expect(across.newDoc.toString()).toBe(`${CALLOUT}${body}\nDelta`);
+
+		const joined = state.update({
+			changes: { from: bodyFrom - 1, to: bodyFrom },
+			userEvent: "delete.forward",
+		}).state;
+		expect(joined.doc.toString()).toBe(`${CALLOUT}${body}\n\nDelta`);
+		const shown = visibleText(joined.doc.toString(), hiddenRanges(joined));
+		expect(shown).not.toContain("precious thread text");
+		expect(shown).toContain("> [!note] Title\n> gamma");
+	});
+
 	// Regression: hiding a callout's last newline with the body made Live Preview
 	// measure that line's hanging indent at the full line width when the callout
 	// opened for editing, so its wrapped text stacked one letter per row.
 	test.each([
-		["on its own lines", "\n", "\n\nDelta"],
-		["followed directly by a heading", "\n", "\n## Delta"],
-		["on the quote's line", "", "\n## Delta"],
-	])("a body next to a quote line hides none of the quote's line breaks (%s)", (_name, before, after) => {
+		["on its own lines", CALLOUT, "\n", "\n\nDelta"],
+		["followed directly by a heading", CALLOUT, "\n", "\n## Delta"],
+		["on the quote's line", CALLOUT, "", "\n## Delta"],
+		["after a quote inside a list item", "- > gamma <!--c:ab1cd-->g<!--/c:ab1cd-->", "\n", "\n\nDelta"],
+	])("a body next to a quote line hides none of the quote's line breaks (%s)", (_name, quote, before, after) => {
 		const body = '<!--co:ab1cd by:me status:open quote:"g"\nme: hi\n-->';
-		const quote = "> [!note] Title\n> gamma <!--c:ab1cd-->g<!--/c:ab1cd-->";
 		const doc = `${quote}${before}${body}${after}`;
-		const state = EditorState.create({ doc, extensions: [commentField] });
-		const hidden: Array<[number, number]> = [];
-		state.field(commentField).decorations.between(0, doc.length, (from, to) => void hidden.push([from, to]));
+		const hidden = hiddenRanges(EditorState.create({ doc, extensions: [commentField] }));
 		// Every line break up to the end of the quote's last line, wherever the body starts.
 		const breaks = doc
 			.slice(0, doc.indexOf("\n", quote.length) + 1)
@@ -296,8 +338,7 @@ describe("commentField decorations", () => {
 
 		expect(hidden.filter(([from, to]) => breaks.some((at) => at >= from && at < to))).toEqual([]);
 		// The body still renders as nothing.
-		const shown = [...doc].filter((_char, at) => !hidden.some(([from, to]) => at >= from && at < to)).join("");
-		expect(shown).not.toContain("me: hi");
+		expect(visibleText(doc, hidden)).not.toContain("me: hi");
 	});
 
 	// A code comment wraps the whole fenced block but must highlight only its
