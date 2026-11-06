@@ -34,6 +34,22 @@ beforeAll(() => {
 	};
 });
 
+const enterKey = (options: { isComposing?: boolean; keyCode?: number } = {}): KeyboardEvent => {
+	const event = new KeyboardEvent("keydown", {
+		key: "Enter",
+		bubbles: true,
+		cancelable: true,
+		isComposing: options.isComposing ?? false,
+	});
+	if (options.isComposing !== undefined && event.isComposing !== options.isComposing) {
+		Object.defineProperty(event, "isComposing", { value: options.isComposing });
+	}
+	if (options.keyCode !== undefined) {
+		Object.defineProperty(event, "keyCode", { value: options.keyCode });
+	}
+	return event;
+};
+
 describe("draft composer", () => {
 	test("preserves and refocuses the draft when saving fails", async () => {
 		const onSubmit = vi.fn(async () => Result.err("write failed"));
@@ -72,5 +88,43 @@ describe("draft composer", () => {
 		textarea.value = "";
 		textarea.dispatchEvent(new Event("input"));
 		expect(confirm?.getAttribute("aria-label")).toBe("Remove highlight");
+	});
+
+	test("does not submit on Enter while IME is composing (isComposing)", async () => {
+		const onSubmit = vi.fn(() => Result.ok(undefined));
+		const { textarea } = buildDraftComposer({ onSubmit, onCancel: vi.fn(), emptyAction: "highlight" });
+		textarea.value = "日本語";
+
+		const event = enterKey({ isComposing: true });
+		textarea.dispatchEvent(event);
+		await Promise.resolve();
+
+		expect(onSubmit).not.toHaveBeenCalled();
+		expect(event.defaultPrevented).toBe(false);
+	});
+
+	test("does not submit on Enter with IME keyCode 229", async () => {
+		const onSubmit = vi.fn(() => Result.ok(undefined));
+		const { textarea } = buildDraftComposer({ onSubmit, onCancel: vi.fn(), emptyAction: "highlight" });
+		textarea.value = "日本語";
+
+		const event = enterKey({ keyCode: 229 });
+		textarea.dispatchEvent(event);
+		await Promise.resolve();
+
+		expect(onSubmit).not.toHaveBeenCalled();
+		expect(event.defaultPrevented).toBe(false);
+	});
+
+	test("submits on plain Enter when not composing", async () => {
+		const onSubmit = vi.fn(() => Result.ok(undefined));
+		const { textarea } = buildDraftComposer({ onSubmit, onCancel: vi.fn(), emptyAction: "highlight" });
+		textarea.value = "Plain comment";
+
+		const event = enterKey();
+		textarea.dispatchEvent(event);
+
+		await vi.waitFor(() => expect(onSubmit).toHaveBeenCalledWith("Plain comment"));
+		expect(event.defaultPrevented).toBe(true);
 	});
 });

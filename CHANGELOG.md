@@ -5,6 +5,10 @@ matching the pushed tag as that GitHub release's notes, so add an entry here bef
 
 ## Unreleased
 
+- Typing a comment, reply, or edit with an input method (Chinese, Japanese, Korean, and others) no longer sends it when Enter picks a candidate. Enter sends once the text is composed ([#109](https://github.com/kylemcd/obsidian-document-comments/pull/109)).
+- Updated development dependencies (Vite, oxfmt, typescript-eslint, `@codemirror/view`, the Obsidian API types) and the CI's `actions/setup-node`. No change to how the plugin behaves.
+- Clicking a `[[link]]` in a comment now opens the note, from the margin, the sidebar, and Reading view. Cmd-click (Ctrl-click on Windows and Linux) opens it in a new tab ([#108](https://github.com/kylemcd/obsidian-document-comments/issues/108)).
+
 ## 0.1.18
 
 - Updated development dependencies (Vitest 5, ESLint, typescript-eslint, `@types/node`, `@codemirror/state`). No change to how the plugin behaves.
