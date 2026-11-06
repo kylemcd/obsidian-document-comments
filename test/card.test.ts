@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-import { beforeAll, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
+import { type App, MarkdownRenderer } from "obsidian";
 import { Result } from "better-result";
 import { ParsedComment } from "../src/format/types";
 import { Card, CardCallbacks } from "../src/ui/card";
@@ -159,6 +160,64 @@ describe("selecting comment text", () => {
 		focus.mockRestore();
 		card.destroy();
 		card.el.remove();
+	});
+});
+
+describe("links in comment text", () => {
+	// Rendered outside a note view, an internal link has no click handler of its own
+	// (#108), so the card opens it.
+	const renderLinks = () =>
+		vi.spyOn(MarkdownRenderer, "render").mockImplementation(async (...args: unknown[]) => {
+			const el = args[2] as HTMLElement;
+			el.createEl("a", { cls: "internal-link", text: "Other", attr: { "data-href": "Other", href: "Other" } });
+			el.createEl("a", { cls: "external-link", text: "Site", attr: { href: "https://example.com" } });
+		});
+	const linkedCard = () => {
+		const openLinkText = vi.fn(async () => {});
+		const app = { workspace: { openLinkText } } as unknown as App;
+		const card = new Card(commentWithText(), callbacks(), { app, sourcePath: () => "folder/note.md" });
+		return { card, openLinkText };
+	};
+	const click = (el: Element | null, init: MouseEventInit = {}): MouseEvent => {
+		const event = new MouseEvent("click", { bubbles: true, cancelable: true, ...init });
+		el?.dispatchEvent(event);
+		return event;
+	};
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	test("opens an internal link from the note the comment is in", () => {
+		renderLinks();
+		const { card, openLinkText } = linkedCard();
+
+		const event = click(card.el.querySelector(".internal-link"));
+
+		expect(openLinkText).toHaveBeenCalledWith("Other", "folder/note.md", false);
+		expect(event.defaultPrevented).toBe(true);
+		card.destroy();
+	});
+
+	test("opens an internal link in a new tab on Mod-click", () => {
+		renderLinks();
+		const { card, openLinkText } = linkedCard();
+
+		click(card.el.querySelector(".internal-link"), { metaKey: true });
+
+		expect(openLinkText).toHaveBeenCalledWith("Other", "folder/note.md", true);
+		card.destroy();
+	});
+
+	test("leaves external links to their own handler", () => {
+		renderLinks();
+		const { card, openLinkText } = linkedCard();
+
+		const event = click(card.el.querySelector(".external-link"));
+
+		expect(openLinkText).not.toHaveBeenCalled();
+		expect(event.defaultPrevented).toBe(false);
+		card.destroy();
 	});
 });
 
