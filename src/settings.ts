@@ -12,9 +12,10 @@ export type DocCommentsSettings = {
 	/** Show the in-text highlights. Independent of the comment column, so the
 	 *  underlines can stay while the cards are hidden. */
 	showHighlights: boolean;
-	/** Move the text left so the comment column sits beside the centered
-	 *  [text + column] block. Off keeps the text centered and moves it only as far
-	 *  as the column needs. Applied as a body class (see syncLayoutClass). */
+	/** Move the text left so the [text + column] block is centered as a unit. Off
+	 *  keeps the text where Obsidian centers it and moves it only as far as the
+	 *  column needs. Off adds `dc-centered` next to `dc-has` (see editor/layout.ts
+	 *  and reading/margin.ts). */
 	shiftTextForComments: boolean;
 	/** Allow a blank comment to persist with an empty comment card. */
 	allowEmptyComments: boolean;

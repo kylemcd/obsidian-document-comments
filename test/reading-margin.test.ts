@@ -50,6 +50,18 @@ beforeAll(() => {
 	HTMLElement.prototype.setCssStyles = function (styles: Partial<CSSStyleDeclaration>) {
 		Object.assign(this.style, styles);
 	};
+	HTMLElement.prototype.addClass = function (...names: string[]) {
+		this.classList.add(...names);
+	};
+	HTMLElement.prototype.removeClass = function (...names: string[]) {
+		this.classList.remove(...names);
+	};
+	HTMLElement.prototype.empty = function () {
+		this.replaceChildren();
+	};
+	HTMLElement.prototype.setText = function (text: string) {
+		this.textContent = text;
+	};
 });
 
 describe("reading margin windows", () => {
@@ -187,5 +199,49 @@ describe("reading margin windows", () => {
 		expect(readingView.style.getPropertyValue("--dc-draft-highlight-color")).toBe("#6e56cf");
 		expect(draft?.style.getPropertyValue("--dc-highlight-color")).toBe("");
 		manager.destroy();
+	});
+
+	// The stylesheet keys the centered layout on `.dc-has.dc-centered`, so the class
+	// follows the column and the setting, and goes away with the margin.
+	test("adds dc-centered beside dc-has only when the text should stay centered", async () => {
+		const doc = [
+			"Ship on <!--c:aaa-->Friday<!--/c:aaa--> regardless.",
+			'<!--co:aaa by:me at:2026-06-17T00:00:00.000Z status:open quote:"Friday"',
+			"me: sounds good",
+			"-->",
+		].join("\n");
+		const classesWith = async (centerText: boolean): Promise<{ shown: string[]; afterDestroy: string[] }> => {
+			const wrapper = document.createElement("div");
+			const readingView = wrapper.createDiv("markdown-reading-view");
+			readingView.createDiv("markdown-preview-view");
+			const view = new MarkdownView();
+			Object.defineProperty(view, "containerEl", { value: wrapper });
+			view.file = { path: "note.md" };
+			const deps = {
+				app: { workspace: { getLeavesOfType: () => [{ view }] }, vault: { read: async () => doc } },
+				getAuthor: () => "Bob",
+				colorForAuthor: () => null,
+				highlightColorForAuthor: () => null,
+				showComments: () => true,
+				showResolved: () => true,
+				showHighlights: () => true,
+				centerText: () => centerText,
+				allowEmptyComments: () => false,
+				sidebarOpen: () => false,
+				isMobile: () => false,
+			} as unknown as ReadingDeps;
+			const manager = new ReadingMarginManager(deps);
+
+			manager.refresh();
+			await vi.waitFor(() => expect(readingView.classList.contains("dc-has")).toBe(true));
+			const shown = [...readingView.classList];
+			manager.destroy();
+			return { shown, afterDestroy: [...readingView.classList] };
+		};
+
+		const centered = await classesWith(true);
+		expect(centered.shown).toContain("dc-centered");
+		expect(centered.afterDestroy).not.toContain("dc-centered");
+		expect((await classesWith(false)).shown).not.toContain("dc-centered");
 	});
 });

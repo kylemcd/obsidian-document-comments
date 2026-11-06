@@ -71,9 +71,6 @@ export default class DocCommentsPlugin extends Plugin {
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
-		this.syncLayoutClass();
-		// A popout window has its own <body>, which needs the layout class too.
-		this.registerEvent(this.app.workspace.on("window-open", (win) => this.syncLayoutClass(win.doc.body)));
 		this.addChild(this.markdown);
 		this.authorIndex = createAuthorIndex(this.app.vault);
 		this.unsubscribeAuthorIndex = this.authorIndex.subscribe((state) => this.handleAuthorIndexState(state));
@@ -98,13 +95,14 @@ export default class DocCommentsPlugin extends Plugin {
 				showComments: () => this.settings.showComments,
 				showResolved: () => this.settings.showResolved,
 				showHighlights: () => this.settings.showHighlights,
+				centerText: () => !this.settings.shiftTextForComments,
 				allowEmptyComments: () => this.settings.allowEmptyComments,
 				sidebarOpen: () => this.sidebarOpen,
 				openInSidebar: (id) => void this.revealComment(id),
 				isMobile: () => Platform.isMobile,
 			}),
-			// Reflects dc-has / dc-highlights / dc-hide-resolved onto .cm-editor so the
-			// stylesheet caps the text column without a :has() selector.
+			// Reflects dc-has / dc-centered / dc-highlights / dc-hide-resolved onto
+			// .cm-editor so the stylesheet caps the text column without a :has() selector.
 			editorLayoutField,
 			// The floating margin column needs horizontal room mobile doesn't have, so
 			// there we skip it entirely — comments live in the sidebar, highlights stay,
@@ -122,6 +120,7 @@ export default class DocCommentsPlugin extends Plugin {
 			showComments: () => this.settings.showComments,
 			showResolved: () => this.settings.showResolved,
 			showHighlights: () => this.settings.showHighlights,
+			centerText: () => !this.settings.shiftTextForComments,
 			allowEmptyComments: () => this.settings.allowEmptyComments,
 			sidebarOpen: () => this.sidebarOpen,
 			openInSidebar: (id) => void this.revealComment(id),
@@ -484,22 +483,8 @@ export default class DocCommentsPlugin extends Plugin {
 		);
 	}
 
-	/** Every <body> that can show a note: the main window's plus each popout's. */
-	private layoutBodies(): Set<HTMLElement> {
-		const bodies = new Set<HTMLElement>([document.body]);
-		this.app.workspace.iterateAllLeaves((leaf) => bodies.add(leaf.view.containerEl.doc.body));
-		return bodies;
-	}
-
-	/** Mirror the shift setting onto the body so styles.css alone decides the layout. */
-	private syncLayoutClass(...bodies: HTMLElement[]): void {
-		const targets = bodies.length > 0 ? bodies : this.layoutBodies();
-		targets.forEach((body) => body.toggleClass(NO_SHIFT_CLASS, !this.settings.shiftTextForComments));
-	}
-
 	/** Force open editors + reading views (+ the sidebar) to re-evaluate live config. */
 	refreshEditors(): void {
-		this.syncLayoutClass();
 		this.app.workspace.getLeavesOfType("markdown").forEach((leaf: WorkspaceLeaf) => {
 			editorViewFromLeaf(leaf)?.dispatch({ effects: refreshCommentColors.of(null) });
 			const readingView = leaf.view.containerEl.querySelector(".markdown-reading-view");
@@ -588,7 +573,6 @@ export default class DocCommentsPlugin extends Plugin {
 		this.scheduleCurrentAuthorColor.cancel();
 		this.scheduleAuthorColorSave.cancel();
 		this.readingManager?.destroy();
-		this.layoutBodies().forEach((body) => body.removeClass(NO_SHIFT_CLASS));
 		this.unsubscribeAuthorIndex?.();
 		this.authorIndex?.dispose();
 	}
@@ -771,9 +755,6 @@ export default class DocCommentsPlugin extends Plugin {
 		return this.writeSettings("Couldn't save settings");
 	}
 }
-
-/** Body class that keeps the text centered instead of shifting it for the column. */
-const NO_SHIFT_CLASS = "document-comments-no-shift";
 
 const count = (comments: number): string => `${comments} ${comments === 1 ? "comment" : "comments"}`;
 

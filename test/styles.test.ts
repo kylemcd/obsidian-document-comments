@@ -136,7 +136,7 @@ describe("unshifted text", () => {
 	// left only when the right-hand gutter can't fit the column.
 	test("centers the text unless the gutter is narrower than the column", () => {
 		const rule =
-			/body\.document-comments-no-shift \.markdown-source-view\.mod-cm6 \.cm-editor\.dc-has \.cm-sizer,\s*body\.document-comments-no-shift \.markdown-reading-view\.dc-has \.markdown-preview-view \.markdown-preview-sizer\s*\{([^}]*)\}/.exec(
+			/\.markdown-source-view\.mod-cm6 \.cm-editor\.dc-has\.dc-centered \.cm-sizer,\s*\.markdown-reading-view\.dc-has\.dc-centered \.markdown-preview-view \.markdown-preview-sizer\s*\{([^}]*)\}/.exec(
 				styles,
 			)?.[1] ?? "";
 
@@ -146,7 +146,7 @@ describe("unshifted text", () => {
 
 	test("starts the column where the centered text ends", () => {
 		const rule =
-			/body\.document-comments-no-shift \.cm-editor\.dc-has \.doc-comment-margin,\s*body\.document-comments-no-shift \.markdown-reading-view\.dc-has \.doc-comment-margin\s*\{([^}]*)\}/.exec(
+			/\.cm-editor\.dc-has\.dc-centered \.doc-comment-margin,\s*\.markdown-reading-view\.dc-has\.dc-centered \.doc-comment-margin\s*\{([^}]*)\}/.exec(
 				styles,
 			)?.[1] ?? "";
 

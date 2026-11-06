@@ -69,9 +69,10 @@ body {
    it and put the column in the right-hand gutter. When that gutter is narrower than
    the column, the text moves left only as far as the column needs; below that it
    falls back to the shifted layout above (minimum text width, then overlap — #83).
-   The max-width cap is unchanged. The body class adds one class of specificity. */
-body.document-comments-no-shift .markdown-source-view.mod-cm6 .cm-editor.dc-has .cm-sizer,
-body.document-comments-no-shift .markdown-reading-view.dc-has .markdown-preview-view .markdown-preview-sizer {
+   The max-width cap is unchanged. `dc-centered` rides next to `dc-has` on the same
+   container, and the extra class out-specifies the shifted rule above. */
+.markdown-source-view.mod-cm6 .cm-editor.dc-has.dc-centered .cm-sizer,
+.markdown-reading-view.dc-has.dc-centered .markdown-preview-view .markdown-preview-sizer {
 	margin-left: max(
 		0px,
 		min(
@@ -175,10 +176,11 @@ body.document-comments-no-shift .markdown-reading-view.dc-has .markdown-preview-
 	right: auto;
 }
 
-/* Mirror of the no-shift sizer: the column starts where the centered text ends,
-   clamped to the right edge (where the text has moved left to make room). */
-body.document-comments-no-shift .cm-editor.dc-has .doc-comment-margin,
-body.document-comments-no-shift .markdown-reading-view.dc-has .doc-comment-margin {
+/* Mirror of the centered sizer: the column starts where the centered text ends,
+   clamped to the right edge (where the text has moved left to make room). The
+   extra `dc-centered` class out-specifies the shifted column rule above. */
+.cm-editor.dc-has.dc-centered .doc-comment-margin,
+.markdown-reading-view.dc-has.dc-centered .doc-comment-margin {
 	left: min(
 		calc((100% + var(--file-line-width, 50rem)) / 2),
 		calc(100% - var(--dc-margin-width))

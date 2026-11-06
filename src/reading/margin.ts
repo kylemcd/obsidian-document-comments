@@ -33,6 +33,8 @@ export type ReadingDeps = {
 	showComments: () => boolean;
 	showResolved: () => boolean;
 	showHighlights: () => boolean;
+	/** Keep the text centered while the column shows (see CommentConfig.centerText). */
+	centerText: () => boolean;
 	allowEmptyComments: () => boolean;
 	/** While the sidebar panel is open, the inline column steps aside. */
 	sidebarOpen: () => boolean;
@@ -196,6 +198,7 @@ class ReadingMargin {
 		// (issue #30) — mirror that visibility, exactly as the editor layout does.
 		const hasCards = this.comments.some((c) => this.deps.showResolved() || c.status !== "resolved");
 		this.readingView.toggleClass("dc-has", hasCards);
+		this.readingView.toggleClass("dc-centered", hasCards && this.deps.centerText());
 		this.readingView.toggleClass("dc-margin", hasCards || !!this.draft);
 		// Highlights have their own toggle, so they persist both while the sidebar
 		// panel hosts the cards (dc-has is off) and while the column is hidden.
@@ -423,7 +426,7 @@ class ReadingMargin {
 		this.readingView.removeEventListener("mousedown", this.onMouseDown);
 		// The container we own goes away; the state classes sit on Obsidian's
 		// reading-view element, so clear them explicitly to avoid leaving it capped.
-		this.readingView.removeClasses(["dc-has", "dc-margin", "dc-highlights", "dc-hide-resolved"]);
+		this.readingView.removeClasses(["dc-has", "dc-centered", "dc-margin", "dc-highlights", "dc-hide-resolved"]);
 		for (const card of this.cards.values()) card.destroy();
 		this.container.remove();
 		this.cards.clear();
@@ -456,7 +459,7 @@ export class ReadingMarginManager {
 				// text keeps full width). Comments are read/created via the sidebar.
 				rv.toggleClass("dc-highlights", highlightsShown(this.deps));
 				rv.toggleClass("dc-hide-resolved", !this.deps.showResolved());
-				rv.removeClasses(["dc-has", "dc-margin"]);
+				rv.removeClasses(["dc-has", "dc-centered", "dc-margin"]);
 				const draftColor = authorColorCss(this.deps.highlightColorForAuthor(this.deps.getAuthor()));
 				rv.style.setProperty("--dc-highlight-color", draftColor);
 				rv.style.setProperty("--dc-draft-highlight-color", draftColor);
