@@ -1,4 +1,5 @@
 import { setIcon } from "obsidian";
+import { isImeComposing } from "../util/dom";
 import {
 	draftPlaceholder,
 	DraftSubmitHandler,
@@ -75,7 +76,7 @@ export const buildDraftComposer = (
 		if (e.key === "Escape") {
 			e.preventDefault();
 			handlers.onCancel();
-		} else if (e.key === "Enter" && !e.shiftKey) {
+		} else if (e.key === "Enter" && !e.shiftKey && !isImeComposing(e)) {
 			e.preventDefault();
 			void submit();
 		}

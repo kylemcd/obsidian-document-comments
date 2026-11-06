@@ -54,28 +54,47 @@ const BREAKS_BLOCK = new RegExp(`${HEADING.source}|${STRUCTURAL_LINE.source}`);
 /** A fence, rule, setext underline, or empty bullet: a line with no text of its own. */
 export const isStructuralLine = (line: string): boolean => STRUCTURAL_LINE.test(line);
 
-/** Where a line's text starts: past its indentation, quote markers, list bullet
- *  and task box, then a heading's `#`s, a callout's `[!type]`, or a footnote label. */
-export const leadingMarkup = (line: string): LeadingMarkup => {
+type Containers = {
+	/** Offset past the quote markers and list bullets. */
+	end: number;
+	/** The last container peeled is a quote, so a callout's `[!type]` may follow. */
+	innermostQuote: boolean;
+	/** Any container peeled is a quote. */
+	inQuote: boolean;
+};
+
+const peelContainers = (line: string): Containers => {
 	let end = 0;
-	let quoted = false;
+	let innermostQuote = false;
+	let inQuote = false;
 	// Quotes and list items nest in either order (`> - `, `- > `), so peel them off
 	// one at a time until neither matches.
 	for (;;) {
 		const rest = line.slice(end);
 		const quote = QUOTE.exec(rest);
 		const piece = quote ?? LIST_ITEM.exec(rest);
-		if (!piece) break;
+		if (!piece) return { end, innermostQuote, inQuote };
 		end += piece[0].length;
-		quoted = !!quote;
+		innermostQuote = !!quote;
+		inQuote = inQuote || innermostQuote;
 	}
+};
+
+/** Where a line's text starts: past its indentation, quote markers, list bullet
+ *  and task box, then a heading's `#`s, a callout's `[!type]`, or a footnote label. */
+export const leadingMarkup = (line: string): LeadingMarkup => {
+	const { end, innermostQuote } = peelContainers(line);
 	const rest = line.slice(end);
 	const heading = HEADING.exec(rest);
 	if (heading) return { end: end + heading[0].length, heading: true };
-	const label = (quoted ? CALLOUT.exec(rest) : null) ?? FOOTNOTE.exec(rest);
+	const label = (innermostQuote ? CALLOUT.exec(rest) : null) ?? FOOTNOTE.exec(rest);
 	const text = end + (label?.[0].length ?? 0);
 	return { end: text + (INDENT.exec(line.slice(text))?.[0].length ?? 0), heading: false };
 };
+
+/** Whether a line renders inside a quote or callout, nested in a list item or not
+ *  (`> `, `- > `, `> - `). */
+export const isQuoteLine = (line: string): boolean => peelContainers(line).inQuote;
 
 /** The line holding `pos`, without its line break, CR included, so the patterns
  *  read a file with Windows line endings the same way. */

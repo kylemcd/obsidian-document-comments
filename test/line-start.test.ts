@@ -5,6 +5,7 @@ import {
 	endOfTextBefore,
 	footnoteRanges,
 	indentedCodeLines,
+	isQuoteLine,
 	leadingMarkup,
 	needsMarkerGuard,
 } from "../src/format/line-start";
@@ -39,6 +40,23 @@ describe("leadingMarkup", () => {
 		["a callout marker outside a quote", "[!note] Title"],
 	])("reads %s as text", (_label, line) => {
 		expect(leadingMarkup(line).end).toBe(0);
+	});
+});
+
+describe("isQuoteLine", () => {
+	test.each([
+		["a quote", "> quote", true],
+		["an indented quote", "  > quote", true],
+		["a callout title", "> [!note] Title", true],
+		["a list in a quote", "> - item", true],
+		["a quote in a list", "- > quote", true],
+		["a quote in a numbered item", "1. > quote", true],
+		["a paragraph", "Hello world", false],
+		["a bullet", "- item", false],
+		["an arrow", "-> next", false],
+		["an empty line", "", false],
+	])("reads %s", (_label, line, quoted) => {
+		expect(isQuoteLine(line)).toBe(quoted);
 	});
 });
 
