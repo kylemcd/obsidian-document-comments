@@ -130,3 +130,27 @@ describe("comment text selection", () => {
 		expect(rule).not.toContain("user-select");
 	});
 });
+
+describe("unshifted text", () => {
+	// With "Shift text to make room for comments" off the text stays centered and moves
+	// left only when the right-hand gutter can't fit the column.
+	test("centers the text unless the gutter is narrower than the column", () => {
+		const rule =
+			/\.markdown-source-view\.mod-cm6 \.cm-editor\.dc-has\.dc-centered \.cm-sizer,\s*\.markdown-reading-view\.dc-has\.dc-centered \.markdown-preview-view \.markdown-preview-sizer\s*\{([^}]*)\}/.exec(
+				styles,
+			)?.[1] ?? "";
+
+		expect(rule).toContain("calc((100% - var(--file-line-width, 50rem)) / 2)");
+		expect(rule).toContain("calc(100% - var(--file-line-width, 50rem) - var(--dc-margin-width))");
+	});
+
+	test("starts the column where the centered text ends", () => {
+		const rule =
+			/\.cm-editor\.dc-has\.dc-centered \.doc-comment-margin,\s*\.markdown-reading-view\.dc-has\.dc-centered \.doc-comment-margin\s*\{([^}]*)\}/.exec(
+				styles,
+			)?.[1] ?? "";
+
+		expect(rule).toContain("calc((100% + var(--file-line-width, 50rem)) / 2)");
+		expect(rule).toContain("calc(100% - var(--dc-margin-width))");
+	});
+});

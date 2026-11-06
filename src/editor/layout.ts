@@ -37,6 +37,7 @@ const editorLayoutAttributes = (state: EditorState): EditorLayoutAttributes => {
 
 	const classes: string[] = [];
 	if (hasColumn) classes.push("dc-has");
+	if (hasColumn && cfg.centerText()) classes.push("dc-centered");
 	// Highlights have their own toggle, so they persist both while the sidebar
 	// panel hosts the cards (dc-has off) and while the column is hidden entirely,
 	// except on mobile (see highlightsShown).
@@ -51,12 +52,13 @@ const editorLayoutAttributes = (state: EditorState): EditorLayoutAttributes => {
 
 /**
  * Mirrors the layout/visibility state onto the `.cm-editor` element as plain
- * classes (`dc-has`, `dc-highlights`, `dc-hide-resolved`) so the stylesheet can
- * cap the text column and toggle highlights with ordinary descendant selectors —
- * no `:has()`. We route through CodeMirror's `editorAttributes` facet rather than
- * `classList` on `view.dom`, because CodeMirror owns that element's className and
- * rewrites it on reconfigure; a raw `classList.add` gets silently dropped (the
- * reason the layout used to key off a `:has()` of our own child element instead).
+ * classes (`dc-has`, `dc-centered`, `dc-highlights`, `dc-hide-resolved`) so the
+ * stylesheet can cap the text column and toggle highlights with ordinary
+ * descendant selectors — no `:has()`. We route through CodeMirror's
+ * `editorAttributes` facet rather than `classList` on `view.dom`, because
+ * CodeMirror owns that element's className and rewrites it on reconfigure; a raw
+ * `classList.add` gets silently dropped (the reason the layout used to key off a
+ * `:has()` of our own child element instead).
  *
  * The value recomputes on every transaction — including the empty `dispatch({})`
  * the plugin fires when a setting toggles — so the classes always track state.

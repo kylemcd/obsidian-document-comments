@@ -10,6 +10,7 @@ const settings = (): DocCommentsSettings => ({
 	showComments: true,
 	showResolved: false,
 	showHighlights: true,
+	shiftTextForComments: true,
 	allowEmptyComments: false,
 	authorColorsEnabled: true,
 	authorColors: {
