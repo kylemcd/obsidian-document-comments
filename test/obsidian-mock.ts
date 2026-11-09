@@ -148,6 +148,30 @@ class ValueComponent<T> {
 	}
 }
 
+class DropdownComponent {
+	constructor(readonly selectEl: HTMLSelectElement) {}
+
+	addOptions(options: Record<string, string>): this {
+		Object.entries(options).forEach(([value, display]) => {
+			const option = document.createElement("option");
+			option.value = value;
+			option.textContent = display;
+			this.selectEl.appendChild(option);
+		});
+		return this;
+	}
+
+	setValue(value: string): this {
+		this.selectEl.value = value;
+		return this;
+	}
+
+	onChange(callback: (value: string) => void): this {
+		this.selectEl.addEventListener("change", () => callback(this.selectEl.value));
+		return this;
+	}
+}
+
 class ExtraButtonComponent extends ButtonComponent {
 	setIcon(icon: string): this {
 		this.buttonEl.dataset.icon = icon;
@@ -221,6 +245,13 @@ export class Setting {
 		input.type = "checkbox";
 		this.controlEl.appendChild(input);
 		configure(new ValueComponent(input));
+		return this;
+	}
+
+	addDropdown(configure: (component: DropdownComponent) => void): this {
+		const select = document.createElement("select");
+		this.controlEl.appendChild(select);
+		configure(new DropdownComponent(select));
 		return this;
 	}
 

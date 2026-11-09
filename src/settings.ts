@@ -1,6 +1,21 @@
-import { App, PluginSettingTab, Setting, type SettingDefinition, type SettingDefinitionItem } from "obsidian";
+import {
+	App,
+	PluginSettingTab,
+	Setting,
+	type SettingControl,
+	type SettingDefinition,
+	type SettingDefinitionItem,
+} from "obsidian";
 import type DocCommentsPlugin from "./main";
 import type { AuthorColorAssignments } from "./author-colors";
+
+const OPEN_SIDEBAR_CHOICES = {
+	never: "Never",
+	withComments: "For notes with comments",
+	always: "For every note",
+} as const;
+
+export type OpenSidebarMode = keyof typeof OPEN_SIDEBAR_CHOICES;
 
 export type DocCommentsSettings = {
 	/** Author handle attached to comments you create. Empty falls back to "me". */
@@ -17,6 +32,8 @@ export type DocCommentsSettings = {
 	 *  column needs. Off adds `dc-centered` next to `dc-has` (see editor/layout.ts
 	 *  and reading/margin.ts). */
 	shiftTextForComments: boolean;
+	/** Open the comments sidebar when a note opens. */
+	openSidebar: OpenSidebarMode;
 	/** Allow a blank comment to persist with an empty comment card. */
 	allowEmptyComments: boolean;
 	/** Apply stored per-author colors to highlights and author names. */
@@ -33,6 +50,7 @@ export const DEFAULT_SETTINGS: DocCommentsSettings = {
 	showResolved: false,
 	showHighlights: true,
 	shiftTextForComments: true,
+	openSidebar: "never",
 	allowEmptyComments: false,
 	authorColorsEnabled: false,
 	authorColors: {},
@@ -43,6 +61,7 @@ type DocCommentsSettingKey = Exclude<keyof DocCommentsSettings, "authorColors" |
 
 type TextControl = { type: "text"; placeholder: string };
 type ToggleControl = { type: "toggle" };
+type DropdownControl = { type: "dropdown"; options: Record<string, string> };
 
 /** Single source of truth for each setting's copy and control. Both the
  *  declarative `getSettingDefinitions()` API (newer Obsidian) and the imperative
@@ -53,7 +72,7 @@ const SETTING_META: ReadonlyArray<{
 	name: string;
 	desc: string;
 	aliases: string[];
-	control: TextControl | ToggleControl;
+	control: TextControl | ToggleControl | DropdownControl;
 }> = [
 	{
 		key: "author",
@@ -91,6 +110,13 @@ const SETTING_META: ReadonlyArray<{
 		control: { type: "toggle" },
 	},
 	{
+		key: "openSidebar",
+		name: "Open comments sidebar automatically",
+		desc: "Open the comments sidebar when you open a note. Desktop only.",
+		aliases: ["default view", "comments panel", "auto open"],
+		control: { type: "dropdown", options: OPEN_SIDEBAR_CHOICES },
+	},
+	{
 		key: "allowEmptyComments",
 		name: "Allow empty comments",
 		desc: "Allow new comments without text. Existing empty comments remain available when this setting is off.",
@@ -106,6 +132,16 @@ const SETTING_META: ReadonlyArray<{
 	},
 ];
 
+const controlFor = ({ key, control }: (typeof SETTING_META)[number]): SettingControl<string> => {
+	if (control.type === "text") {
+		return { type: "text", key, defaultValue: DEFAULT_SETTINGS[key] as string, placeholder: control.placeholder };
+	}
+	if (control.type === "dropdown") {
+		return { type: "dropdown", key, defaultValue: DEFAULT_SETTINGS[key] as string, options: control.options };
+	}
+	return { type: "toggle", key, defaultValue: DEFAULT_SETTINGS[key] as boolean };
+};
+
 export class DocCommentsSettingTab extends PluginSettingTab {
 	constructor(
 		app: App,
@@ -119,15 +155,7 @@ export class DocCommentsSettingTab extends PluginSettingTab {
 			name: meta.name,
 			desc: meta.desc,
 			aliases: meta.aliases,
-			control:
-				meta.control.type === "text"
-					? {
-							type: "text",
-							key: meta.key,
-							defaultValue: DEFAULT_SETTINGS[meta.key] as string,
-							placeholder: meta.control.placeholder,
-						}
-					: { type: "toggle", key: meta.key, defaultValue: DEFAULT_SETTINGS[meta.key] as boolean },
+			control: controlFor(meta),
 		}));
 		const settingsError = this.plugin.settingsError();
 		if (settingsError) base.push(this.settingsErrorDefinition(settingsError));
@@ -153,6 +181,14 @@ export class DocCommentsSettingTab extends PluginSettingTab {
 				setting.addText((text) =>
 					text
 						.setPlaceholder(placeholder)
+						.setValue(String(this.plugin.settings[meta.key]))
+						.onChange((value) => void this.applySetting(meta.key, value)),
+				);
+			} else if (meta.control.type === "dropdown") {
+				const options = meta.control.options;
+				setting.addDropdown((dropdown) =>
+					dropdown
+						.addOptions(options)
 						.setValue(String(this.plugin.settings[meta.key]))
 						.onChange((value) => void this.applySetting(meta.key, value)),
 				);
@@ -307,6 +343,7 @@ export class DocCommentsSettingTab extends PluginSettingTab {
 		else if (key === "showResolved") this.plugin.settings.showResolved = Boolean(value);
 		else if (key === "showHighlights") this.plugin.settings.showHighlights = Boolean(value);
 		else if (key === "shiftTextForComments") this.plugin.settings.shiftTextForComments = Boolean(value);
+		else if (key === "openSidebar") this.plugin.settings.openSidebar = value as OpenSidebarMode;
 		else if (key === "allowEmptyComments") this.plugin.settings.allowEmptyComments = Boolean(value);
 		else if (key === "authorColorsEnabled") this.plugin.settings.authorColorsEnabled = Boolean(value);
 	}
