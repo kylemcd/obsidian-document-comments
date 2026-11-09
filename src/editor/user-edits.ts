@@ -78,6 +78,12 @@ const takesComment = (doc: Text | string, edit: Edit, comment: ParsedComment): b
 	return !edit.insert || (edit.from <= withGuard(doc, comment.open).from && edit.to >= comment.close.to);
 };
 
+/** Whether an edit writes a comment's markers back itself. Obsidian saves an edit in
+ *  a table cell by replacing the cell's whole text, markers included, as a user edit
+ *  on the note, and the thread after the table has to survive it. */
+const rewritesMarkers = (edit: Edit, comment: ParsedComment): boolean =>
+	edit.insert.includes(openMarker(comment.id)) && edit.insert.includes(closeMarker(comment.id));
+
 const piecesOf = (doc: Text, comment: ParsedComment): TextRange[] =>
 	[comment.open && withGuard(doc, comment.open), comment.close && withGuard(doc, comment.close), comment.body].filter(
 		(piece): piece is TextRange => !!piece,
@@ -210,8 +216,9 @@ export const keepCommentsWhole = (
 	tr.changes.iterChanges((from, to, fromB, toB, inserted) => {
 		edits.push({ from, to, insert: inserted.toString(), inserted: { from: fromB, to: toB } });
 	});
-	const taken = comments.filter((comment) => edits.some((edit) => takesComment(doc, edit, comment)));
-	const kept = comments.filter((comment) => !taken.includes(comment));
+	const affected = comments.filter((comment) => !edits.some((edit) => rewritesMarkers(edit, comment)));
+	const taken = affected.filter((comment) => edits.some((edit) => takesComment(doc, edit, comment)));
+	const kept = affected.filter((comment) => !taken.includes(comment));
 	const holes = kept
 		.flatMap((comment) => piecesOf(doc, comment))
 		.filter((piece) => edits.some((edit) => overlaps(piece, edit)))

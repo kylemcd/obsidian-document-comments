@@ -101,6 +101,40 @@ describe("deleting commented text", () => {
 	});
 });
 
+// Obsidian saves an edit in a table cell by replacing the cell's whole text, markers
+// included, as a user edit on the note. The thread sits after the table.
+describe("editing a table cell", () => {
+	const CELL = "<!--c:t1-->word<!--/c:t1--> here";
+	const THREAD = body("t1", "word", "hi");
+	const TABLE = `| A | B |\n| --- | --- |\n| x | ${CELL} |\n${THREAD}\n\nAfter.`;
+
+	const saveCell = (text: string, userEvent: string): EditorState => {
+		const from = TABLE.indexOf(CELL);
+		return create(TABLE).update({ changes: { from, to: from + CELL.length, insert: text }, userEvent }).state;
+	};
+
+	test("typing elsewhere in the cell keeps the comment and its thread", () => {
+		const next = saveCell("<!--c:t1-->word<!--/c:t1--> hereX", "input.type");
+
+		expect(next.doc.toString()).toBe(TABLE.replace(" here |", " hereX |"));
+		expect(ids(next)).toEqual(["t1"]);
+	});
+
+	test("deleting part of the commented text keeps the comment and its thread", () => {
+		const next = saveCell("<!--c:t1-->wo<!--/c:t1--> here", "delete.backward");
+
+		expect(next.doc.toString()).toBe(TABLE.replace(">word<", ">wo<"));
+		expect(ids(next)).toEqual(["t1"]);
+	});
+
+	test("saving the cell without its markers still removes the comment and its thread", () => {
+		const next = saveCell(" here", "delete.backward");
+
+		expect(next.doc.toString()).toBe("| A | B |\n| --- | --- |\n| x |  here |\n\nAfter.");
+		expect(ids(next)).toEqual([]);
+	});
+});
+
 describe("copy, cut, and paste", () => {
 	test("copied text leaves the comment markup out", () => {
 		const doc = `\u200b<!--c:a1-->Word<!--/c:a1--> end.\n${body("a1", "Word", "hi")}\n\nNext para.`;

@@ -15,6 +15,7 @@ matching the pushed tag as that GitHub release's notes, so add an entry here bef
   - Deleting all of a comment's text removes the comment and its thread. Before, its hidden tags stayed behind, or it became an orphan that Repair couldn't fix.
   - Copied text leaves out the hidden comment tags, so they no longer show up when you paste it into another app. Pasting copied text into a note doesn't copy its comments.
   - Pasting over a selection that started at a commented word no longer drops the pasted text.
+  - Editing a table cell that holds a comment no longer adds duplicate hidden tags to the row.
 
 ## 0.1.18
 
