@@ -10,6 +10,7 @@ matching the pushed tag as that GitHub release's notes, so add an entry here bef
 - Clicking a `[[link]]` in a comment now opens the note, from the margin, the sidebar, and Reading view. Cmd-click (Ctrl-click on Windows and Linux) opens it in a new tab ([#108](https://github.com/kylemcd/obsidian-document-comments/issues/108)).
 - Fixed a callout's last line stacking one letter per row in Live Preview when you click into the callout and a comment's thread follows it ([#107](https://github.com/kylemcd/obsidian-document-comments/pull/107)).
 - New setting, **Shift text to make room for comments**. Turn it off to keep the note centered while comments show. The note then moves left only as far as the comment column needs ([#112](https://github.com/kylemcd/obsidian-document-comments/pull/112)).
+- Choosing **Add comment** from the right-click menu inside a table cell now opens the composer beside the row, where the next row can't cut it off. Before, the composer opened inside the cell, and saving wrote the comment's thread into the table row ([#117](https://github.com/kylemcd/obsidian-document-comments/issues/117)).
 
 ## 0.1.18
 
