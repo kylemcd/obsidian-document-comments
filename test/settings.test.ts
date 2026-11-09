@@ -11,6 +11,7 @@ const settings = (): DocCommentsSettings => ({
 	showResolved: false,
 	showHighlights: true,
 	shiftTextForComments: true,
+	expandCards: false,
 	allowEmptyComments: false,
 	authorColorsEnabled: true,
 	authorColors: {
@@ -33,6 +34,27 @@ const plugin = (state: AuthorIndexState) => ({
 	scheduleCurrentAuthorColor: vi.fn(),
 	refreshEditors: vi.fn(),
 	updateRibbon: vi.fn(),
+});
+
+describe("the setting that expands comment cards", () => {
+	test("is a toggle, off by default", () => {
+		const tab = new DocCommentsSettingTab(new App(), plugin({ status: "idle" }) as never);
+
+		const definition = tab.getSettingDefinitions().find((item) => item.name === "Show comment cards expanded");
+
+		expect(DEFAULT_SETTINGS.expandCards).toBe(false);
+		expect(definition).toMatchObject({ control: { type: "toggle", key: "expandCards", defaultValue: false } });
+	});
+
+	test("refreshes the open notes when it changes", async () => {
+		const fake = plugin({ status: "idle" });
+		const tab = new DocCommentsSettingTab(new App(), fake as never);
+
+		await tab.setControlValue("expandCards", true);
+
+		expect(fake.settings.expandCards).toBe(true);
+		expect(fake.refreshEditors).toHaveBeenCalled();
+	});
 });
 
 describe("highlight color settings", () => {

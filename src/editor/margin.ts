@@ -194,6 +194,7 @@ class MarginView implements PluginValue {
 			} else {
 				if (existing.signature !== cardSignature(c)) existing.update(c);
 				existing.refreshAuthorColors();
+				existing.refreshExpanded();
 				existing.setAnchorDamage(damage.get(c.id) ?? null);
 			}
 		}
@@ -215,6 +216,7 @@ class MarginView implements PluginValue {
 			app: cfg.app,
 			sourcePath: () => this.view.state.field(editorInfoField, false)?.file?.path ?? "",
 			collapsible: true,
+			expanded: cfg.expandCards,
 			colorForAuthor: cfg.colorForAuthor,
 		};
 	}

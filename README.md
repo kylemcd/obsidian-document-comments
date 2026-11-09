@@ -24,6 +24,7 @@ The plugin stores each comment inside its Markdown file as an HTML comment. Othe
 - Show comment cards in Live Preview, Source view, and Reading view.
 - Open long comments in the sidebar.
 - Filter the sidebar by open, resolved, or all comments.
+- Show long comment cards in full, without **Show more**.
 - Hide the comment cards, the highlights, or the resolved comments, each on its own.
 
 ## Comment format
@@ -176,6 +177,8 @@ The Reading view command cannot add comments to embedded content.
 Select a card to open its reply field. Hover over an entry to show its reaction, resolve, edit, and delete controls.
 
 Use the **Open comments sidebar** command or ribbon icon to show all comments in the active note.
+
+A long thread collapses to a preview with **Show more**. Turn on **Show comment cards expanded** in **Settings → Document Comments** to show every thread in full. A thread too tall for the pane keeps its preview and an **Open in sidebar** link, because the end of a card that tall can't be scrolled to.
 
 Use **Toggle comments** to show or hide the comment cards. Use **Toggle resolved comments** to show or hide resolved comments.
 

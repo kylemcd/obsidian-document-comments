@@ -17,6 +17,8 @@ export type DocCommentsSettings = {
 	 *  column needs. Off adds `dc-centered` next to `dc-has` (see editor/layout.ts
 	 *  and reading/margin.ts). */
 	shiftTextForComments: boolean;
+	/** Show tall margin cards whole instead of as a "Show more" preview. */
+	expandCards: boolean;
 	/** Allow a blank comment to persist with an empty comment card. */
 	allowEmptyComments: boolean;
 	/** Apply stored per-author colors to highlights and author names. */
@@ -33,6 +35,7 @@ export const DEFAULT_SETTINGS: DocCommentsSettings = {
 	showResolved: false,
 	showHighlights: true,
 	shiftTextForComments: true,
+	expandCards: false,
 	allowEmptyComments: false,
 	authorColorsEnabled: false,
 	authorColors: {},
@@ -88,6 +91,13 @@ const SETTING_META: ReadonlyArray<{
 		name: "Shift text to make room for comments",
 		desc: "Move the note left so the comment column fits beside it. When off, the note stays centered and moves only if the column doesn't fit.",
 		aliases: ["center text", "text position", "comment column layout"],
+		control: { type: "toggle" },
+	},
+	{
+		key: "expandCards",
+		name: "Show comment cards expanded",
+		desc: "Show the whole thread on each card in the margin, without Show more. A thread too tall for the pane keeps its preview and link to the sidebar.",
+		aliases: ["show more", "long comments", "collapse cards", "clamp"],
 		control: { type: "toggle" },
 	},
 	{
@@ -307,6 +317,7 @@ export class DocCommentsSettingTab extends PluginSettingTab {
 		else if (key === "showResolved") this.plugin.settings.showResolved = Boolean(value);
 		else if (key === "showHighlights") this.plugin.settings.showHighlights = Boolean(value);
 		else if (key === "shiftTextForComments") this.plugin.settings.shiftTextForComments = Boolean(value);
+		else if (key === "expandCards") this.plugin.settings.expandCards = Boolean(value);
 		else if (key === "allowEmptyComments") this.plugin.settings.allowEmptyComments = Boolean(value);
 		else if (key === "authorColorsEnabled") this.plugin.settings.authorColorsEnabled = Boolean(value);
 	}
