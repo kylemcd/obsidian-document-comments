@@ -17,6 +17,8 @@ matching the pushed tag as that GitHub release's notes, so add an entry here bef
   - Pasting over a selection that started at a commented word no longer drops the pasted text.
   - Editing a table cell that holds a comment no longer adds duplicate hidden tags to the row.
 - Choosing **Add comment** from the right-click menu inside a table cell now opens the composer beside the row, where the next row can't cut it off. Before, the composer opened inside the cell, and saving wrote the comment's thread into the table row ([#117](https://github.com/kylemcd/obsidian-document-comments/issues/117)).
+- Adding a comment in Reading view no longer fails with "The selection moved" after you comment on text higher up in the note ([#111](https://github.com/kylemcd/obsidian-document-comments/issues/111)).
+- In Reading view you can now comment on a selection that crosses bold, italics, links, inline code, or `==highlights==`, and on a triple-clicked line. A phrase that repeats in a paragraph now gets the comment where you selected it, not at its first appearance. In both Reading view and Live Preview, a comment that ends inside inline code or a `[[wikilink]]` now takes in the whole of it, so its markers can't show as text or break the link ([#110](https://github.com/kylemcd/obsidian-document-comments/issues/110)).
 
 ## 0.1.18
 

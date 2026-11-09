@@ -245,16 +245,30 @@ const anchorSelection = (doc: string, from: number, to: number): TextRange => {
  *  can tell a selection of table borders from one of block markup. */
 const anchorText = (doc: string, cell: TextRange): TextRange => {
 	const text = anchorOffBlockMarkup(doc, cell.from, cell.to);
-	return expandInlineCodeSelection(doc, text.from, text.to);
+	const code = expandInlineCodeSelection(doc, text.from, text.to);
+	return outOfWikilinks(doc, code.from, code.to);
 };
 
-/** HTML comments inside a Markdown code span render as literal code. When a
- * selection is within one inline-code token, anchor the whole token so the
+/** A marker inside a wikilink becomes part of its target or alias, so an end inside
+ *  one moves to that edge of the link. */
+const outOfWikilinks = (doc: string, from: number, to: number): TextRange => {
+	const links = [...doc.matchAll(/!?\[\[[^\]\n]*\]\]/g)].map((match) => ({
+		from: match.index,
+		to: match.index + match[0].length,
+	}));
+	const holding = (pos: number) => (link: TextRange) => pos > link.from && pos < link.to;
+	return { from: links.find(holding(from))?.from ?? from, to: links.find(holding(to))?.to ?? to };
+};
+
+/** HTML comments inside a Markdown code span render as literal code. An end of the
+ * selection inside an inline-code token moves to that edge of the token, so the
  * comment markers remain invisible outside its backtick delimiters. */
 export const expandInlineCodeSelection = (doc: string, from: number, to: number): { from: number; to: number } => {
 	const lineFrom = doc.lastIndexOf("\n", from - 1) + 1;
 	const nextLine = doc.indexOf("\n", to);
 	const lineTo = nextLine < 0 ? doc.length : nextLine;
+	let start = from;
+	let end = to;
 
 	for (let open = lineFrom; open < lineTo; open++) {
 		if (doc.charAt(open) !== "`" || isEscaped(doc, open)) continue;
@@ -266,17 +280,17 @@ export const expandInlineCodeSelection = (doc: string, from: number, to: number)
 			if (candidate < 0 || candidate >= lineTo) break;
 			const closeTicks = backtickRun(doc, candidate, lineTo);
 			if (closeTicks === ticks && !isEscaped(doc, candidate)) {
-				if (from >= contentFrom && to <= candidate) {
-					return { from: open, to: candidate + closeTicks };
-				}
-				open = candidate + closeTicks - 1;
+				const close = candidate + closeTicks;
+				if (from > open && from < close) start = open;
+				if (to > open && to < close) end = close;
+				open = close - 1;
 				break;
 			}
 			cursor = candidate + closeTicks;
 		}
 	}
 
-	return { from, to };
+	return { from: start, to: end };
 };
 
 const backtickRun = (doc: string, from: number, limit: number): number => {
