@@ -41,6 +41,8 @@ export class ItemView {
 	constructor(readonly leaf: WorkspaceLeaf) {
 		this.containerEl.appendChild(this.contentEl);
 	}
+
+	registerEvent(_ref: unknown): void {}
 }
 
 export const Platform = { isMobile: false };

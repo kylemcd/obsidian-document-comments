@@ -6,7 +6,6 @@ import {
 	RangeSet,
 	StateEffect,
 	StateField,
-	Text,
 	Transaction,
 } from "@codemirror/state";
 import { Decoration, DecorationSet, EditorView, ViewPlugin, WidgetType } from "@codemirror/view";
@@ -14,9 +13,10 @@ import { ParsedComment, TextRange } from "../format/types";
 import { anchorRange, parseComments } from "../format/parse";
 import { isCodeComment, resolveCodeAnchor } from "../format/code-anchor";
 import { commentPreview } from "../format/preview";
-import { MARKER_GUARD, isQuoteLine, lineAround } from "../format/line-start";
+import { isQuoteLine, lineAround } from "../format/line-start";
 import { authorColorCss, creatorForComment } from "../author-colors";
 import { commentConfig } from "./config";
+import { clipboardText, keepCommentsWhole, withGuard } from "./user-edits";
 
 export type CommentFieldValue = {
 	comments: ParsedComment[];
@@ -68,13 +68,6 @@ class MarkerWidget extends WidgetType {
 		return span;
 	}
 }
-
-/** A marker plus the guard in front of it, when it has one. The guard is invisible,
- *  so hiding, the caret, and deletion all have to treat the pair as the marker. */
-const withGuard = (doc: Text, marker: TextRange): TextRange => {
-	if (marker.from === 0 || doc.sliceString(marker.from - 1, marker.from) !== MARKER_GUARD) return marker;
-	return { from: marker.from - 1, to: marker.to };
-};
 
 /**
  * Arrow-key handling around hidden markers. Atomic ranges already skip the marker
@@ -171,8 +164,11 @@ export const commentField = StateField.define<CommentFieldValue>({
 	provide: (f) => [
 		EditorView.decorations.from(f, (v) => v.decorations),
 		EditorView.atomicRanges.of((view) => view.state.field(f).atomic),
-		EditorState.changeFilter.of((tr) => protectMarkersFromUserEdits(tr, f)),
+		EditorState.transactionFilter.of((tr) => keepCommentsWhole(tr, tr.startState.field(f, false)?.comments ?? [])),
 		EditorState.transactionFilter.of((tr) => snapSelectionOutOfMarkers(tr, f)),
+		EditorView.clipboardOutputFilter.of((text, state) =>
+			clipboardText(text, state, state.field(f, false)?.comments ?? []),
+		),
 		markerNavigationPlugin(f),
 	],
 });
@@ -392,35 +388,4 @@ const snapSelectionOutOfMarkers = (
 	});
 	if (!changed) return tr;
 	return [tr, { selection: EditorSelection.create(ranges, tr.newSelection.mainIndex) }];
-};
-
-/** Atomic deletion may target an entire marker-plus-space range. Keep the HTML
- * marker intact while allowing the user's surrounding text edit (including
- * deleting the borrowed space) to proceed. Plugin-generated transactions have
- * no input/delete/move user event, so normal comment actions and undo/redo are
- * left untouched. */
-const protectMarkersFromUserEdits = (
-	tr: Transaction,
-	field: StateField<CommentFieldValue>,
-): boolean | readonly number[] => {
-	if (!tr.docChanged || (!tr.isUserEvent("input") && !tr.isUserEvent("delete") && !tr.isUserEvent("move"))) {
-		return true;
-	}
-	const value = tr.startState.field(field, false);
-	if (!value) return true;
-	const protectedRanges: number[] = [];
-	for (const comment of value.comments) {
-		for (const marker of [comment.open, comment.close]) {
-			if (!marker) continue;
-			const unit = withGuard(tr.startState.doc, marker);
-			protectedRanges.push(unit.from, unit.to);
-		}
-		// The hidden body block is atomic too, so a forward-Delete at the end of the
-		// anchored line expands over it and would silently destroy the whole thread
-		// (the doc looks unchanged, since the body line is invisible). Protect it so
-		// only the swallowed newline is removed and the lines join. Programmatic
-		// comment deletion carries no user event and bypasses this filter entirely.
-		if (comment.body) protectedRanges.push(comment.body.from, comment.body.to);
-	}
-	return protectedRanges.length > 0 ? protectedRanges : true;
 };

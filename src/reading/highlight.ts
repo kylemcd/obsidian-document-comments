@@ -1,5 +1,5 @@
 import type { MarkdownPostProcessorContext, MarkdownSectionInformation } from "obsidian";
-import { ParsedComment } from "../format/types";
+import { ParsedComment, TextRange } from "../format/types";
 import { anchorRange, commentsOutside, fencedRanges, isHighlight, parseComments } from "../format/parse";
 import { isCodeComment, resolveCodeAnchor } from "../format/code-anchor";
 import { commentPreview } from "../format/preview";
@@ -14,6 +14,7 @@ import {
 } from "../author-colors";
 
 export type SectionRange = {
+	el: HTMLElement;
 	from: number;
 	source: string;
 	/** The file this rendered block came from — an embed/preview renders another
@@ -21,16 +22,18 @@ export type SectionRange = {
 	sourcePath: string;
 };
 
-/** Rendered block element → its source range, so a Reading-view selection can be
- *  mapped back to markdown offsets (best-effort, used by "Add comment"). */
-const sectionRanges = new WeakMap<HTMLElement, SectionRange>();
+/** Rendered block element → how to find its source range, so a Reading-view
+ *  selection can be mapped back to markdown offsets (best-effort, used by "Add
+ *  comment"). Found when asked rather than kept, because Obsidian keeps a rendered
+ *  block whose own text didn't change while an edit above moves it down the file. */
+const sectionRanges = new WeakMap<HTMLElement, () => SectionRange | null>();
 
 /** Walk up from a DOM node to the nearest rendered block we have source for. */
 export const findSectionRange = (node: Node): SectionRange | null => {
 	let el: HTMLElement | null = node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : node.parentElement;
 	while (el) {
 		const range = sectionRanges.get(el);
-		if (range) return range;
+		if (range) return range();
 		el = el.parentElement;
 	}
 	return null;
@@ -56,12 +59,12 @@ export const mapReadingSelection = (
 	const highlighted = selectedHighlightRange(selection, selected, doc);
 	if (highlighted) return highlighted;
 
-	const idx = section.source.indexOf(selected);
-	if (idx < 0) return null;
+	const range = renderedSourceRange(selection, selected, section) ?? literalSourceRange(selected, section.source);
+	if (!range) return null;
 	return {
-		from: section.from + idx,
-		to: section.from + idx + selected.length,
-		expected: selected,
+		from: section.from + range.from,
+		to: section.from + range.to,
+		expected: section.source.slice(range.from, range.to),
 	};
 };
 
@@ -93,14 +96,8 @@ export const highlightPostProcessor = (
 	if (!info) return;
 	const { text } = info;
 	const blocks = renderedBlocks(el, info);
-	// Remember each block's source range for selection → markdown mapping.
-	blocks.forEach((block) =>
-		sectionRanges.set(block.el, {
-			from: block.from,
-			source: text.slice(block.from, block.to),
-			sourcePath: ctx.sourcePath,
-		}),
-	);
+	// Remember how to find each block's source for selection → markdown mapping.
+	blocks.forEach((block) => sectionRanges.set(block.el, () => currentSection(el, block.el, ctx)));
 
 	const comments = commentsFor(text);
 	if (comments.length === 0) return;
@@ -120,6 +117,17 @@ export const highlightPostProcessor = (
 
 /** A rendered element and the stretch of the source it shows. */
 type Block = { el: HTMLElement; from: number; to: number };
+
+const currentSection = (
+	section: HTMLElement,
+	el: HTMLElement,
+	ctx: MarkdownPostProcessorContext,
+): SectionRange | null => {
+	const info = ctx.getSectionInfo(section);
+	const block = info && renderedBlocks(section, info).find((candidate) => candidate.el === el);
+	if (!info || !block) return null;
+	return { el, from: block.from, source: info.text.slice(block.from, block.to), sourcePath: ctx.sourcePath };
+};
 
 /**
  * What a rendered section shows of the source. Obsidian renders every footnote in
@@ -228,6 +236,7 @@ type Visible = {
 };
 
 const ENTITIES: Record<string, number> = { amp: 38, lt: 60, gt: 62, quot: 34, apos: 39, nbsp: 160 };
+const ENTITY = /&(?:#(\d{1,7})|#[xX]([0-9a-fA-F]{1,6})|(amp|lt|gt|quot|apos|nbsp));/g;
 
 /**
  * The text Reading view shows for a stretch of Markdown source, and where each
@@ -319,7 +328,7 @@ export const visibleText = (source: string): Visible => {
 	each(/([*_=~])\1*/g, (match, from) => {
 		if (isDelimiter(source, match[0], from)) hide(from, from + match[0].length);
 	});
-	each(/&(?:#(\d{1,7})|#[xX]([0-9a-fA-F]{1,6})|(amp|lt|gt|quot|apos|nbsp));/g, (match, from) => {
+	each(ENTITY, (match, from) => {
 		const code = match[1] ? Number(match[1]) : match[2] ? parseInt(match[2], 16) : ENTITIES[match[3] ?? ""];
 		if (code === undefined || code > 0x10ffff) return;
 		hide(from, from + match[0].length);
@@ -359,9 +368,10 @@ type Folded = {
 	at: number[];
 };
 
-/** `text` with every run of whitespace folded to one space and guards dropped, so
- *  the source and the rendered block compare without regard to line breaks. */
-const fold = (text: string): Folded => {
+/** `text` with guards dropped and every run of whitespace folded to one space, or
+ *  left out altogether, so the source and the rendered block compare without regard
+ *  to line breaks or the padding of table cells. */
+const fold = (text: string, keepSpaces = true): Folded => {
 	const from: number[] = [];
 	const at: number[] = [];
 	let folded = "";
@@ -370,7 +380,7 @@ const fold = (text: string): Folded => {
 		at.push(folded.length);
 		const char = text.charAt(i);
 		const space = /\s/.test(char);
-		if (char === MARKER_GUARD || (space && folded.endsWith(" "))) continue;
+		if (char === MARKER_GUARD || (space && (!keepSpaces || folded.endsWith(" ")))) continue;
 		folded += space ? " " : char;
 		from.push(i);
 	}
@@ -464,15 +474,41 @@ const wrapRendered = (root: HTMLElement, rendered: Rendered, from: number, to: n
 		.forEach(({ node, from: at }) => {
 			const end = Math.min(to, at + node.length) - at;
 			const start = Math.max(from, at) - at;
-			if (end < node.length) node.splitText(end);
-			const piece = start > 0 ? node.splitText(start) : node;
-			// The line breaks between list items or table cells aren't the note's text,
-			// and a span there would sit where only block elements belong.
-			if (!piece.data.trim() && betweenBlocks(piece)) return;
-			const highlight = highlightSpan(root, attrs);
-			piece.parentNode?.insertBefore(highlight, piece);
-			highlight.appendChild(piece);
+			wrapTextPiece(node, start, end, () => highlightSpan(root, attrs));
 		});
+};
+
+/**
+ * Wrap the text a live selection covers, one span per text node, since a selection
+ * that crosses formatting can't go in one span. Returns the spans in document order.
+ */
+export const wrapSelectedText = (range: Range, createSpan: () => HTMLElement): HTMLElement[] => {
+	const ancestor = range.commonAncestorContainer;
+	const root = ancestor.nodeType === Node.ELEMENT_NODE ? (ancestor as HTMLElement) : ancestor.parentElement;
+	if (!root) return [];
+	// Splitting text nodes moves the range's own ends.
+	const { startContainer, startOffset, endContainer, endOffset } = range;
+	return renderedText(root)
+		.nodes.filter(({ node }) => range.intersectsNode(node))
+		.flatMap(({ node }) => {
+			const start = node === startContainer ? startOffset : 0;
+			const end = node === endContainer ? endOffset : node.length;
+			const span = start < end ? wrapTextPiece(node, start, end, createSpan) : null;
+			return span ? [span] : [];
+		});
+};
+
+/** Wrap `[start, end)` of a text node in a new span, or null if it isn't the note's text. */
+const wrapTextPiece = (node: Text, start: number, end: number, createSpan: () => HTMLElement): HTMLElement | null => {
+	if (end < node.length) node.splitText(end);
+	const piece = start > 0 ? node.splitText(start) : node;
+	// The line breaks between list items or table cells aren't the note's text,
+	// and a span there would sit where only block elements belong.
+	if (!piece.data.trim() && betweenBlocks(piece)) return null;
+	const span = createSpan();
+	piece.parentNode?.insertBefore(span, piece);
+	span.appendChild(piece);
+	return span;
 };
 
 const betweenBlocks = (node: Text): boolean => {
@@ -703,6 +739,72 @@ const isEscaped = (source: string, position: number): boolean => {
 
 const isMasked = (ranges: Array<[number, number]>, position: number): boolean => {
 	return ranges.some(([from, to]) => position >= from && position < to);
+};
+
+/**
+ * Where a selection's text is in its block's source, with whatever markup lies
+ * between its words. A block that shows all of its source lines up with it
+ * character by character once markup and white space are left out, which also says
+ * which of several repeats was selected. Otherwise the nearest match is the best guess.
+ */
+const renderedSourceRange = (selection: Selection, selected: string, section: SectionRange): TextRange | null => {
+	const rendered = renderedText(section.el);
+	const span = selectedSpan(selection.getRangeAt(0), rendered);
+	if (!span) return null;
+	const page = fold(rendered.text, false);
+	const start = page.at[span.from] ?? 0;
+	const needle = page.text.slice(start, page.at[span.to] ?? 0);
+	// A selection that runs out of this block, or over math or an embed, has no one
+	// stretch of this source behind it.
+	if (!needle || needle !== fold(selected, false).text) return null;
+	const visible = visibleText(section.source);
+	const shown = fold(visible.text, false);
+	const found = shown.text === page.text ? start : nearest(shown.text, needle, start);
+	const first = shown.from[found];
+	const last = shown.from[found + needle.length - 1];
+	if (first === undefined || last === undefined) return null;
+	const from = sourceOfShown(visible, first);
+	const to = pastEntity(section.source, sourceOfShown(visible, last));
+	return withSelectedSpaces(section.source, { from, to }, selected);
+};
+
+/** For text the visible text gets wrong, such as an asterisk it takes for emphasis. */
+const literalSourceRange = (selected: string, source: string): TextRange | null => {
+	const from = source.indexOf(selected);
+	return from < 0 ? null : { from, to: from + selected.length };
+};
+
+/** The part of a block's rendered text a selection covers. Its ends can sit on
+ *  elements outside the block: a triple-click ends at the start of the next one. */
+const selectedSpan = (range: Range, rendered: Rendered): TextRange | null => {
+	const covered = rendered.nodes.filter(({ node }) => range.intersectsNode(node));
+	const first = covered[0];
+	const last = covered[covered.length - 1];
+	if (!first || !last) return null;
+	return {
+		from: first.from + (first.node === range.startContainer ? range.startOffset : 0),
+		to: last.from + (last.node === range.endContainer ? range.endOffset : last.node.length),
+	};
+};
+
+/** The source offset that visible character `shown` comes from. */
+const sourceOfShown = (visible: Visible, shown: number): number =>
+	visible.at.findIndex((at, offset) => at <= shown && (visible.at[offset + 1] ?? 0) > shown);
+
+/** Past the source character at `at`, and the rest of the entity if it starts one. */
+const pastEntity = (source: string, at: number): number => {
+	const entity = new RegExp(ENTITY.source, "y");
+	entity.lastIndex = at;
+	return at + (entity.exec(source)?.[0].length ?? 1);
+};
+
+/** Takes in the spaces the selection has at its ends, which matching left out. */
+const withSelectedSpaces = (source: string, range: TextRange, selected: string): TextRange => {
+	const lead = /^[ \t]*/.exec(selected)?.[0].length ?? 0;
+	const trail = /[ \t]*$/.exec(selected)?.[0].length ?? 0;
+	const before = /[ \t]*$/.exec(source.slice(0, range.from))?.[0].length ?? 0;
+	const after = /^[ \t]*/.exec(source.slice(range.to))?.[0].length ?? 0;
+	return { from: range.from - Math.min(lead, before), to: range.to + Math.min(trail, after) };
 };
 
 const selectedHighlightRange = (selection: Selection, selected: string, doc: string): SourceSelection | null => {

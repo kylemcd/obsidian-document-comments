@@ -2,67 +2,9 @@
 import { beforeAll, describe, expect, test, vi } from "vitest";
 import { MarkdownView } from "obsidian";
 import { ReadingMarginManager, type ReadingDeps } from "../src/reading/margin";
+import { installObsidianDom } from "./obsidian-dom";
 
-type ElementOptions = string | { cls?: string | string[]; text?: string; attr?: Record<string, string> };
-
-const applyOptions = (element: HTMLElement, options?: ElementOptions): void => {
-	if (typeof options === "string") element.className = options;
-	else if (options) {
-		if (options.cls) element.className = Array.isArray(options.cls) ? options.cls.join(" ") : options.cls;
-		if (options.text !== undefined) element.textContent = options.text;
-		Object.entries(options.attr ?? {}).forEach(([name, value]) => element.setAttribute(name, value));
-	}
-};
-
-beforeAll(() => {
-	(globalThis as unknown as { createDiv: (options?: ElementOptions) => HTMLDivElement }).createDiv = (options) => {
-		const element = document.createElement("div");
-		applyOptions(element, options);
-		return element;
-	};
-	HTMLElement.prototype.createDiv = function (options?: ElementOptions) {
-		const element = this.ownerDocument.createElement("div");
-		applyOptions(element, options);
-		this.appendChild(element);
-		return element;
-	};
-	HTMLElement.prototype.createEl = function (tag: string, options?: ElementOptions) {
-		const element = this.ownerDocument.createElement(tag);
-		applyOptions(element, options);
-		this.appendChild(element);
-		return element;
-	};
-	HTMLElement.prototype.createSpan = function (options?: ElementOptions) {
-		const element = this.ownerDocument.createElement("span");
-		applyOptions(element, options);
-		this.appendChild(element);
-		return element;
-	};
-	HTMLElement.prototype.detach = function () {
-		this.remove();
-	};
-	HTMLElement.prototype.toggleClass = function (name: string, enabled: boolean) {
-		this.classList.toggle(name, enabled);
-	};
-	HTMLElement.prototype.removeClasses = function (names: string[]) {
-		this.classList.remove(...names);
-	};
-	HTMLElement.prototype.setCssStyles = function (styles: Partial<CSSStyleDeclaration>) {
-		Object.assign(this.style, styles);
-	};
-	HTMLElement.prototype.addClass = function (...names: string[]) {
-		this.classList.add(...names);
-	};
-	HTMLElement.prototype.removeClass = function (...names: string[]) {
-		this.classList.remove(...names);
-	};
-	HTMLElement.prototype.empty = function () {
-		this.replaceChildren();
-	};
-	HTMLElement.prototype.setText = function (text: string) {
-		this.textContent = text;
-	};
-});
+beforeAll(installObsidianDom);
 
 describe("reading margin windows", () => {
 	test("refreshes a reading container created in a pop-out window realm", () => {
@@ -243,5 +185,50 @@ describe("reading margin windows", () => {
 		expect(centered.shown).toContain("dc-centered");
 		expect(centered.afterDestroy).not.toContain("dc-centered");
 		expect((await classesWith(false)).shown).not.toContain("dc-centered");
+	});
+});
+
+describe("clicking a highlight in Reading view", () => {
+	const clicked = (init: MouseEventInit, target: "highlight" | "text" = "highlight"): string[] => {
+		const wrapper = document.createElement("div");
+		const readingView = wrapper.createDiv("markdown-reading-view");
+		const preview = readingView.createDiv("markdown-preview-view");
+		preview.innerHTML = '<p>Ship on <span class="doc-comment-span" data-cid="aaa">Friday</span> now.</p>';
+		const view = new MarkdownView();
+		Object.defineProperty(view, "containerEl", { value: wrapper });
+		view.file = { path: "note.md" };
+		const seen: string[] = [];
+		const deps = {
+			app: { workspace: { getLeavesOfType: () => [{ view }] }, vault: { read: async () => "" } },
+			getAuthor: () => "Bob",
+			colorForAuthor: () => null,
+			highlightColorForAuthor: () => null,
+			showComments: () => true,
+			showResolved: () => true,
+			showHighlights: () => true,
+			centerText: () => false,
+			allowEmptyComments: () => false,
+			sidebarOpen: () => true,
+			onHighlightClick: (id: string) => seen.push(id),
+			isMobile: () => false,
+		} as unknown as ReadingDeps;
+		const manager = new ReadingMarginManager(deps);
+		manager.refresh();
+		const el = target === "highlight" ? preview.querySelector(".doc-comment-span")! : preview.querySelector("p")!;
+		el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, ...init }));
+		manager.destroy();
+		return seen;
+	};
+
+	test("reports the comment", () => {
+		expect(clicked({ button: 0 })).toEqual(["aaa"]);
+	});
+
+	test("ignores a right-click, which opens a menu", () => {
+		expect(clicked({ button: 2 })).toEqual([]);
+	});
+
+	test("ignores a click on text with no comment", () => {
+		expect(clicked({ button: 0 }, "text")).toEqual([]);
 	});
 });

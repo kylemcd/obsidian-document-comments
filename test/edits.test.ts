@@ -222,6 +222,48 @@ describe("computeAddComment", () => {
 		expect(out.slice(anchorRange(comment!)!.from, anchorRange(comment!)!.to)).toBe("`Spinner`");
 	});
 
+	it.each([
+		["starts inside a code span and ends after it", "de` more", "<!--c:cid-->`code` more<!--/c:cid-->"],
+		["ends inside a code span and starts before it", "A `co", "<!--c:cid-->A `code`<!--/c:cid-->"],
+	])("keeps markers out of the backticks when a selection %s", (_label, selected, written) => {
+		const doc = "A `code` more words\n";
+		const from = doc.indexOf(selected);
+		const changes = computeAddComment(doc, from, from + selected.length, {
+			id: "cid",
+			createdAt: "2026-01-01T00:00:00.000Z",
+			author: "me",
+			text: "note",
+		}).unwrap();
+
+		expect(applyChanges(doc, changes)).toContain(written);
+	});
+
+	it.each([
+		["inside a wikilink", "Some", "A <!--c:cid-->[[Some Note]]<!--/c:cid--> more"],
+		[
+			"from inside a wikilink's alias past its end",
+			"alias]] more",
+			"A <!--c:cid-->[[Some Note|alias]] more<!--/c:cid-->",
+		],
+		["from before a wikilink into it", "A [[Some", "<!--c:cid-->A [[Some Note]]<!--/c:cid--> more"],
+	])(
+		"keeps markers out of a wikilink, where they'd join its target or alias, for a selection %s",
+		(_label, selected, written) => {
+			const doc = selected.includes("alias")
+				? "A [[Some Note|alias]] more words\n"
+				: "A [[Some Note]] more words\n";
+			const from = doc.indexOf(selected);
+			const changes = computeAddComment(doc, from, from + selected.length, {
+				id: "cid",
+				createdAt: "2026-01-01T00:00:00.000Z",
+				author: "me",
+				text: "note",
+			}).unwrap();
+
+			expect(applyChanges(doc, changes)).toContain(written);
+		},
+	);
+
 	it("converts an inline-code highlight when the code text is selected again", () => {
 		const doc = "Use `Spinner` here.";
 		const originalFrom = doc.indexOf("Spinner");
