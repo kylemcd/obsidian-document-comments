@@ -13,6 +13,7 @@ const settings = (): DocCommentsSettings => ({
 	shiftTextForComments: true,
 	expandCards: false,
 	allowEmptyComments: false,
+	openSidebar: "never",
 	authorColorsEnabled: true,
 	authorColors: {
 		Alice: { color: "#0090ff", mode: "generated" },
@@ -34,6 +35,36 @@ const plugin = (state: AuthorIndexState) => ({
 	scheduleCurrentAuthorColor: vi.fn(),
 	refreshEditors: vi.fn(),
 	updateRibbon: vi.fn(),
+});
+
+describe("the setting that opens the sidebar", () => {
+	const NAME = "Open comments sidebar automatically";
+
+	test("is a dropdown, off by default, for vaults without a saved preference", () => {
+		const tab = new DocCommentsSettingTab(new App(), plugin({ status: "idle" }) as never);
+
+		const definition = tab.getSettingDefinitions().find((item) => item.name === NAME);
+
+		expect(DEFAULT_SETTINGS.openSidebar).toBe("never");
+		expect(definition).toMatchObject({
+			control: { type: "dropdown", key: "openSidebar", defaultValue: "never" },
+		});
+	});
+
+	test("saves the choice from the legacy settings tab", async () => {
+		const fake = plugin({ status: "idle" });
+		const tab = new DocCommentsSettingTab(new App(), fake as never);
+		tab.display();
+		const select = tab.containerEl.querySelector("select")!;
+
+		expect([...select.options].map((option) => option.value)).toEqual(["never", "withComments", "always"]);
+		expect(select.value).toBe("never");
+		select.value = "withComments";
+		select.dispatchEvent(new Event("change"));
+
+		await vi.waitFor(() => expect(fake.saveSettings).toHaveBeenCalled());
+		expect(fake.settings.openSidebar).toBe("withComments");
+	});
 });
 
 describe("the setting that expands comment cards", () => {

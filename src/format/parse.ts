@@ -83,6 +83,21 @@ export const parseComments = (doc: string): ParsedComment[] => {
 	});
 };
 
+export type CommentMarkup = TextRange & { id: string; kind: "open" | "close" | "body" };
+
+/** Every marker and body in a document, in order, repeats included. Markup in
+ *  code is text, so it's left out, the same as the parser leaves it out. */
+export const commentMarkup = (doc: string): CommentMarkup[] => {
+	const masks = maskedRanges(doc);
+	const scan = (pattern: RegExp, kind: CommentMarkup["kind"]): CommentMarkup[] =>
+		[...doc.matchAll(new RegExp(pattern.source, "g"))]
+			.filter((match) => !isInside(masks, match.index))
+			.map((match) => ({ id: match[1] ?? "", kind, from: match.index, to: match.index + match[0].length }));
+	return [...scan(OPEN_RE, "open"), ...scan(CLOSE_RE, "close"), ...scan(BODY_RE, "body")].sort(
+		(a, b) => a.from - b.from,
+	);
+};
+
 /** The set of ids already present in a document (for id generation). */
 export const existingIds = (doc: string): Set<string> => new Set(parseComments(doc).map((c) => c.id));
 

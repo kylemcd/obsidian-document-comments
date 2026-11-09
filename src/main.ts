@@ -1,8 +1,10 @@
 import {
 	Component,
 	Editor,
+	MarkdownFileInfo,
 	MarkdownRenderer,
 	MarkdownView,
+	Menu,
 	Notice,
 	Platform,
 	Plugin,
@@ -12,6 +14,7 @@ import {
 	debounce,
 } from "obsidian";
 import { Result } from "better-result";
+import { hasCommentCard, parseComments } from "./format/parse";
 import { EditorView } from "@codemirror/view";
 import { commentField, refreshCommentColors } from "./editor/state";
 import { marginPlugin } from "./editor/margin";
@@ -68,6 +71,7 @@ export default class DocCommentsPlugin extends Plugin {
 	scheduleCurrentAuthorColor = debounce(() => this.ensureCurrentAuthorColor(), 600, true);
 	/** True while the "All discussions" sidebar panel is mounted. */
 	private sidebarOpen = false;
+	private openingSidebar = false;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -100,6 +104,7 @@ export default class DocCommentsPlugin extends Plugin {
 				allowEmptyComments: () => this.settings.allowEmptyComments,
 				sidebarOpen: () => this.sidebarOpen,
 				openInSidebar: (id) => void this.revealComment(id),
+				onHighlightClick: (id) => this.revealClickedComment(id),
 				isMobile: () => Platform.isMobile,
 			}),
 			// Reflects dc-has / dc-centered / dc-highlights / dc-hide-resolved onto
@@ -126,6 +131,7 @@ export default class DocCommentsPlugin extends Plugin {
 			allowEmptyComments: () => this.settings.allowEmptyComments,
 			sidebarOpen: () => this.sidebarOpen,
 			openInSidebar: (id) => void this.revealComment(id),
+			onHighlightClick: (id) => this.revealClickedComment(id),
 			isMobile: () => Platform.isMobile,
 		};
 		this.readingManager = new ReadingMarginManager(readingDeps);
@@ -194,6 +200,8 @@ export default class DocCommentsPlugin extends Plugin {
 				}),
 			);
 			void this.scanAuthorsIfEnabled();
+			this.registerEvent(this.app.workspace.on("file-open", (file) => void this.openSidebarForNote(file)));
+			void this.openSidebarForNote(this.app.workspace.getActiveFile());
 		});
 
 		this.addCommand({
@@ -202,19 +210,8 @@ export default class DocCommentsPlugin extends Plugin {
 			editorCallback: (editor) => this.startAddComment(editor),
 		});
 
-		// Same entry point as the command, in the editor's right-click menu. Only
-		// offered with a selection, since a comment needs a range to anchor to.
 		this.registerEvent(
-			this.app.workspace.on("editor-menu", (menu, editor) => {
-				if (!editor.somethingSelected()) return;
-				menu.addItem((item) =>
-					item
-						.setSection("selection")
-						.setTitle("Add comment")
-						.setIcon("message-square")
-						.onClick(() => this.startAddComment(editor)),
-				);
-			}),
+			this.app.workspace.on("editor-menu", (menu, editor, info) => this.addCommentMenuItem(menu, editor, info)),
 		);
 
 		this.addCommand({
@@ -305,6 +302,22 @@ export default class DocCommentsPlugin extends Plugin {
 		new Notice(left > 0 ? `${repaired} Run it again to repair the other ${count(left)}.` : repaired);
 	}
 
+	/** Same entry point as the command, in the editor's right-click menu. Only
+	 *  offered with a selection, since a comment needs a range to anchor to. */
+	addCommentMenuItem(menu: Menu, editor: Editor, info: MarkdownView | MarkdownFileInfo): void {
+		if (!editor.somethingSelected()) return;
+		menu.addItem((item) =>
+			item
+				.setSection("selection")
+				.setTitle("Add comment")
+				.setIcon("message-square")
+				// In a table cell, `editor` is the cell's own small editor. The note's
+				// editor mirrors its selection in source offsets, and the composer
+				// belongs there: the cell clips it and can't hold a comment body (#117).
+				.onClick(() => this.startAddComment(info.editor ?? editor)),
+		);
+	}
+
 	private startAddComment(editor: Editor): void {
 		const view = editorView(editor);
 		if (!view) {
@@ -374,7 +387,7 @@ export default class DocCommentsPlugin extends Plugin {
 		const data = view.getViewData();
 		const sourceSelection = mapReadingSelection(selection, section, data);
 		if (!sourceSelection) {
-			new Notice("Couldn't map the selection to the Markdown — try plain text without formatting.");
+			new Notice("Couldn't map the selection to the Markdown — try selecting within one paragraph.");
 			return;
 		}
 		const { from, to, expected } = sourceSelection;
@@ -509,7 +522,7 @@ export default class DocCommentsPlugin extends Plugin {
 	}
 
 	/** Reveal the comments sidebar panel, creating it in the right split if needed. */
-	private async activateSidebar(): Promise<void> {
+	private async activateSidebar(takeFocus = true): Promise<void> {
 		const { workspace } = this.app;
 		const opened = await Result.tryPromise({
 			try: async () => {
@@ -517,7 +530,7 @@ export default class DocCommentsPlugin extends Plugin {
 				if (!leaf) {
 					leaf = workspace.getRightLeaf(false);
 					if (!leaf) return;
-					await leaf.setViewState({ type: COMMENTS_VIEW_TYPE, active: true });
+					await leaf.setViewState({ type: COMMENTS_VIEW_TYPE, active: takeFocus });
 				}
 				// A sidebar leaf restored from the workspace but never revealed is a
 				// DeferredView (Obsidian ≥1.7) — its view isn't a CommentsSidebarView yet,
@@ -531,11 +544,44 @@ export default class DocCommentsPlugin extends Plugin {
 		if (opened.isErr()) new Notice(`Couldn't open the comments sidebar: ${opened.error}`);
 	}
 
+	/** Open the panel for a note that just opened, if the setting asks for it,
+	 *  leaving focus in the note. */
+	async openSidebarForNote(file: TFile | null): Promise<void> {
+		const mode = this.settings.openSidebar;
+		if (mode !== "always" && mode !== "withComments") return;
+		if (!file || file.extension !== "md") return;
+		// On mobile the panel is a drawer that would cover the note, and from a pop-out
+		// window, revealing it would pull focus to the main window.
+		if (Platform.isMobile || activeWindow !== window) return;
+		if (mode === "withComments" && !(await this.noteHasComments(file))) return;
+		// Until the panel exists, a second call would add another one.
+		if (this.app.workspace.getActiveFile() !== file || this.openingSidebar || this.isSidebarVisible()) return;
+		this.openingSidebar = true;
+		await this.activateSidebar(false);
+		this.openingSidebar = false;
+	}
+
+	private async noteHasComments(file: TFile): Promise<boolean> {
+		const text = await Result.tryPromise({
+			try: () => this.app.vault.cachedRead(file),
+			catch: (e) => (e instanceof Error ? e.message : "unknown error"),
+		});
+		return text.isOk() && parseComments(text.value).some(hasCommentCard);
+	}
+
 	/** Open the sidebar and scroll it to a thread — the escape from a margin card too
 	 *  tall to fit the column even when expanded. */
 	private async revealComment(id: string): Promise<void> {
 		await this.activateSidebar();
 		await this.sidebarView()?.revealComment(id);
+	}
+
+	/** A click on a highlight brings up its thread if the panel is open, and never
+	 *  opens a closed one. Waits a frame because the panel lists the active note, and
+	 *  this click may be what makes the note active. */
+	revealClickedComment(id: string): void {
+		if (!this.sidebarOpen) return;
+		window.requestAnimationFrame(() => void this.sidebarView()?.revealComment(id));
 	}
 
 	/** The live sidebar view instance, if the panel is open. */
