@@ -53,6 +53,8 @@ export type CardView = {
 	/** Collapse a tall card to a "Show more" preview. Margin only — the sidebar
 	 *  scrolls its list, so sidebar cards stay full height. */
 	collapsible?: boolean;
+	/** Show tall cards whole instead of as a preview, if they fit the column. */
+	expanded?: () => boolean;
 	colorForAuthor?: AuthorColorResolver;
 };
 
@@ -72,6 +74,7 @@ export class Card {
 	/** Measured: the thread exceeds the clamp height / the whole column. */
 	private overflows = false;
 	private tooTall = false;
+	private expanded = false;
 	private clipEl: HTMLElement | null = null;
 	/** What this comment's markers are breaking, if anything (see anchor-repair). */
 	private anchorDamage: AnchorDamage | null = null;
@@ -88,6 +91,7 @@ export class Card {
 		private view: CardView,
 	) {
 		this.comment = comment;
+		this.expanded = !!view.expanded?.();
 		this.md.load();
 		this.el = createDiv("doc-comment-card");
 		this.el.addEventListener("mouseenter", () => this.cb.onHover(this.id, true));
@@ -171,6 +175,15 @@ export class Card {
 		this.el.toggleClass("is-active", active);
 	}
 
+	/** Follow the setting. Cheap enough to call on every reconcile, and like
+	 *  setAnchorDamage it leaves the restack to the margin's measure pass. */
+	refreshExpanded(): void {
+		const expanded = !!this.view.expanded?.();
+		if (expanded === this.expanded) return;
+		this.expanded = expanded;
+		this.applyClampState();
+	}
+
 	refreshAuthorColors(): void {
 		const colorForAuthor = this.view.colorForAuthor;
 		if (!colorForAuthor) return;
@@ -209,7 +222,7 @@ export class Card {
 	private animateClip(fromHeight: number): void {
 		const clip = this.clipEl;
 		if (!clip || !this.view.collapsible) return;
-		const toHeight = this.open ? clip.scrollHeight : CLAMP_HEIGHT;
+		const toHeight = this.collapsed ? CLAMP_HEIGHT : clip.scrollHeight;
 		if (Math.abs(fromHeight - toHeight) < 2) return;
 		clip.setCssStyles({ overflow: "hidden", transition: "none", maxHeight: `${fromHeight}px` });
 		void clip.offsetHeight; // reflow so the start height is committed before transitioning
@@ -270,10 +283,17 @@ export class Card {
 		this.cb.onResize(); // clamping changes the card height → restack
 	}
 
+	/** Whether a tall card is at rest as a preview. A thread too tall for the column
+	 *  stays one even when cards are expanded, since its end couldn't be scrolled to. */
+	private get collapsed(): boolean {
+		return !!this.view.collapsible && !this.open && this.overflows && (!this.expanded || this.tooTall);
+	}
+
 	/** Apply the collapse state to the DOM: clamp the body when a tall card is at
 	 *  rest, and render the Show more / Show less / Open-in-sidebar footer. */
 	private applyClampState(): void {
-		this.clipEl?.toggleClass("dc-clamped", !!this.view.collapsible && !this.open && this.overflows);
+		const collapsed = this.collapsed;
+		this.clipEl?.toggleClass("dc-clamped", collapsed);
 		const foot = this.footEl;
 		if (!foot) return;
 		foot.empty();
@@ -283,7 +303,7 @@ export class Card {
 				// full-height card), so the affordance is "open in sidebar" directly — on
 				// the always-reachable collapsed card.
 				this.footButton(foot, "Open in sidebar →", "", () => this.cb.openInSidebar?.(this.id));
-			} else if (!this.open && this.overflows) {
+			} else if (collapsed) {
 				// "Show more" opens the card — full thread + reply field in one click, so
 				// there's no second click to reveal the composer. Collapse by clicking away.
 				this.footButton(foot, "Show more", "", () => this.setOpen(true));
@@ -291,7 +311,7 @@ export class Card {
 		}
 		// Collapsed "Show more" is a centered overlay at the card's bottom (over the
 		// faded text); "Open in sidebar" (when open) is a normal centered footer.
-		foot.toggleClass("dc-foot-overlay", !!this.view.collapsible && !this.open && this.overflows);
+		foot.toggleClass("dc-foot-overlay", collapsed);
 		foot.toggleClass("is-empty", foot.childElementCount === 0);
 	}
 

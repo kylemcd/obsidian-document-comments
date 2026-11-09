@@ -11,6 +11,7 @@ const settings = (): DocCommentsSettings => ({
 	showResolved: false,
 	showHighlights: true,
 	shiftTextForComments: true,
+	expandCards: false,
 	allowEmptyComments: false,
 	openSidebar: "never",
 	authorColorsEnabled: true,
@@ -63,6 +64,27 @@ describe("the setting that opens the sidebar", () => {
 
 		await vi.waitFor(() => expect(fake.saveSettings).toHaveBeenCalled());
 		expect(fake.settings.openSidebar).toBe("withComments");
+	});
+});
+
+describe("the setting that expands comment cards", () => {
+	test("is a toggle, off by default", () => {
+		const tab = new DocCommentsSettingTab(new App(), plugin({ status: "idle" }) as never);
+
+		const definition = tab.getSettingDefinitions().find((item) => item.name === "Show comment cards expanded");
+
+		expect(DEFAULT_SETTINGS.expandCards).toBe(false);
+		expect(definition).toMatchObject({ control: { type: "toggle", key: "expandCards", defaultValue: false } });
+	});
+
+	test("refreshes the open notes when it changes", async () => {
+		const fake = plugin({ status: "idle" });
+		const tab = new DocCommentsSettingTab(new App(), fake as never);
+
+		await tab.setControlValue("expandCards", true);
+
+		expect(fake.settings.expandCards).toBe(true);
+		expect(fake.refreshEditors).toHaveBeenCalled();
 	});
 });
 

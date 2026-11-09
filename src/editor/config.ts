@@ -24,6 +24,8 @@ export type CommentConfig = {
 	/** Keep the text where Obsidian centers it while the column shows, instead of
 	 *  shifting it left so the [text + column] block is centered. */
 	centerText: () => boolean;
+	/** Show tall margin cards whole instead of as a "Show more" preview. */
+	expandCards: () => boolean;
 	/** Whether the new-comment composer accepts an empty comment. */
 	allowEmptyComments: () => boolean;
 	/** Whether the comments sidebar panel is open. While it is, the inline
@@ -47,6 +49,7 @@ const DEFAULT: CommentConfig = {
 	showResolved: () => true,
 	showHighlights: () => true,
 	centerText: () => false,
+	expandCards: () => false,
 	allowEmptyComments: () => false,
 	sidebarOpen: () => false,
 };

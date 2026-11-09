@@ -35,6 +35,7 @@ export type ReadingDeps = {
 	showHighlights: () => boolean;
 	/** Keep the text centered while the column shows (see CommentConfig.centerText). */
 	centerText: () => boolean;
+	expandCards: () => boolean;
 	allowEmptyComments: () => boolean;
 	/** While the sidebar panel is open, the inline column steps aside. */
 	sidebarOpen: () => boolean;
@@ -158,6 +159,7 @@ class ReadingMargin {
 			app: this.deps.app,
 			sourcePath: () => this.view.file?.path ?? "",
 			collapsible: true,
+			expanded: this.deps.expandCards,
 			colorForAuthor: this.deps.colorForAuthor,
 		};
 		for (const c of this.comments) {
@@ -170,6 +172,7 @@ class ReadingMargin {
 			} else {
 				if (existing.signature !== cardSignature(c)) existing.update(c);
 				existing.refreshAuthorColors();
+				existing.refreshExpanded();
 				existing.setAnchorDamage(this.damage.get(c.id) ?? null);
 			}
 		}

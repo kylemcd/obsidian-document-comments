@@ -34,6 +34,8 @@ export type DocCommentsSettings = {
 	shiftTextForComments: boolean;
 	/** Open the comments sidebar when a note opens. */
 	openSidebar: OpenSidebarMode;
+	/** Show tall margin cards whole instead of as a "Show more" preview. */
+	expandCards: boolean;
 	/** Allow a blank comment to persist with an empty comment card. */
 	allowEmptyComments: boolean;
 	/** Apply stored per-author colors to highlights and author names. */
@@ -51,6 +53,7 @@ export const DEFAULT_SETTINGS: DocCommentsSettings = {
 	showHighlights: true,
 	shiftTextForComments: true,
 	openSidebar: "never",
+	expandCards: false,
 	allowEmptyComments: false,
 	authorColorsEnabled: false,
 	authorColors: {},
@@ -115,6 +118,13 @@ const SETTING_META: ReadonlyArray<{
 		desc: "Open the comments sidebar when you open a note. Desktop only.",
 		aliases: ["default view", "comments panel", "auto open"],
 		control: { type: "dropdown", options: OPEN_SIDEBAR_CHOICES },
+	},
+	{
+		key: "expandCards",
+		name: "Show comment cards expanded",
+		desc: "Show the whole thread on each card in the margin, without Show more. A thread too tall for the pane keeps its preview and link to the sidebar.",
+		aliases: ["show more", "long comments", "collapse cards", "clamp"],
+		control: { type: "toggle" },
 	},
 	{
 		key: "allowEmptyComments",
@@ -344,6 +354,7 @@ export class DocCommentsSettingTab extends PluginSettingTab {
 		else if (key === "showHighlights") this.plugin.settings.showHighlights = Boolean(value);
 		else if (key === "shiftTextForComments") this.plugin.settings.shiftTextForComments = Boolean(value);
 		else if (key === "openSidebar") this.plugin.settings.openSidebar = value as OpenSidebarMode;
+		else if (key === "expandCards") this.plugin.settings.expandCards = Boolean(value);
 		else if (key === "allowEmptyComments") this.plugin.settings.allowEmptyComments = Boolean(value);
 		else if (key === "authorColorsEnabled") this.plugin.settings.authorColorsEnabled = Boolean(value);
 	}

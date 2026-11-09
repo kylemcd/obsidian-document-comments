@@ -540,3 +540,94 @@ describe("IME composition on Enter", () => {
 		});
 	});
 });
+
+describe("a tall thread in the margin", () => {
+	const COLUMN = 900;
+	const CLAMP = ".dc-card-clip.dc-clamped";
+	let threadHeight = 0;
+	let measure: () => void = () => {};
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
+	});
+
+	/** Mounts a margin card whose thread measures `height`, as the browser would report it. */
+	const mountCard = (height: number, expanded: () => boolean): { card: Card; el: HTMLElement } => {
+		threadHeight = height;
+		vi.stubGlobal(
+			"ResizeObserver",
+			class {
+				constructor(callback: () => void) {
+					measure = callback;
+				}
+				observe(): void {}
+				disconnect(): void {}
+			},
+		);
+		vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) {
+			return this.classList.contains("dc-thread") ? threadHeight : 0;
+		});
+		const card = new Card(
+			commentWithText(),
+			{ ...callbacks(), openInSidebar: vi.fn() },
+			{ sourcePath: () => "", collapsible: true, expanded },
+		);
+		const column = document.createElement("div");
+		Object.defineProperty(column, "clientHeight", { value: COLUMN });
+		column.appendChild(card.el);
+		measure();
+		return { card, el: card.el };
+	};
+
+	const footText = (el: HTMLElement): string | null => el.querySelector(".dc-card-foot")?.textContent ?? null;
+
+	test("collapses to a Show more preview by default", () => {
+		const { el } = mountCard(500, () => false);
+
+		expect(el.querySelector(CLAMP)).not.toBeNull();
+		expect(footText(el)).toBe("Show more");
+	});
+
+	test("with expanded cards, shows the whole thread and no Show more", () => {
+		const { el } = mountCard(500, () => true);
+
+		expect(el.querySelector(CLAMP)).toBeNull();
+		expect(el.querySelector(".dc-card-foot")?.classList.contains("is-empty")).toBe(true);
+		expect(el.querySelector(".dc-foot-overlay")).toBeNull();
+	});
+
+	// A card taller than the column can't be scrolled to its end, so it keeps the way out.
+	test("with expanded cards, a thread too tall for the column keeps its preview and sidebar link", () => {
+		const { el } = mountCard(COLUMN + 100, () => true);
+
+		expect(el.querySelector(CLAMP)).not.toBeNull();
+		expect(footText(el)).toBe("Open in sidebar →");
+	});
+
+	test("follows the setting when it changes", () => {
+		let expanded = false;
+		const { card, el } = mountCard(500, () => expanded);
+
+		expanded = true;
+		card.refreshExpanded();
+		expect(el.querySelector(CLAMP)).toBeNull();
+
+		expanded = false;
+		card.refreshExpanded();
+		expect(el.querySelector(CLAMP)).not.toBeNull();
+	});
+
+	test("closing an expanded card doesn't shrink it to the preview height", () => {
+		const { el } = mountCard(500, () => true);
+		vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(500);
+		el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+		vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) {
+			return this.classList.contains("dc-card-clip") ? 560 : 0;
+		});
+
+		document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+
+		expect(el.querySelector<HTMLElement>(".dc-card-clip")?.style.maxHeight).toBe("500px");
+	});
+});
