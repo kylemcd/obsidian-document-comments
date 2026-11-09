@@ -1,8 +1,10 @@
 import {
 	Component,
 	Editor,
+	MarkdownFileInfo,
 	MarkdownRenderer,
 	MarkdownView,
+	Menu,
 	Notice,
 	Platform,
 	Plugin,
@@ -202,19 +204,8 @@ export default class DocCommentsPlugin extends Plugin {
 			editorCallback: (editor) => this.startAddComment(editor),
 		});
 
-		// Same entry point as the command, in the editor's right-click menu. Only
-		// offered with a selection, since a comment needs a range to anchor to.
 		this.registerEvent(
-			this.app.workspace.on("editor-menu", (menu, editor) => {
-				if (!editor.somethingSelected()) return;
-				menu.addItem((item) =>
-					item
-						.setSection("selection")
-						.setTitle("Add comment")
-						.setIcon("message-square")
-						.onClick(() => this.startAddComment(editor)),
-				);
-			}),
+			this.app.workspace.on("editor-menu", (menu, editor, info) => this.addCommentMenuItem(menu, editor, info)),
 		);
 
 		this.addCommand({
@@ -305,6 +296,22 @@ export default class DocCommentsPlugin extends Plugin {
 		new Notice(left > 0 ? `${repaired} Run it again to repair the other ${count(left)}.` : repaired);
 	}
 
+	/** Same entry point as the command, in the editor's right-click menu. Only
+	 *  offered with a selection, since a comment needs a range to anchor to. */
+	addCommentMenuItem(menu: Menu, editor: Editor, info: MarkdownView | MarkdownFileInfo): void {
+		if (!editor.somethingSelected()) return;
+		menu.addItem((item) =>
+			item
+				.setSection("selection")
+				.setTitle("Add comment")
+				.setIcon("message-square")
+				// In a table cell, `editor` is the cell's own small editor. The note's
+				// editor mirrors its selection in source offsets, and the composer
+				// belongs there: the cell clips it and can't hold a comment body (#117).
+				.onClick(() => this.startAddComment(info.editor ?? editor)),
+		);
+	}
+
 	private startAddComment(editor: Editor): void {
 		const view = editorView(editor);
 		if (!view) {
@@ -374,7 +381,7 @@ export default class DocCommentsPlugin extends Plugin {
 		const data = view.getViewData();
 		const sourceSelection = mapReadingSelection(selection, section, data);
 		if (!sourceSelection) {
-			new Notice("Couldn't map the selection to the Markdown — try plain text without formatting.");
+			new Notice("Couldn't map the selection to the Markdown — try selecting within one paragraph.");
 			return;
 		}
 		const { from, to, expected } = sourceSelection;

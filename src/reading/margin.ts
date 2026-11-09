@@ -15,7 +15,7 @@ import {
 } from "../editor/edits";
 import { applyCommentEdit, insertComment as routeInsertComment } from "../editor/routing";
 import { AnchorDamage, anchorDamage, computeRepairAnchors } from "../editor/anchor-repair";
-import { syncHighlights } from "./highlight";
+import { syncHighlights, wrapSelectedText } from "./highlight";
 import { highlightsShown } from "../editor/config";
 import { closestSpanId, spanSelector } from "../util/css";
 import { stackTops } from "../ui/stack";
@@ -58,7 +58,7 @@ class ReadingMargin {
 	private draftEmptyAction: EmptySubmitAction = "none";
 	private draftTargetHighlightId: string | undefined;
 	private draftEl: HTMLElement | null = null;
-	private draftAnchor: HTMLElement | null = null;
+	private draftAnchors: HTMLElement[] = [];
 	private cb: CardCallbacks;
 	private scrollHandler = () => this.position();
 	private resizeObserver: ResizeObserver;
@@ -224,10 +224,11 @@ class ReadingMargin {
 				height: card.el.offsetHeight,
 			});
 		}
-		if (this.draftEl && this.draftAnchor) {
+		const draftAnchor = this.draftAnchors[0];
+		if (this.draftEl && draftAnchor) {
 			placements.push({
 				el: this.draftEl,
-				top: this.draftAnchor.getBoundingClientRect().top - topRef,
+				top: draftAnchor.getBoundingClientRect().top - topRef,
 				height: this.draftEl.offsetHeight,
 			});
 		}
@@ -246,15 +247,15 @@ class ReadingMargin {
 		targetHighlightId?: string,
 	): void {
 		this.clearDraft();
-		const span = this.scroller.createSpan({ cls: "doc-comment-span dc-draft" });
-		span.detach();
-		try {
-			range.surroundContents(span);
-		} catch {
-			new Notice("Select within a single paragraph to comment in reading view.");
+		this.draftAnchors = wrapSelectedText(range, () => {
+			const span = this.scroller.createSpan({ cls: "doc-comment-span dc-draft" });
+			span.detach();
+			return span;
+		});
+		if (this.draftAnchors.length === 0) {
+			new Notice("Select some text to comment on.");
 			return;
 		}
-		this.draftAnchor = span;
 		this.draft = { from, to };
 		this.draftText = expected;
 		this.draftEmptyAction = emptyAction;
@@ -317,16 +318,15 @@ class ReadingMargin {
 	}
 
 	private clearDraft(): void {
-		if (this.draftAnchor) {
-			// Unwrap the temp highlight span, restoring the original text nodes.
-			const parent = this.draftAnchor.parentNode;
-			if (parent) {
-				while (this.draftAnchor.firstChild) parent.insertBefore(this.draftAnchor.firstChild, this.draftAnchor);
-				parent.removeChild(this.draftAnchor);
-				parent.normalize();
-			}
-			this.draftAnchor = null;
-		}
+		// Unwrap the temp highlight spans, restoring the original text nodes.
+		this.draftAnchors.forEach((anchor) => {
+			const parent = anchor.parentNode;
+			if (!parent) return;
+			while (anchor.firstChild) parent.insertBefore(anchor.firstChild, anchor);
+			parent.removeChild(anchor);
+			parent.normalize();
+		});
+		this.draftAnchors = [];
 		this.draftEl?.remove();
 		this.draftEl = null;
 		this.draft = null;

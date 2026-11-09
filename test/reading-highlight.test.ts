@@ -13,6 +13,7 @@ import {
 	mapReadingSelection,
 	syncHighlights,
 	visibleText,
+	wrapSelectedText,
 } from "../src/reading/highlight";
 import { anchorRange, parseComments } from "../src/format/parse";
 import { applyChanges, computeAddComment } from "../src/editor/edits";
@@ -611,5 +612,275 @@ describe("code comments in a syntax-highlighted block", () => {
 
 		const spans = [...el.querySelectorAll(".doc-comment-span[data-cid='k2']")];
 		expect(spans.map((span) => span.textContent).join("")).toBe("const answer = 42;");
+	});
+});
+
+/** Selects the `nth` occurrence of `phrase` in `root`, across as many elements as it spans. */
+const selectPhrase = (root: HTMLElement, phrase: string, nth = 0): Selection => {
+	const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+	const nodes: Array<{ node: Text; at: number }> = [];
+	let text = "";
+	for (let node = walker.nextNode() as Text | null; node; node = walker.nextNode() as Text | null) {
+		nodes.push({ node, at: text.length });
+		text += node.data;
+	}
+	const start = text
+		.split(phrase)
+		.slice(0, nth + 1)
+		.join(phrase).length;
+	const end = start + phrase.length;
+	const first = nodes.find(({ node, at }) => start >= at && start < at + node.length)!;
+	const last = nodes.find(({ node, at }) => end > at && end <= at + node.length)!;
+	const range = document.createRange();
+	range.setStart(first.node, start - first.at);
+	range.setEnd(last.node, end - last.at);
+	const selection = window.getSelection()!;
+	selection.removeAllRanges();
+	selection.addRange(range);
+	return selection;
+};
+
+/** Renders `html` as the section holding all of `doc`, then maps a selection of `phrase`. */
+const mapPhrase = (doc: string, html: string, phrase: string, nth = 0): ReturnType<typeof mapReadingSelection> => {
+	const el = document.createElement("div");
+	el.innerHTML = html;
+	document.body.appendChild(el);
+	highlightPostProcessor(el, ctxFor(doc, 0, doc.split("\n").length - 1));
+	const mapped = mapReadingSelection(selectPhrase(el, phrase, nth), findSectionRange(el)!, doc);
+	window.getSelection()?.removeAllRanges();
+	el.remove();
+	return mapped;
+};
+
+const rangeOf = (doc: string, source: string): { from: number; to: number; expected: string } => {
+	const from = doc.indexOf(source);
+	return { from, to: from + source.length, expected: source };
+};
+
+describe("mapping a Reading view selection to the source", () => {
+	// A selection that crosses formatting has markup between its words (#110).
+	test.each([
+		[
+			"bold",
+			"- **Buyback authorization raised to $35.16B**: set from FQ4 FCF.",
+			"<ul><li><strong>Buyback authorization raised to $35.16B</strong>: set from FQ4 FCF.</li></ul>",
+			"Buyback authorization raised to $35.16B: set from FQ4 FCF.",
+			"Buyback authorization raised to $35.16B**: set from FQ4 FCF.",
+		],
+		["italics", "An *italic* word", "<p>An <em>italic</em> word</p>", "italic word", "italic* word"],
+		[
+			"a link",
+			"A [link](https://example.com) word",
+			'<p>A <a href="https://example.com">link</a> word</p>',
+			"A link word",
+			"A [link](https://example.com) word",
+		],
+		["inline code", "A `code` word", "<p>A <code>code</code> word</p>", "code word", "code` word"],
+		["a highlight", "A ==marked== word", "<p>A <mark>marked</mark> word</p>", "marked word", "marked== word"],
+		["a wikilink", "A [[Note|alias]] word", '<p>A <a href="Note">alias</a> word</p>', "alias word", "alias]] word"],
+	])("maps a selection that crosses %s", (_label, doc, html, phrase, source) => {
+		expect(mapPhrase(doc, html, phrase)).toEqual(rangeOf(doc, source));
+	});
+
+	test("takes the occurrence selected, not the first in the block", () => {
+		const doc = "Repeat word here and repeat word there, repeat word.";
+		const html = `<p>${doc}</p>`;
+		const from = doc.lastIndexOf("repeat word");
+
+		expect(mapPhrase(doc, html, "repeat word", 1)).toEqual({ from, to: from + 11, expected: "repeat word" });
+	});
+
+	test("takes the cell selected when a table repeats its text", () => {
+		const doc = ["| A | B |", "| --- | --- |", "| Yes | No |", "| No | Yes |"].join("\n");
+		const html =
+			"<table><thead><tr><th>A</th><th>B</th></tr></thead><tbody>" +
+			"<tr><td>Yes</td><td>No</td></tr><tr><td>No</td><td>Yes</td></tr></tbody></table>";
+		const from = doc.lastIndexOf("Yes");
+
+		expect(mapPhrase(doc, html, "Yes", 1)).toEqual({ from, to: from + 3, expected: "Yes" });
+	});
+
+	test("maps a selection across the lines of a list", () => {
+		const doc = "- first item\n- second item";
+
+		expect(mapPhrase(doc, "<ul><li>first item</li>\n<li>second item</li></ul>", "item\nsecond")).toEqual(
+			rangeOf(doc, "item\n- second"),
+		);
+	});
+
+	test("ends after the whole of an entity", () => {
+		const doc = "Fish &amp; chips";
+
+		expect(mapPhrase(doc, "<p>Fish &amp; chips</p>", "Fish &")).toEqual(rangeOf(doc, "Fish &amp;"));
+	});
+
+	test("keeps the spaces at the ends of the selection", () => {
+		const doc = "Ship on Friday without delay.";
+
+		expect(mapPhrase(doc, `<p>${doc}</p>`, " Friday ")).toEqual(rangeOf(doc, " Friday "));
+	});
+
+	test("falls back to the literal text when the visible text can't be worked out", () => {
+		// `*3` isn't emphasis, but it looks enough like it to be left out of the visible text.
+		const doc = "Compute 2 *3 now";
+
+		expect(mapPhrase(doc, `<p>${doc}</p>`, "2 *3")).toEqual(rangeOf(doc, "2 *3"));
+	});
+
+	test("reaches no further than the block a triple-click ends just past", () => {
+		const doc = "A **bold** line";
+		const el = document.createElement("div");
+		el.innerHTML = "<p>A <strong>bold</strong> line</p>";
+		const next = document.createElement("div");
+		next.innerHTML = "<p>Next</p>";
+		document.body.append(el, next);
+		highlightPostProcessor(el, ctxFor(doc, 0, 0));
+		const range = document.createRange();
+		range.setStart(el.querySelector("p")!, 0);
+		range.setEnd(next.querySelector("p")!, 0);
+		const selection = window.getSelection()!;
+		selection.removeAllRanges();
+		selection.addRange(range);
+
+		expect(mapReadingSelection(selection, findSectionRange(el)!, doc)).toEqual(rangeOf(doc, "A **bold** line"));
+
+		selection.removeAllRanges();
+		el.remove();
+		next.remove();
+	});
+
+	test("refuses a selection that runs into another block", () => {
+		const doc = "First block";
+		const el = document.createElement("div");
+		el.innerHTML = "<p>First block</p>";
+		const next = document.createElement("div");
+		next.innerHTML = "<p>Second block</p>";
+		document.body.append(el, next);
+		highlightPostProcessor(el, ctxFor(doc, 0, 0));
+		const range = document.createRange();
+		range.setStart(el.querySelector("p")!.firstChild!, 6);
+		range.setEnd(next.querySelector("p")!.firstChild!, 6);
+		const selection = window.getSelection()!;
+		selection.removeAllRanges();
+		selection.addRange(range);
+
+		expect(mapReadingSelection(selection, findSectionRange(el)!, doc)).toBeNull();
+
+		selection.removeAllRanges();
+		el.remove();
+		next.remove();
+	});
+
+	// Obsidian keeps a rendered block whose own text didn't change, so where it is in
+	// the file has to come from Obsidian when the comment is added (#111).
+	test("finds a block that text written above it has moved down", () => {
+		const before = "Top line.\n\nLower line.";
+		const after =
+			'Top <!--c:t1-->line<!--/c:t1-->.\n<!--co:t1 by:me at:2026-01-01T00:00:00.000Z status:open quote:"line"\n-->\n\nLower line.';
+		let info = { text: before, lineStart: 2, lineEnd: 2 };
+		const ctx = { getSectionInfo: () => info, sourcePath: "x.md" } as unknown as MarkdownPostProcessorContext;
+		const el = document.createElement("div");
+		el.innerHTML = "<p>Lower line.</p>";
+		document.body.appendChild(el);
+		highlightPostProcessor(el, ctx);
+
+		info = { text: after, lineStart: 4, lineEnd: 4 };
+		const mapped = mapReadingSelection(selectPhrase(el, "Lower"), findSectionRange(el)!, after);
+
+		expect(mapped).toEqual(rangeOf(after, "Lower"));
+		window.getSelection()?.removeAllRanges();
+		el.remove();
+	});
+
+	test("finds no block once Obsidian has dropped it", () => {
+		let info: { text: string; lineStart: number; lineEnd: number } | null = {
+			text: "Gone.",
+			lineStart: 0,
+			lineEnd: 0,
+		};
+		const ctx = { getSectionInfo: () => info, sourcePath: "x.md" } as unknown as MarkdownPostProcessorContext;
+		const el = document.createElement("p");
+		el.textContent = "Gone.";
+		highlightPostProcessor(el, ctx);
+
+		info = null;
+
+		expect(findSectionRange(el)).toBeNull();
+	});
+
+	test("leaves a selected wikilink working once the comment is written", () => {
+		const doc = "See [[Some Note]] then plain.\n";
+		const mapped = mapPhrase(doc, '<p>See <a href="Some Note">Some Note</a> then plain.</p>', "Some Note then")!;
+
+		const written = computeAddComment(doc, mapped.from, mapped.to, {
+			id: "w1",
+			createdAt: "2026-01-01T00:00:00.000Z",
+			author: "me",
+			text: "note",
+			expected: mapped.expected,
+		});
+
+		expect(applyChanges(doc, written.unwrap())).toContain("See <!--c:w1-->[[Some Note]] then<!--/c:w1--> plain.");
+	});
+});
+
+describe("marking a selection while its comment is written", () => {
+	const draftSpan = (): HTMLElement => {
+		const span = document.createElement("span");
+		span.className = "dc-draft";
+		return span;
+	};
+
+	test("marks the selected part of each element a selection crosses", () => {
+		const el = document.createElement("p");
+		el.innerHTML = "A <strong>bold</strong> line";
+		document.body.appendChild(el);
+
+		const spans = wrapSelectedText(selectPhrase(el, "old li").getRangeAt(0), draftSpan);
+
+		expect(spans.map((span) => span.textContent)).toEqual(["old", " li"]);
+		expect(el.textContent).toBe("A bold line");
+		expect(el.querySelector("strong > .dc-draft")?.textContent).toBe("old");
+		window.getSelection()?.removeAllRanges();
+		el.remove();
+	});
+
+	test("marks one span for a selection inside one element", () => {
+		const el = document.createElement("p");
+		el.textContent = "Plain words here";
+		document.body.appendChild(el);
+
+		const spans = wrapSelectedText(selectPhrase(el, "words").getRangeAt(0), draftSpan);
+
+		expect(spans.map((span) => span.textContent)).toEqual(["words"]);
+		window.getSelection()?.removeAllRanges();
+		el.remove();
+	});
+
+	test("leaves the line breaks between list items unmarked", () => {
+		const el = document.createElement("ul");
+		el.innerHTML = "<li>first item</li>\n<li>second item</li>";
+		document.body.appendChild(el);
+
+		const spans = wrapSelectedText(selectPhrase(el, "item\nsecond").getRangeAt(0), draftSpan);
+
+		expect(spans.map((span) => span.textContent)).toEqual(["item", "second"]);
+		window.getSelection()?.removeAllRanges();
+		el.remove();
+	});
+
+	test("marks nothing past the end of a triple-clicked block", () => {
+		const root = document.createElement("div");
+		root.innerHTML = "<p>The line</p><p>Next</p>";
+		document.body.appendChild(root);
+		const [line, next] = [...root.querySelectorAll("p")];
+		const range = document.createRange();
+		range.setStart(line!, 0);
+		range.setEnd(next!, 0);
+
+		const spans = wrapSelectedText(range, draftSpan);
+
+		expect(spans.map((span) => span.textContent)).toEqual(["The line"]);
+		root.remove();
 	});
 });
