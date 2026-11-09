@@ -16,6 +16,7 @@ matching the pushed tag as that GitHub release's notes, so add an entry here bef
   - Copied text leaves out the hidden comment tags, so they no longer show up when you paste it into another app. Pasting copied text into a note doesn't copy its comments.
   - Pasting over a selection that started at a commented word no longer drops the pasted text.
   - Editing a table cell that holds a comment no longer adds duplicate hidden tags to the row.
+- Choosing **Add comment** from the right-click menu inside a table cell now opens the composer beside the row, where the next row can't cut it off. Before, the composer opened inside the cell, and saving wrote the comment's thread into the table row ([#117](https://github.com/kylemcd/obsidian-document-comments/issues/117)).
 
 ## 0.1.18
 
