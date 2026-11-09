@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { EditorSelection, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { commentField } from "../src/editor/state";
@@ -132,6 +132,29 @@ describe("editing a table cell", () => {
 
 		expect(next.doc.toString()).toBe("| A | B |\n| --- | --- |\n| x |  here |\n\nAfter.");
 		expect(ids(next)).toEqual([]);
+	});
+});
+
+// The oldest Obsidian the manifest allows may ship a CodeMirror from before this
+// facet existed (6.33). The field builds its extensions as soon as the module loads.
+describe("on a CodeMirror without the clipboard filter", () => {
+	const facet = Object.getOwnPropertyDescriptor(EditorView, "clipboardOutputFilter")!;
+
+	afterEach(() => {
+		Object.defineProperty(EditorView, "clipboardOutputFilter", facet);
+		vi.resetModules();
+	});
+
+	test("the comment field still loads and deleting still follows the rules", async () => {
+		Object.defineProperty(EditorView, "clipboardOutputFilter", { value: undefined, configurable: true });
+		vi.resetModules();
+		const { commentField: field } = await import("../src/editor/state");
+		const state = EditorState.create({ doc: DOC, extensions: [field] });
+		const from = DOC.indexOf("word");
+
+		const next = state.update({ changes: { from, to: from + 4 }, userEvent: "delete.selection" }).state;
+
+		expect(next.doc.toString()).toBe("Intro  end.\n\nNext para.");
 	});
 });
 

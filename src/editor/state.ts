@@ -1,6 +1,7 @@
 import {
 	EditorSelection,
 	EditorState,
+	type Extension,
 	findClusterBreak,
 	Range,
 	RangeSet,
@@ -147,6 +148,16 @@ const markerNavigationPlugin = (field: StateField<CommentFieldValue>) => {
  * Parses the document into comments and derives the in-text decorations:
  * hide the markers + body blocks, highlight each anchored span.
  */
+/** Leaves comment markup out of copied text. The facet arrived in CodeMirror 6.33,
+ *  which the oldest Obsidian the manifest allows may predate, and reading it there
+ *  would stop the plugin loading. */
+const cleanClipboard = (field: StateField<CommentFieldValue>): Extension => {
+	const filter: typeof EditorView.clipboardOutputFilter | undefined = EditorView.clipboardOutputFilter;
+	return filter
+		? filter.of((text, state) => clipboardText(text, state, state.field(field, false)?.comments ?? []))
+		: [];
+};
+
 export const commentField = StateField.define<CommentFieldValue>({
 	create(state) {
 		return compute(state);
@@ -166,9 +177,7 @@ export const commentField = StateField.define<CommentFieldValue>({
 		EditorView.atomicRanges.of((view) => view.state.field(f).atomic),
 		EditorState.transactionFilter.of((tr) => keepCommentsWhole(tr, tr.startState.field(f, false)?.comments ?? [])),
 		EditorState.transactionFilter.of((tr) => snapSelectionOutOfMarkers(tr, f)),
-		EditorView.clipboardOutputFilter.of((text, state) =>
-			clipboardText(text, state, state.field(f, false)?.comments ?? []),
-		),
+		cleanClipboard(f),
 		markerNavigationPlugin(f),
 	],
 });
