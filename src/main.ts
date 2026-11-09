@@ -372,7 +372,7 @@ export default class DocCommentsPlugin extends Plugin {
 		const data = view.getViewData();
 		const sourceSelection = mapReadingSelection(selection, section, data);
 		if (!sourceSelection) {
-			new Notice("Couldn't map the selection to the Markdown — try plain text without formatting.");
+			new Notice("Couldn't map the selection to the Markdown — try selecting within one paragraph.");
 			return;
 		}
 		const { from, to, expected } = sourceSelection;
