@@ -14,6 +14,7 @@ import {
 	debounce,
 } from "obsidian";
 import { Result } from "better-result";
+import { hasCommentCard, parseComments } from "./format/parse";
 import { EditorView } from "@codemirror/view";
 import { commentField, refreshCommentColors } from "./editor/state";
 import { marginPlugin } from "./editor/margin";
@@ -70,6 +71,7 @@ export default class DocCommentsPlugin extends Plugin {
 	scheduleCurrentAuthorColor = debounce(() => this.ensureCurrentAuthorColor(), 600, true);
 	/** True while the "All discussions" sidebar panel is mounted. */
 	private sidebarOpen = false;
+	private openingSidebar = false;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -196,6 +198,8 @@ export default class DocCommentsPlugin extends Plugin {
 				}),
 			);
 			void this.scanAuthorsIfEnabled();
+			this.registerEvent(this.app.workspace.on("file-open", (file) => void this.openSidebarForNote(file)));
+			void this.openSidebarForNote(this.app.workspace.getActiveFile());
 		});
 
 		this.addCommand({
@@ -516,7 +520,7 @@ export default class DocCommentsPlugin extends Plugin {
 	}
 
 	/** Reveal the comments sidebar panel, creating it in the right split if needed. */
-	private async activateSidebar(): Promise<void> {
+	private async activateSidebar(takeFocus = true): Promise<void> {
 		const { workspace } = this.app;
 		const opened = await Result.tryPromise({
 			try: async () => {
@@ -524,7 +528,7 @@ export default class DocCommentsPlugin extends Plugin {
 				if (!leaf) {
 					leaf = workspace.getRightLeaf(false);
 					if (!leaf) return;
-					await leaf.setViewState({ type: COMMENTS_VIEW_TYPE, active: true });
+					await leaf.setViewState({ type: COMMENTS_VIEW_TYPE, active: takeFocus });
 				}
 				// A sidebar leaf restored from the workspace but never revealed is a
 				// DeferredView (Obsidian ≥1.7) — its view isn't a CommentsSidebarView yet,
@@ -536,6 +540,31 @@ export default class DocCommentsPlugin extends Plugin {
 			catch: (e) => (e instanceof Error ? e.message : "unknown error"),
 		});
 		if (opened.isErr()) new Notice(`Couldn't open the comments sidebar: ${opened.error}`);
+	}
+
+	/** Open the panel for a note that just opened, if the setting asks for it,
+	 *  leaving focus in the note. */
+	async openSidebarForNote(file: TFile | null): Promise<void> {
+		const mode = this.settings.openSidebar;
+		if (mode !== "always" && mode !== "withComments") return;
+		if (!file || file.extension !== "md") return;
+		// On mobile the panel is a drawer that would cover the note, and from a pop-out
+		// window, revealing it would pull focus to the main window.
+		if (Platform.isMobile || activeWindow !== window) return;
+		if (mode === "withComments" && !(await this.noteHasComments(file))) return;
+		// Until the panel exists, a second call would add another one.
+		if (this.app.workspace.getActiveFile() !== file || this.openingSidebar || this.isSidebarVisible()) return;
+		this.openingSidebar = true;
+		await this.activateSidebar(false);
+		this.openingSidebar = false;
+	}
+
+	private async noteHasComments(file: TFile): Promise<boolean> {
+		const text = await Result.tryPromise({
+			try: () => this.app.vault.cachedRead(file),
+			catch: (e) => (e instanceof Error ? e.message : "unknown error"),
+		});
+		return text.isOk() && parseComments(text.value).some(hasCommentCard);
 	}
 
 	/** Open the sidebar and scroll it to a thread — the escape from a margin card too

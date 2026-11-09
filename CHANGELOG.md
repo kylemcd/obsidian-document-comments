@@ -20,6 +20,7 @@ matching the pushed tag as that GitHub release's notes, so add an entry here bef
 - Adding a comment in Reading view no longer fails with "The selection moved" after you comment on text higher up in the note ([#111](https://github.com/kylemcd/obsidian-document-comments/issues/111)).
 - In Reading view you can now comment on a selection that crosses bold, italics, links, inline code, or `==highlights==`, and on a triple-clicked line. A phrase that repeats in a paragraph now gets the comment where you selected it, not at its first appearance. In both Reading view and Live Preview, a comment that ends inside inline code or a `[[wikilink]]` now takes in the whole of it, so its markers can't show as text or break the link ([#110](https://github.com/kylemcd/obsidian-document-comments/issues/110)).
 - With the comments sidebar open, clicking highlighted text now scrolls the sidebar to that comment and flashes its card, in both Live Preview and Reading view. If the Open or Resolved filter is hiding the comment, the sidebar switches to All ([#116](https://github.com/kylemcd/obsidian-document-comments/issues/116)).
+- New setting, **Open comments sidebar automatically**. Set it to **For notes with comments** or **For every note** and the sidebar opens when you open a note on desktop. It is off by default ([#115](https://github.com/kylemcd/obsidian-document-comments/issues/115)).
 
 ## 0.1.18
 

@@ -25,6 +25,7 @@ The plugin stores each comment inside its Markdown file as an HTML comment. Othe
 - Open long comments in the sidebar.
 - Filter the sidebar by open, resolved, or all comments.
 - Click highlighted text to find its comment in the open sidebar.
+- Open the sidebar automatically for every note, or only for notes with comments.
 - Hide the comment cards, the highlights, or the resolved comments, each on its own.
 
 ## Comment format
@@ -177,6 +178,8 @@ The Reading view command cannot add comments to embedded content.
 Select a card to open its reply field. Hover over an entry to show its reaction, resolve, edit, and delete controls.
 
 Use the **Open comments sidebar** command or ribbon icon to show all comments in the active note. While the sidebar is open, click highlighted text to scroll to its comment.
+
+To have the sidebar open on its own, set **Open comments sidebar automatically** in **Settings → Document Comments** to **For notes with comments** or **For every note**. It opens when you open a note and stays open until you close it. The setting has no effect on mobile.
 
 Use **Toggle comments** to show or hide the comment cards. Use **Toggle resolved comments** to show or hide resolved comments.
 
