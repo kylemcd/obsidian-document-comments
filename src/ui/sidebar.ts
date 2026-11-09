@@ -148,10 +148,14 @@ export class CommentsSidebarView extends ItemView {
 	}
 
 	/** Scroll the panel to a thread and flash it — the landing point when a too-tall
-	 *  margin card escapes here. Switches to "All" so the thread is always shown. */
+	 *  margin card escapes here or a highlight is clicked. Switches to "All" only if
+	 *  the filter is hiding the thread. */
 	async revealComment(id: string): Promise<void> {
-		this.filter = "all";
-		await this.refresh();
+		const all = await this.refresh();
+		if (!this.cards.has(id) && all.some((c) => c.id === id)) {
+			this.filter = "all";
+			await this.refresh();
+		}
 		const card = this.cards.get(id);
 		if (!card) return;
 		card.el.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -176,7 +180,9 @@ export class CommentsSidebarView extends ItemView {
 		void this.refresh();
 	}
 
-	private async refresh(text?: string): Promise<void> {
+	/** Re-render the list. Returns every comment in the note that has a card, shown
+	 *  under the current filter or not. */
+	private async refresh(text?: string): Promise<ParsedComment[]> {
 		this.file = this.resolveFile();
 
 		const file = this.file;
@@ -185,7 +191,7 @@ export class CommentsSidebarView extends ItemView {
 			this.titleEl.setText("Comments");
 			this.paintTabs({ open: 0, resolved: 0, all: 0 });
 			this.setEmpty("Open a note to see its comments.");
-			return;
+			return [];
 		}
 
 		let data: string;
@@ -196,7 +202,7 @@ export class CommentsSidebarView extends ItemView {
 			this.titleEl.setText(file.basename);
 			this.paintTabs({ open: 0, resolved: 0, all: 0 });
 			this.setEmpty("Couldn't read this note.");
-			return;
+			return [];
 		}
 
 		const all = parseComments(data).filter(hasCommentCard);
@@ -208,6 +214,7 @@ export class CommentsSidebarView extends ItemView {
 		this.paintTabs({ open: open.length, resolved: resolved.length, all: all.length });
 		this.renderComments(shown);
 		this.setEmpty(this.emptyMessage(all.length, shown.length));
+		return all;
 	}
 
 	private emptyMessage(total: number, shown: number): string | null {

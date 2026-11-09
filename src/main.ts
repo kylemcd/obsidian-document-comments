@@ -99,6 +99,7 @@ export default class DocCommentsPlugin extends Plugin {
 				allowEmptyComments: () => this.settings.allowEmptyComments,
 				sidebarOpen: () => this.sidebarOpen,
 				openInSidebar: (id) => void this.revealComment(id),
+				onHighlightClick: (id) => this.revealClickedComment(id),
 				isMobile: () => Platform.isMobile,
 			}),
 			// Reflects dc-has / dc-centered / dc-highlights / dc-hide-resolved onto
@@ -124,6 +125,7 @@ export default class DocCommentsPlugin extends Plugin {
 			allowEmptyComments: () => this.settings.allowEmptyComments,
 			sidebarOpen: () => this.sidebarOpen,
 			openInSidebar: (id) => void this.revealComment(id),
+			onHighlightClick: (id) => this.revealClickedComment(id),
 			isMobile: () => Platform.isMobile,
 		};
 		this.readingManager = new ReadingMarginManager(readingDeps);
@@ -534,6 +536,14 @@ export default class DocCommentsPlugin extends Plugin {
 	private async revealComment(id: string): Promise<void> {
 		await this.activateSidebar();
 		await this.sidebarView()?.revealComment(id);
+	}
+
+	/** A click on a highlight brings up its thread if the panel is open, and never
+	 *  opens a closed one. Waits a frame because the panel lists the active note, and
+	 *  this click may be what makes the note active. */
+	revealClickedComment(id: string): void {
+		if (!this.sidebarOpen) return;
+		window.requestAnimationFrame(() => void this.sidebarView()?.revealComment(id));
 	}
 
 	/** The live sidebar view instance, if the panel is open. */
