@@ -402,7 +402,9 @@ class MarginView implements PluginValue {
 
 	private onContentMouseDown = (e: MouseEvent): void => {
 		const id = closestSpanId(e.target) ?? this.tableIdAt(e);
-		if (id) this.setActive(id);
+		if (!id) return;
+		this.setActive(id);
+		if (e.button === 0) this.view.state.facet(commentConfig).onHighlightClick?.(id);
 	};
 
 	private onContentMouseOver = (e: MouseEvent): void => {

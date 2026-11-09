@@ -40,6 +40,7 @@ export type ReadingDeps = {
 	sidebarOpen: () => boolean;
 	/** Reveal a thread in the sidebar — used by a margin card too tall to fit. */
 	openInSidebar?: (id: string) => void;
+	onHighlightClick?: (id: string) => void;
 	/** True on Obsidian mobile — no floating column; just drive highlight visibility. */
 	isMobile?: () => boolean;
 };
@@ -413,7 +414,9 @@ class ReadingMargin {
 
 	private onMouseDown = (e: MouseEvent): void => {
 		const id = closestSpanId(e.target);
-		if (id) this.setActive(id);
+		if (!id) return;
+		this.setActive(id);
+		if (e.button === 0) this.deps.onHighlightClick?.(id);
 	};
 
 	destroy(): void {
