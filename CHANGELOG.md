@@ -10,6 +10,12 @@ matching the pushed tag as that GitHub release's notes, so add an entry here bef
 - Clicking a `[[link]]` in a comment now opens the note, from the margin, the sidebar, and Reading view. Cmd-click (Ctrl-click on Windows and Linux) opens it in a new tab ([#108](https://github.com/kylemcd/obsidian-document-comments/issues/108)).
 - Fixed a callout's last line stacking one letter per row in Live Preview when you click into the callout and a comment's thread follows it ([#107](https://github.com/kylemcd/obsidian-document-comments/pull/107)).
 - New setting, **Shift text to make room for comments**. Turn it off to keep the note centered while comments show. The note then moves left only as far as the comment column needs ([#112](https://github.com/kylemcd/obsidian-document-comments/pull/112)).
+- Cut, copy, and paste now keep comments whole ([#113](https://github.com/kylemcd/obsidian-document-comments/issues/113)):
+  - Cutting commented text and pasting it moves the comments with it, threads included. Dragging the text does the same.
+  - Deleting all of a comment's text removes the comment and its thread. Before, its hidden tags stayed behind, or it became an orphan that Repair couldn't fix.
+  - Copied text leaves out the hidden comment tags, so they no longer show up when you paste it into another app. Pasting copied text into a note doesn't copy its comments.
+  - Pasting over a selection that started at a commented word no longer drops the pasted text.
+  - Editing a table cell that holds a comment no longer adds duplicate hidden tags to the row.
 
 ## 0.1.18
 
